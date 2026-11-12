@@ -1,0 +1,27 @@
+# Local Postgres for the development loop and the [PostgresFact] tests. Host port 5433, not 5432,
+# so it can run next to Monster of the Week's motw-postgres container (plan §5 OQ12).
+services:
+  postgres:
+    image: postgres:18
+    container_name: fireworks-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fireworks}
+      POSTGRES_USER: ${POSTGRES_USER:-fireworks_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fireworks_dev_password}
+    ports:
+      # Loopback only: the dev password is committed, so the server must not listen on the LAN.
+      # Containers reach it via host.docker.internal, which still resolves through the host.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/18/docker, so the volume mounts the
+      # parent directory rather than /var/lib/postgresql/data.
+      - fireworks-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fireworks_app} -d ${POSTGRES_DB:-fireworks}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  fireworks-postgres-data:

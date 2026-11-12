@@ -1,0 +1,19 @@
+<div
+  #host
+  class="canary"
+  role="img"
+  [attr.aria-label]="ariaLabel()"
+  [attr.data-status]="status()"
+  [attr.data-renderer]="renderer()"
+></div>
+@if (rendererLabel(); as label) {
+  <p class="mt-2 mb-0 text-[12px] text-muted" data-testid="canary-renderer">
+    Renderer: {{ label }}
+  </p>
+}
+@if (status() === 'failed') {
+  <p class="mt-2 mb-0 text-danger">
+    The Pixi canary could not start: Pixi failed to load or no renderer could initialize. See the
+    browser console for the error.
+  </p>
+}

@@ -1,0 +1,24 @@
+# Not redundant with .gitignore. This is what stops a STALE LOCAL BUILD being copied into the
+# image context, so what ships is always what the frontend stage just produced rather than
+# whatever a developer last had on disk (notably an unoptimised `npm run watch` build).
+src/api/Fireworks.Api/wwwroot/
+
+**/bin/
+**/obj/
+**/node_modules/
+**/.angular/
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+**/dist/
+**/*.user
+.env
+
+# Team tooling, planning and reference material: never part of the image (plan Phase 1c).
+.squad/
+.claude/
+plans/
+docs/
+prototypes/

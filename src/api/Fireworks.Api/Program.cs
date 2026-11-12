@@ -1,0 +1,160 @@
+using Fireworks.Api.Data;
+using Fireworks.Api.Repositories;
+using Fireworks.Api.Services;
+using Fireworks.Api.Services.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// 1. Fail fast on missing configuration.
+// ConnectionStrings and Cors live in appsettings.Development.json only, so these guards actually
+// fire on a production deploy that forgets ConnectionStrings__Postgres, instead of silently
+// resolving a committed local placeholder and dying later inside MigrateAsync() with a socket error.
+var connectionString = builder.Configuration.GetConnectionString("Postgres")
+    ?? throw new InvalidOperationException("ConnectionStrings:Postgres must be configured.");
+
+// Same idea for identity (plan §3.4): Identity:DefaultUserId is read and validated here, eagerly,
+// so a missing or malformed id stops the process before it opens a database connection. See
+// AddFireworksIdentity for why this is not ValidateOnStart().
+builder.Services.AddFireworksIdentity(builder.Configuration);
+
+// 2. Health checks, ProblemDetails, controllers, Swagger.
+builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+// 3. EF Core on Npgsql.
+builder.Services.AddDbContext<FireworksDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IMeService, MeService>();
+
+// 4. CORS is Development-only: production is single-origin and needs no cross-origin policy at all.
+// Note this half uses builder.Environment (before Build()); the UseCors half below uses
+// app.Environment. Guarding only one of the two leaves UseCors pointing at a policy that does not
+// exist, which throws on the first request.
+if (builder.Environment.IsDevelopment())
+{
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+        ?? throw new InvalidOperationException("Cors:AllowedOrigins must be configured.");
+
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("FrontendDev", policy =>
+        {
+            policy.WithOrigins(allowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+    });
+}
+
+// 5. Build.
+var app = builder.Build();
+
+// 6. Forwarded headers, outside Development. Must come before anything that reads the scheme or
+// the client address (rate limiting partitions on the client address from Phase 4 on).
+// KnownIPNetworks/KnownProxies default to loopback only, and the middleware discards the ENTIRE
+// forwarded entry — X-Forwarded-Proto included — at the first hop that is not a known proxy.
+// Railway terminates TLS at a non-loopback edge, so without these two Clear() calls this block
+// does nothing. Clearing both is exactly what the framework's own
+// ASPNETCORE_FORWARDEDHEADERS_ENABLED shortcut does. (KnownNetworks is [Obsolete] as of .NET 10 in
+// favour of KnownIPNetworks; they are the same underlying list.)
+//
+// Residual, stated rather than hidden: a client reaching the app directly, bypassing the proxy,
+// could assert its own X-Forwarded-For / X-Forwarded-Proto. Closed by the deployment requirement
+// that the app is only reachable through its proxy; tighten to a real KnownProxies entry once the
+// host is fixed. Boo reviews this before Phase 4's rate limiter relies on the client address.
+if (!app.Environment.IsDevelopment())
+{
+    var forwardedHeadersOptions = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+
+        // 1 is the framework default; it is spelled out because, with both proxy lists cleared
+        // below, it is the only thing keeping a client-asserted X-Forwarded-For out of
+        // RemoteIpAddress. The middleware consumes exactly one entry from the right, the one the
+        // edge appended, and ignores anything the client put to its left. null or >1 re-opens
+        // spoofing. That reasoning assumes Railway's edge APPENDS to a client-sent
+        // X-Forwarded-For; if it overwrites, the value is equally trustworthy. Verify which on the
+        // first real deploy (send a forged X-Forwarded-For and log RemoteIpAddress) before Phase 4's
+        // rate limiter partitions on the client address (boo-phase1-pipeline-security-review.md #4).
+        ForwardLimit = 1
+    };
+    forwardedHeadersOptions.KnownIPNetworks.Clear();
+    forwardedHeadersOptions.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwardedHeadersOptions);
+}
+
+// 7. Exception handler (ProblemDetails body, no stack trace).
+app.UseExceptionHandler();
+
+// 8. Development only: CORS and HTTPS redirection.
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("FrontendDev");
+
+    // Development-only. Railway's edge is HTTPS-only and already 301s plain HTTP itself, and always
+    // sets X-Forwarded-Proto: https, so this has no job in Production. Inside the container it is
+    // inert anyway (Kestrel binds HTTP only, so no port is resolvable) — but only until someone sets
+    // HttpsPort/ASPNETCORE_HTTPS_PORT while debugging TLS, at which point it would start redirecting
+    // Railway's deploy-time healthcheck, which requires a literal 200.
+    app.UseHttpsRedirection();
+}
+
+// 9. Static files (the Angular build in wwwroot) are served by middleware and short-circuit before
+// routing. When Phase 8 adds UseAuthentication/UseAuthorization, they go after UseRouting below,
+// so the SPA's JS/CSS stay anonymous with no configuration.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// 10. Explicit, and load-bearing. With no UseRouting() call, WebApplicationBuilder inserts routing
+// at the very FRONT of the pipeline, ahead of everything above — after which UseDefaultFiles() is
+// dead code (both static-file middlewares no-op once an endpoint is matched, and
+// MapFallbackToFile's {*path:nonfile} matches "/").
+app.UseRouting();
+
+// 11. Swagger, Development only.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// 12. Migrate on start, then make sure the default user exists. This runs before the app listens,
+// so a failed migration is a failed deploy (Railway's healthcheck never goes green), not a
+// half-working app.
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<FireworksDbContext>();
+    var defaultUserOptions = scope.ServiceProvider.GetRequiredService<IOptions<DefaultUserOptions>>().Value;
+    await FireworksDbInitializer.InitializeAsync(dbContext, defaultUserOptions);
+}
+
+// 13. Liveness. Answered by the health check as text/plain "Healthy" — never by the SPA fallback.
+// railway.toml's healthcheckPath must be exactly this path; any near-miss would be answered by the
+// fallback below with 200 text/html and pass forever.
+app.MapHealthChecks("/health/live");
+
+// 14. Controllers (attribute-routed).
+app.MapControllers();
+
+// 15. Unknown /api paths must NOT fall through to the SPA fallback. MapFallbackToFile registers at
+// Order = int.MaxValue with a {*path:nonfile} pattern, so a misspelled API path — no file
+// extension, matching no controller route — would otherwise be answered with index.html and a 200.
+// Literal controller routes outrank a {**rest} catch-all, and a default-order endpoint beats the
+// int.MaxValue fallback, so this sits precisely between the two.
+//
+// Side effect worth knowing rather than filing as a bug later: app.Map maps every HTTP method, so
+// an unsupported method on a real route (DELETE /api/me) lands here as 404 rather than 405.
+app.Map("/api/{**rest}", () => Results.NotFound());
+
+// 16. SPA fallback, last. Deep links (/designer, /s/{code}) get index.html and Angular routes them.
+// When Phase 8 adds a fallback authorization policy, this endpoint needs AllowAnonymous or every
+// deep link 401s before any HTML is served.
+app.MapFallbackToFile("index.html");
+
+app.Run();

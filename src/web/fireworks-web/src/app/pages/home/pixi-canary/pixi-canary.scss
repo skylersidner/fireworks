@@ -1,0 +1,16 @@
+:host {
+  display: block;
+}
+
+.canary {
+  width: 200px;
+  height: 200px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-sunken);
+
+  ::ng-deep canvas {
+    display: block;
+  }
+}

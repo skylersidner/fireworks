@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/api/">
+    <Project Path="src/api/Fireworks.Api.Tests/Fireworks.Api.Tests.csproj" />
+    <Project Path="src/api/Fireworks.Api/Fireworks.Api.csproj" />
+  </Folder>
+</Solution>

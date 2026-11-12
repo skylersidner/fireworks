@@ -1,0 +1,100 @@
+@import 'tailwindcss';
+
+/*
+ * Fireworks Sandbox design tokens. Dark only: there is no light theme, no `.dark` class and no
+ * `dark:` variant. The night sky is the product, so the UI chrome sits on it.
+ *
+ * Source of truth for the core values is the prototype's `:root` block
+ * (prototypes/fireworks-prototype.html, lines 8-11). The prototype name is noted against each
+ * token so a side-by-side check stays a lookup, not a guess. Templates use only the semantic names
+ * below, never a literal hex or a palette class, so Rosalina can retune a value in one place.
+ *
+ * `static` (rather than a bare `@theme`) is load-bearing, carried over from the reference app.
+ * By default Tailwind emits a `@theme` custom property in `:root` only when a used utility reads
+ * it. Hand-written CSS that reads `var(--color-...)` directly (component SCSS, and later the
+ * engine host's canvas background) would then find some tokens silently undefined. `static`
+ * emits every token, always.
+ */
+@theme static {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; /* prototype body font */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace; /* prototype textarea / #hud */
+
+  /* Surfaces */
+  --color-surface-sunken: #04060c; /* --bg: page and stage background (also Pixi's clear color) */
+  --color-surface: #0d111c; /* --panel: the designer panel */
+  --color-surface-raised: #141a29; /* --panel2: inputs, buttons, modal cards */
+
+  /* Borders */
+  --color-border: #232b40; /* --line */
+  --color-border-hover: #3a4562; /* prototype `button:hover` border */
+
+  /* Text */
+  --color-text-primary: #e6e9f2; /* --text */
+  --color-text-muted: #8b93a8; /* --dim: labels, section headings, notes, the HUD */
+
+  /* Accent (primary action, focus, active tab). The primary button is a vertical gradient from
+     accent to accent-secondary, as in the prototype's `button.primary`. */
+  --color-accent: #ffb347; /* --accent */
+  --color-accent-secondary: #ff7a59; /* --accent2 */
+  --color-on-accent: #1a0d00; /* prototype `button.primary` text */
+
+  /* Danger / error text */
+  --color-danger: #ff9a8a; /* prototype `#err` (WebGL failure message) */
+
+  /* Positive state. Not in the prototype; placeholder pending Rosalina. */
+  --color-success: #7ddc9f;
+
+  /* Notification toasts. Not in the prototype; placeholders pending Rosalina. Deep tinted fills
+     with light tinted text, so they read on the dark stage without glowing like a firework. */
+  --color-toast-success: #12301f;
+  --color-on-toast-success: #c9f2d7;
+  --color-toast-error: #3a1414;
+  --color-on-toast-error: #ffd2ca;
+
+  /* Modal scrim */
+  --color-scrim: color-mix(in oklab, #000 60%, transparent);
+}
+
+/*
+ * Hand-written utilities for tokens whose role name contains a utility family word. Tailwind
+ * prefixes the whole remainder of a `--color-*` name, so `--color-text-primary` would otherwise
+ * generate `text-text-primary` and `--color-border` would generate `border-border`. Same mechanism
+ * and trade-off as the reference app: a static `@utility` gets every variant (`hover:`, `md:`,
+ * `focus-visible:`) but not the slash opacity modifier.
+ */
+@utility text-primary {
+  color: var(--color-text-primary);
+}
+
+@utility text-muted {
+  color: var(--color-text-muted);
+}
+
+@utility border-default {
+  border-color: var(--color-border);
+}
+
+@utility border-hover {
+  border-color: var(--color-border-hover);
+}
+
+@utility bg-accent-gradient {
+  background: linear-gradient(180deg, var(--color-accent), var(--color-accent-secondary));
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    background: var(--color-surface-sunken);
+    color: var(--color-text-primary);
+    font: 13px/1.4 var(--font-sans); /* prototype body */
+    color-scheme: dark;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}

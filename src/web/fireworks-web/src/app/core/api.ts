@@ -1,0 +1,49 @@
+import { HttpClient, HttpContext } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+
+/** Thin HttpClient wrapper that prefixes every path with `environment.apiBaseUrl`. */
+@Injectable({
+  providedIn: 'root',
+})
+export class ApiService {
+  private readonly httpClient = inject(HttpClient);
+  private readonly baseUrl = environment.apiBaseUrl.replace(/\/$/, '');
+
+  get<TResponse>(path: string, context?: HttpContext): Observable<TResponse> {
+    return this.httpClient.get<TResponse>(this.toUrl(path), context ? { context } : undefined);
+  }
+
+  post<TRequest, TResponse>(
+    path: string,
+    body: TRequest,
+    context?: HttpContext,
+  ): Observable<TResponse> {
+    return this.httpClient.post<TResponse>(
+      this.toUrl(path),
+      body,
+      context ? { context } : undefined,
+    );
+  }
+
+  put<TRequest, TResponse>(
+    path: string,
+    body: TRequest,
+    context?: HttpContext,
+  ): Observable<TResponse> {
+    return this.httpClient.put<TResponse>(
+      this.toUrl(path),
+      body,
+      context ? { context } : undefined,
+    );
+  }
+
+  delete(path: string, context?: HttpContext): Observable<void> {
+    return this.httpClient.delete<void>(this.toUrl(path), context ? { context } : undefined);
+  }
+
+  private toUrl(path: string): string {
+    return path.startsWith('/') ? `${this.baseUrl}${path}` : `${this.baseUrl}/${path}`;
+  }
+}

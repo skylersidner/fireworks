@@ -1,0 +1,18 @@
+@Fireworks.Api_HostAddress = http://localhost:5180
+
+### Liveness. 200, Content-Type text/plain, body exactly "Healthy" — from the health check, never
+### the SPA fallback (which would answer text/html).
+GET {{Fireworks.Api_HostAddress}}/health/live
+
+### Current user (plan §3.4). 200 { userId, displayName, isAuthenticated: false, canWrite }.
+### canWrite is true in Development (appsettings.Development.json), false in production unless
+### Identity__AllowAnonymousWrites=true is set.
+GET {{Fireworks.Api_HostAddress}}/api/me
+Accept: application/json
+
+### Unknown API path. Must be 404 — NOT 200 text/html from the SPA fallback.
+GET {{Fireworks.Api_HostAddress}}/api/nope
+Accept: application/json
+
+### Deep link. 200 text/html (index.html) once the Angular build is in wwwroot; 404 before that.
+GET {{Fireworks.Api_HostAddress}}/designer

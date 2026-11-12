@@ -1,6 +1,6 @@
 # Fireworks Sandbox — Initial Implementation Plan
 
-**Stack:** .NET 10 + Angular 22, mirroring `monster-of-the-week-net-angular`.
+**Stack:** .NET 11 + Angular 22, mirroring `monster-of-the-week-net-angular`.
 **Status:** Phase 0 complete (2026-11-12). Skyler has decided OQ1, 2, 4, 5, 11, 12, 17 and 20. Every other question in §5 uses its recommended default, except OQ19, which waits for Phase 8.
 
 ## 1. Overview
@@ -30,17 +30,17 @@ Reference root: `/Users/skylerasidner/personal projects/monster-of-the-week-net-
 | Solution | `MonsterOfTheWeek.slnx`, the XML solution format, with `/src/` and `/src/api/` folders and two projects | `Fireworks.slnx` |
 | Layering | **A single API project, organized by folder**: `src/api/MonsterOfTheWeek.Api/{Controllers,Services,Repositories,Data,Data/Entities,Data/Migrations,Data/Seed,Contracts,Properties}` | `src/api/Fireworks.Api/` with the same folders |
 | Tests | `MonsterOfTheWeek.Api.Tests`: xUnit 2.9, EF Core SQLite in memory, hand-written Kestrel harnesses (`Tests/Controllers/HunterApiHarness.cs`), fake repositories in service tests, and Postgres-only tests gated by `Tests/Data/PostgresFactAttribute.cs` | `Fireworks.Api.Tests`, same patterns; the gating env var becomes `FIREWORKS_TEST_POSTGRES` |
-| .NET | `net10.0`; `Npgsql.EntityFrameworkCore.PostgreSQL 10.0.0`, `Microsoft.EntityFrameworkCore.Design 10.0.0`, `Swashbuckle.AspNetCore 9.0.6` | Same, without SkiaSharp. DataProtection.EF is dropped unless cookie auth is adopted |
+| .NET | `net10.0`; `Npgsql.EntityFrameworkCore.PostgreSQL 10.0.0`, `Microsoft.EntityFrameworkCore.Design 10.0.0`, `Swashbuckle.AspNetCore 9.0.6` | **`net11.0`** (decided 2026-11-12, a deliberate departure from the reference's net10.0, because .NET 11 is what's installed), with package majors to match. No SkiaSharp. DataProtection.EF is dropped unless cookie auth is adopted |
 | DB | Postgres 18 in compose. Explicit snake_case table and column mapping. `ITimestamped` with `ApplyTimestamps()` in a `SaveChanges` override. A design-time factory. A `DbInitializer` that runs `MigrateAsync()` on startup | `FireworksDbContext`, `FireworksDbContextFactory`, `FireworksDbInitializer` |
 | Service and error shape | `Services/ServiceResults.cs` (`ServiceResult<T>`). Attribute-routed controllers with a private `ToActionResult` / `ToErrorResult` helper. Records in `Contracts/ApiContracts.cs` | `ServiceResults.cs` copied as is; same controller shape |
 | Program.cs pipeline | `src/api/MonsterOfTheWeek.Api/Program.cs` | Same middleware order (listed in Phase 1a) |
 | Config | No connection string in `appsettings.json`, so the startup null check (`?? throw`) fails fast in production; the dev connection string and CORS origins live in `appsettings.Development.json`; port 5225 | Same split, on port **5180** so both apps can run side by side |
-| Angular | Angular 22.0.7 with standalone components and **no zone.js**. Signals for state. Per-page `@Injectable()` stores. Typed reactive forms. Folders `app/{core,shared,layout,features/<x>/{pages,shared},pages}`. Lazy-loaded routes | `src/web/fireworks-web`, same conventions |
+| Angular | Angular 22.0.7 with standalone components and **no zone.js**. Signals for state. Per-page `@Injectable()` stores. Typed reactive forms. Folders `app/{core,shared,layout,features/<x>/{pages,shared},pages}`. Lazy-loaded routes | `src/web/fireworks-web` on **Angular 22.2.x, exact pins** (22.2.6 at Phase 1), same conventions, with one deliberate departure: forms use **Signal Forms** (`@angular/forms/signals`, OQ17), not typed reactive forms |
 | Styling | Tailwind 4.3 via `@tailwindcss/postcss`, `@theme static` design tokens in `src/styles.css`, SCSS per component, Prettier (width 100, single quotes) | Same toolchain, with a dark-only token set taken from the prototype's CSS variables |
 | Hosting | `angular.json` outputs to `../../api/.../wwwroot`. `proxy.conf.json` forwards `/api` and `/health`. `apiBaseUrl: ''` (same origin). `core/api.ts` wraps HttpClient | Same |
 | Client infrastructure | `core/health.ts`, `core/notifications.ts`, `core/http-error-interceptor.ts`, an "API unavailable" modal | Copied; the auth interceptors and guards are skipped |
-| Web tests | `@angular/build:unit-test` (Vitest 4, jsdom); `npm run typecheck` runs tsc on both the app and spec tsconfigs; "drift" specs that fail when two copies of a rule stop matching | Same. Drift specs guard the engine's import rules and the schema fixtures |
-| Toolchain pins | `.nvmrc` 26.5.0, `engines.node >=26.5.0 <27`, `npm@11.12.1`, TypeScript ~6.0.2 | Same |
+| Web tests | `@angular/build:unit-test` (Vitest 4, jsdom 28); `npm run typecheck` runs tsc on both the app and spec tsconfigs; "drift" specs that fail when two copies of a rule stop matching | Same builder and scripts, on **Vitest 5.1.0 and jsdom 30.1.3** (exact pins). Drift specs guard the engine's import rules and the schema fixtures |
+| Toolchain pins | `.nvmrc` 26.5.0, `engines.node >=26.5.0 <27`, `npm@11.12.1`, TypeScript ~6.0.2 | Same Node pins and TypeScript 6.0.x, with **`npm@11.17.0`** |
 | Docker | A three-stage Dockerfile at the repo root: `node:26-alpine` builds the client into wwwroot, `dotnet/sdk:10.0` publishes the **API csproj (not the slnx)**, and `dotnet/aspnet:10.0` runs it with `ASPNETCORE_HTTP_PORTS=${PORT:-8080}` | Same, renamed |
 | Railway | `railway.toml` with the Dockerfile builder, `healthcheckPath = "/health/live"`, and restart on failure. `ConnectionStrings__Postgres` is assembled from the `${{Postgres.PGHOST}}`-style variables, not taken from `DATABASE_URL` | Same |
 | Prototypes | `prototypes/` holds self-contained HTML concepts and is excluded from the Docker build context | The prototype moves to `prototypes/` and serves as the reference for visual parity |
@@ -142,14 +142,18 @@ Each cue stores its own seed, so reordering or deleting cues never changes how t
 - **Anonymous session for play.** Anyone can use the designer and player without logging in. Their working state lives in the browser: a localStorage draft and the current session's shells.
 - **Persistence is tied to identity.** Every saved creation has an `owner_user_id`. Saving, listing "my creations", editing, deleting and remixing into your own library all act *as a user*. In the full product these need a login.
 - **Interim default user.** Until the auth pass in Phase 8, the server resolves the current user through an `ICurrentUser` abstraction backed by a config setting, `Identity:DefaultUserId`. That user is seeded at startup.
-  - Controllers and services never read the config directly; they only ask `ICurrentUser`.
-  - Swapping in real auth later means replacing one DI registration with a claims-based implementation and adding `[Authorize]` / a fallback policy. The schema and service code don't change.
+  - `ICurrentUser` has three members: `Guid? UserId`, `bool IsAuthenticated` and `bool CanWrite`. `CanWrite` is the single write switch: in the interim it reflects `Identity:AllowAnonymousWrites`, and after Phase 8 it means "is authenticated". `CanWrite` implies `UserId != null`.
+  - Controllers and services never read the config directly; they only ask `ICurrentUser`. Only the identity module (`DefaultUserCurrentUser`, `IdentityRegistration`, `FireworksDbInitializer`, `Program.cs`) and tests may reference the options type.
+  - Swapping in real auth later means replacing one DI registration with a claims-based implementation and adding an authorization policy. The schema, services and controllers don't change; the identity module and pipeline do (Phase 8 lists exactly what).
 - **Reading share links stays public.** `GET` by share code needs no identity. Creations are unlisted: reachable only by link, with no public gallery.
+- **"My creations" follows the write switch (decided by Skyler).** Before Phase 8, `GET api/me/creations` returns results only when `ICurrentUser.CanWrite` is true; otherwise it returns **403** (`ServiceErrorType.Forbidden`), the same answer the write endpoints give. The client hides the My creations entry when `canWrite` is false, and `/mine` never calls the endpoint in that state. Share-code GETs stay public either way.
+  - Why 403 and not an empty 200: every interim visitor resolves to the same default user, so with writes off "your creations" has no honest owner to list for. An empty list would claim "you have saved nothing", which is false and would mask a misconfigured switch; a 403 says "listing is off" and is caught by the same enumerated gate test as the writes. The UX cost is nil because the client never makes the call when `canWrite` is false.
+  - Without this rule, every share code saved during a test window would be listed to every visitor: a public gallery, which contradicts OQ4. While writes are switched on for testing, the list is visible to whoever is on the site; that exposure is part of the testing window.
 - **Interim exposure, contained (decided, OQ20).** Before Phase 8, anyone who reaches the deployed site saves as the default user and could edit or delete any creation. So:
   - `Identity:AllowAnonymousWrites` is **`false` in `appsettings.json`** (production) and **`true` in `appsettings.Development.json`**.
   - On Railway, saving is switched on only while testing, via the `Identity__AllowAnonymousWrites=true` env var, then switched off again.
   - `GET api/me` reports `canWrite`, so the client hides Save, Remix and Delete when writes are off rather than letting them fail with 403.
-  - Write endpoints are rate-limited.
+  - Write endpoints are rate-limited, partitioned by client IP until Phase 8 (Phase 4, abuse controls).
 
 ---
 
@@ -170,7 +174,7 @@ Each cue stores its own seed, so reordering or deleting cues never changes how t
 
 Project files:
 - `Fireworks.slnx`.
-- `src/api/Fireworks.Api` (net10.0; Npgsql EF 10.0.0, EF Design, Swashbuckle 9.0.6).
+- `src/api/Fireworks.Api` (net11.0, decided; Npgsql EF, EF Design and Swashbuckle at versions that match).
 - `src/api/Fireworks.Api.Tests` (xUnit 2.9.3, EF Sqlite, `SQLitePCLRaw.lib.e_sqlite3`).
 
 `Program.cs` follows the reference order:
@@ -197,9 +201,9 @@ Data and service code:
 - **Identity foundation** (§3.4):
   - Entity `User : ITimestamped` (`id` uuid, `display_name`, `created_at`, `updated_at`). Leave room for `external_provider` / `external_subject` columns, added in Phase 8.
   - The `InitialCreate` migration creates `users`, so migrations run on startup from day one.
-  - `IdentityOptions` bound from `Identity:DefaultUserId` and `Identity:AllowAnonymousWrites`.
+  - An options class bound from `Identity:DefaultUserId` and `Identity:AllowAnonymousWrites`. It shipped as `IdentityOptions` and is renamed to `DefaultUserOptions` before Phase 4 (the `Identity` section and its keys stay), so it no longer shadows ASP.NET Core's `IdentityOptions` and Phase 8 can delete it whole.
   - `FireworksDbInitializer` upserts the default user row.
-  - `ICurrentUser { Guid? UserId; bool IsAuthenticated; }` with an interim `DefaultUserCurrentUser` implementation, registered as scoped.
+  - `ICurrentUser { Guid? UserId; bool IsAuthenticated; bool CanWrite; }` with an interim `DefaultUserCurrentUser` implementation, registered as scoped.
   - `GET api/me` returns `{ userId, displayName, isAuthenticated: false, canWrite }`. `canWrite` reflects `AllowAnonymousWrites` in the interim, and "is authenticated" after Phase 8.
   - Tests: the service resolves the configured ID, and startup fails fast if `DefaultUserId` is missing or invalid.
 - The Angular side gets `core/session.ts`, which fetches `api/me` into a `currentUser` signal. Pages read identity only through this service.
@@ -234,15 +238,18 @@ Config:
   - The test commands.
   - A table of negative controls ("verify the verifier"): deliberate breakages that each check must catch.
 
-**1d. First deploy**
+**1d. First deploy** (deferred by Skyler; the Railway items below wait for it)
 
 - Create the Railway project and add Postgres.
 - Set `ASPNETCORE_ENVIRONMENT=Production` and the assembled `ConnectionStrings__Postgres`.
 - Push.
+- Verify whether Railway's edge appends to or overwrites a client-sent `X-Forwarded-For` (send a spoofed header, read the logged `RemoteIpAddress`). The Phase 4 rate limiter relies on the answer.
 
 **Done when:**
-- Build, `dotnet test`, `npm test` and `typecheck` all pass, each with a negative control recorded in the README.
-- On Railway:
+- Build, `npm test` and `typecheck` all pass, each with a negative control recorded in the README.
+- The backend gate is the **Postgres-gated suite**: `dotnet test` with `FIREWORKS_TEST_POSTGRES` set (compose Postgres on 5433, database `fireworks_test`). A plain `dotnet test` reports the Postgres tests as Skipped and can't exercise `Program.cs`, because the real process migrates before it listens and only speaks Npgsql; deleting `MapHealthChecks` passes the plain run and fails the gated one. Plain `dotnet test` stays the fast loop. Reports and gates say which suite ran, with counts.
+- The backend suite (including the Postgres-gated tests) and the API both run on the **.NET 11 runtime** (`net11.0`, decided), without `DOTNET_ROLL_FORWARD`, and the **full three-stage `docker build`** completes.
+- On Railway (after 1d):
   - `/health/live` returns `Healthy` as text/plain.
   - Deep links return `index.html`.
   - `/api/nope` returns 404.
@@ -282,7 +289,7 @@ Config:
   - Crackle pops spawning with negative age.
   - Behavior at the particle cap.
   - `normalize` round-trips every preset.
-- **Import-boundary drift spec:** `model/`, `sim/` and `loop/` import nothing from `@angular/*` or `pixi.js`, and only `render/` imports Pixi.
+- **Import-boundary drift spec:** `model/`, `sim/` and `loop/` import nothing from `@angular/*` or `pixi.js`, and only `render/` imports Pixi, anywhere under `src/`. The spec has no allow-list. The Phase 1 canary (`pages/home/pixi-canary/canary-scene.ts`) imports `pixi.js` outside `engine/render`, so 2a either deletes the canary or moves its scene under `engine/render`.
 
 **2b. Angular host component**
 
@@ -296,11 +303,14 @@ Config:
 **2c. Shell Designer page**
 
 - Route `/` lazy-loads `designer-page`.
-- **Before 2c starts: forms spike (decided, OQ17).** Yoshi and Luigi check whether Angular Signal Forms are stable (not experimental or developer preview) in the installed Angular 22 version. If they are, the designer uses Signal Forms. If not, it uses typed reactive forms as below. Record the outcome as a decision record either way.
-- **Design-review note:** the default mode is the preview loop, so `/` auto-plays bursts, including strobe, as soon as it opens. Rosalina decides whether the photosensitivity notice and reduced-motion handling move forward from Phase 7 to here.
+- **Forms (decided, OQ17):** the designer uses Angular **Signal Forms** (`@angular/forms/signals`), which are stable in Angular 22.
+- **Design-review note:** the default mode is the preview loop, so `/` auto-plays bursts, including strobe, as soon as it opens. Rosalina decides whether the photosensitivity notice and reduced-motion handling move forward from Phase 7 to here. She also reviews three items Luigi left open in Phase 1:
+  - The toast and success colors are placeholders; the prototype has no such tokens.
+  - The semantic token names in `styles.css` need her review before 2c components depend on them.
+  - When the API is down, the "API unavailable" modal and an error toast show at the same time. Decide whether one should suppress the other.
 - Layout: a 340px panel next to the stage, stacking vertically below 760px.
 - `ShellDesignerStore` (an `@Injectable()` scoped to the page) holds the `shell`, `activeBreak`, `sky`, `quality` and `mode` signals. Its methods are `loadPreset`, `addBreak` (up to 4, copying the previous break), `removeBreak` and `applyJson`.
-- The form (fallback if Signal Forms aren't stable) is a typed `NonNullableFormBuilder` with a `FormArray` of breaks. Either way, changes run through `normalize` and then go into `store.shell`.
+- The form is a Signal Form over the shell model, with the breaks as an array field. Changes run through `normalize` and then go into `store.shell`. `range-row` and `select-row` are Signal Forms custom controls, not ControlValueAccessors.
 - Presentational components: `playback-controls`, `preset-bar`, `shell-fields`, `break-tabs`, `break-fields`, `sky-fields`, `quality-fields`, `json-panel`, `hud`.
 - Shared form controls (ControlValueAccessors): `range-row`, and `select-row` with color swatches and a rainbow gradient.
 - The Space key fires, except when a form element has focus.
@@ -369,32 +379,37 @@ Config:
 - **Repository and service:**
   - `ICreationRepository` / `ICreationService`.
   - `ShareCodeGenerator` uses `RandomNumberGenerator.GetItems` and retries if the code is already taken.
-  - The service takes `ICurrentUser`. Writes require a resolved user, and edit/delete require `owner_user_id == currentUser.UserId`. Otherwise it returns `Forbidden`.
+  - The service takes `ICurrentUser`. **The write gate lives in the service:** every create, update, delete and remix path first checks `CanWrite` and a non-null `UserId`, and returns `ServiceErrorType.Forbidden` (new in `ServiceResults.cs`) when either fails. Client-side hiding and controller attributes are not the gate.
+  - The owner is always `ICurrentUser.UserId`, never a request field. Updates and deletes filter on `id AND owner_user_id` in the same query, and a creation the current user doesn't own returns **404**, not 403, so a non-owner can't tell "exists" from "doesn't".
+  - `GET api/me/creations` checks `CanWrite` the same way and returns `Forbidden` when it's false (§3.4, "My creations follows the write switch").
 - **Controller** (`CreationsController`):
 
   | Method and route | Behavior |
   |---|---|
   | `POST api/creations` | Creates a creation owned by the current user; returns 201 |
   | `GET api/creations/{shareCode}` | Public; returns the creation |
-  | `PUT api/creations/{shareCode}` | Owner only; returns 200, 400, 403 or 404 |
-  | `DELETE api/creations/{shareCode}` | Owner only; returns 204, 403 or 404 |
-  | `POST api/creations/{shareCode}/remix` | Creates a copy owned by the current user, with `remixedFrom` set |
-  | `GET api/me/creations` | The current user's creations, paged, newest first |
+  | `PUT api/creations/{shareCode}` | Owner only; returns 200, 400, 403 (writes off) or 404 (missing or not owned) |
+  | `DELETE api/creations/{shareCode}` | Owner only; returns 204, 403 (writes off) or 404 (missing or not owned) |
+  | `POST api/creations/{shareCode}/remix` | Creates a copy owned by the current user, with `remixedFrom` set; 403 when writes are off |
+  | `GET api/me/creations` | The current user's creations, paged, newest first; 403 when `CanWrite` is false |
 
-  - Add a `Forbidden` error type, mapped in `ToErrorResult`.
+  - Map `ServiceErrorType.Forbidden` to 403 in `ToErrorResult`.
   - Add `[RequestSizeLimit(65536)]`.
-  - Write endpoints go through a `RequireWriteIdentity` policy or filter. In the interim it checks `AllowAnonymousWrites`; in Phase 8 it becomes `[Authorize]`.
+  - **No `[Authorize(Policy)]` before Phase 8.** No authentication scheme is registered, so a failing policy has nothing to Forbid with and throws. The service-layer `CanWrite` check is the gate in the interim and stays after Phase 8, when `CanWrite` means "is authenticated" and Phase 8 adds the policy on top.
 - **Abuse controls:**
-  - A fixed-window rate limiter on writes (for example 20 per minute and 300 per day), partitioned by user ID and falling back to client IP.
-  - It depends on the forwarded-headers setup to see the real client IP.
+  - A fixed-window rate limiter on writes (for example 20 per minute and 300 per day), **partitioned by client IP** before Phase 8. Every interim visitor resolves to the same default `UserId`, so a user-keyed partition would be one global bucket any single client could drain. Phase 8 partitions by user when `IsAuthenticated`, falling back to IP.
+  - `/health/live` is excluded from the limiter, so Railway's probe is never throttled.
+  - It depends on the forwarded-headers setup to see the real client IP. `ForwardedHeadersOptions.ForwardLimit` stays 1 (the default) while the known lists are cleared, so the rightmost, edge-appended `X-Forwarded-For` entry wins. Don't rely on the limiter until the 1d check has confirmed whether Railway's edge appends to or overwrites a client-sent `X-Forwarded-For`; if 1d hasn't run, run that check on Phase 4's first deploy.
 - **Tests:**
+  - A gate test that enumerates every non-GET endpoint from `EndpointDataSource` (the router, not a hand-written list) plus `GET api/me/creations`, and asserts each returns 403 when `CanWrite` is false.
+  - A reflection or grep test that only the identity module and tests reference the default-user options type (§3.4).
   - Service tests with a fake repository and a fake `ICurrentUser`. Owner vs. non-owner paths are tested with two user IDs, so ownership is proven before real auth exists.
   - A `CreationApiHarness` (Kestrel and SQLite) covering model binding, 400 responses, 413 for oversized requests, and every fixture: valid ones return 201, invalid ones return 400.
   - A `[PostgresFact]` test that proves the `jsonb` column and the unique index.
 
 **Done when:**
 - All endpoints work through the `.http` file.
-- The test suites are green, with negative controls.
+- The test suites are green, with negative controls, including the Postgres-gated suite.
 - The migration applies itself on Railway.
 
 **Risks:**
@@ -410,13 +425,14 @@ Config:
   - Share copies `/s/:code` to the clipboard and shows a toast.
   - A dirty indicator.
   - `/c/:shareCode` opens a creation in the designer. If `isOwner` is false, saving becomes a remix.
-  - Anonymous play never needs the server. The localStorage draft keeps unsaved work. Save/remix controls appear based on `session.canWrite()`, which is always true in the interim and depends on login after Phase 8.
+  - Anonymous play never needs the server. The localStorage draft keeps unsaved work. Save/remix controls appear based on `session.canWrite()`, which reflects `Identity:AllowAnonymousWrites` in the interim (false in production unless switched on for testing) and depends on login after Phase 8.
 - **Player** at `/s/:shareCode`:
   - Full screen, lazy-loaded. It fetches the creation, upgrades it, normalizes it, and plays it.
   - An overlay shows the name and a "Remix" button.
   - Unknown codes get a 404 page.
 - **My creations** at `/mine`:
   - Lists creations from `GET api/me/creations`, with open, share and delete.
+  - Follows the write switch (§3.4): the nav entry is hidden when `session.canWrite()` is false, and a direct visit to `/mine` in that state shows a short "unavailable" notice (copy by Rosalina) without calling the endpoint, so the 403 never surfaces as an error toast.
   - Cards show palette swatches instead of live Pixi canvases.
 - Saves that show validation errors inline use the reference's `SUPPRESS_ERROR_TOAST` HttpContext token.
 
@@ -462,7 +478,13 @@ Deep links also work on Railway. The Railway round trip runs with writes switche
 
 - Choose a provider (OQ19): the reference's cookie auth extended to multiple users, ASP.NET Identity, or external OAuth/OIDC (Google, GitHub, Microsoft).
 - Add `external_provider` / `external_subject` to `users` (unique together). Provision the user on first login.
-- Replace `DefaultUserCurrentUser` with `ClaimsCurrentUser`. `RequireWriteIdentity` becomes `[Authorize]`. Remove `Identity:DefaultUserId` from production.
+- **Server seam.** Services, controllers and the creations schema don't change; they already ask `ICurrentUser` and check `CanWrite`. The identity module and pipeline do:
+  - Replace the `DefaultUserCurrentUser` registration with `ClaimsCurrentUser` (`CanWrite` = `IsAuthenticated`), and add an authorization policy (fallback or `[Authorize]` on write endpoints) now that a scheme exists.
+  - Remove `Identity:DefaultUserId` from production. That means dropping the guard in `IdentityRegistration` that throws when it's missing, and deleting `DefaultUserOptions` whole.
+  - Stop seeding: remove `FireworksDbInitializer.EnsureDefaultUserExistsAsync` and its call from `Program.cs` step 12.
+  - Pipeline: `UseAuthentication()` and `UseAuthorization()` after `UseRouting()`, and `.AllowAnonymous()` on `/health/live`, the SPA fallback (`MapFallbackToFile`) and the share-code `GET`.
+  - Rate limiting partitions by user when `IsAuthenticated`, then by IP (Phase 4); consider a real `KnownProxies` entry in place of the cleared lists.
+  - "My creations" no longer depends on the interim switch: `CanWrite` now means signed in, so the §3.4 rule becomes "listing needs a login" with no code change.
 - Migrate the interim default user's creations. Either assign them to the owner's real account (a one-off SQL or admin step) or leave them as read-only legacy items.
 - Client:
   - Login/logout UI.
@@ -505,7 +527,7 @@ Every phase ends with Mario's phase-gate. Koopa's retrospective is optional. Scr
 | 1 | **Identity** | ✅ **Decided:** anonymous session for play, with persistence tied to a user ID from the start. A configured default user stands in until the auth pass (§3.4, Phase 8). |
 | 2 | **Is a "creation" a shell only, or shells and shows?** | ✅ **Decided:** shells first (Phases 4–5), shows later (Phase 6). The schema for both is frozen in Phase 3. |
 | 3 | **Do share links show the latest edit, or a fixed snapshot?** | Default accepted: **the latest edit** (the owner can update it). Remix creates a new creation owned by the remixer. Safe before Phase 8 because production writes are off (OQ20). |
-| 4 | **Public gallery?** | ✅ **Decided: no.** Links are unlisted, and "My creations" is a server-side list per user. |
+| 4 | **Public gallery?** | ✅ **Decided: no.** Links are unlisted, and "My creations" is a server-side list per user. Before Phase 8 it follows the write switch: `GET api/me/creations` returns 403 and `/mine` is hidden when `canWrite` is false (§3.4). |
 | 5 | **Coordinates across aspect ratios** | ✅ **Decided:** like the prototype. A fixed 800-unit height, width follows the window, and `x` is a fraction of the width. |
 | 6 | **Are gravity and wind saved with a shell?** | Default accepted: **yes**, in an optional `sky` block. Motion blur and star budget aren't saved. Sky precedence inside shows is settled in Phase 3. |
 | 7 | **Database** | Default accepted: Postgres 18 with `jsonb`, as in the reference. |
@@ -518,7 +540,7 @@ Every phase ends with Mario's phase-gate. Koopa's retrospective is optional. Scr
 | 14 | **List thumbnails** | Default accepted: palette swatch cards, fed by `CreationListItem.palette`. Rendered thumbnails come later. |
 | 15 | **Copy the `.squad/` and `.claude/skills` tooling?** | ✅ **Resolved:** the Squad team was set up as `.claude/agents/` plus `.squad/`. The reference's `.claude/skills` aren't needed. |
 | 16 | **Engine as a folder or as an ng-packagr library?** | Default accepted: a folder, plus the boundary spec. |
-| 17 | **Typed reactive forms or Signal Forms?** | ✅ **Decided:** Signal Forms if they're stable in the installed Angular 22, otherwise typed reactive forms. Yoshi and Luigi check before 2c. |
+| 17 | **Typed reactive forms or Signal Forms?** | ✅ **Decided:** **Signal Forms** on Angular 22.2.x. They're stable (`@publicApi 22.0`) in the version we use, and they're the direction Angular is heading. Skyler expects them to be the pattern in the next LTS release. |
 | 18 | **Custom domain** | Default accepted: Railway's generated domain for now. |
 | 19 | **Auth provider for Phase 8** | Deferred to Phase 8. Recommended: external OIDC (for example Google and GitHub) with cookie sessions. |
 | 20 | **Allow saves on the public Railway deployment before Phase 8?** | ✅ **Decided:** off in production (`appsettings.json` false, Development true). Switched on in Railway only while testing. `api/me` reports `canWrite`, and the UI hides the write controls when it's false. |

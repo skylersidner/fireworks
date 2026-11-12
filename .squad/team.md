@@ -4,7 +4,7 @@
 
 - **Project:** fireworks (Fireworks Sandbox)
 - **Description:** A web app for designing, saving, sharing and playing fireworks shells and shows, built from a single-file PixiJS prototype.
-- **Stack:** Angular 22 (standalone, zoneless, signals, Tailwind 4), PixiJS v8, .NET 10 ASP.NET Core API, EF Core + Postgres 18, Docker, Railway
+- **Stack:** Angular 22 (standalone, zoneless, signals, Tailwind 4), PixiJS v8, .NET 11 ASP.NET Core API, EF Core + Postgres 18, Docker, Railway
 - **Owner:** Skyler Sidner
 - **Plan:** `plans/initial-implementation.md`
 - **Architecture reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular` (structure and conventions only, not its domain)

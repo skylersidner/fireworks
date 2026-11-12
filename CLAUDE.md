@@ -1,6 +1,6 @@
 # Fireworks Sandbox
 
-A web app for designing, saving, sharing and playing fireworks shells (and later timed shows), built from the PixiJS prototype in `prototypes/fireworks-prototype.html`. Stack: Angular 22 + PixiJS 8 + .NET 10 API + Postgres 18, deployed on Railway.
+A web app for designing, saving, sharing and playing fireworks shells (and later timed shows), built from the PixiJS prototype in `prototypes/fireworks-prototype.html`. Stack: Angular 22 + PixiJS 8 + .NET 11 API + Postgres 18, deployed on Railway.
 
 - **Plan:** `plans/initial-implementation.md`. It is the source of truth for phases, scope and "Done when" criteria.
 - **Architecture reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular`. Mirror its structure and conventions; never copy its domain.

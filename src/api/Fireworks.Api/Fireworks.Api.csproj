@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      EF Core stays on 10.x while the app targets net11.0: Npgsql.EntityFrameworkCore.PostgreSQL has no
+      stable 11.x yet (11.0.0-rc.3 is the newest on 2026-11-12), and 10.0.3 depends on
+      Microsoft.EntityFrameworkCore[.Relational] [10.0.4, 11.0.0). EF Design (here), EF Sqlite (tests) and
+      dotnet-ef (dotnet-tools.json) move with it, as one EF Core major. Bump all four together once a
+      stable Npgsql 11 ships. (The old System.Security.Cryptography.Pkcs pin is gone: EF Design 10.0.15
+      no longer pulls Pkcs at all, and the transitive vulnerability audit is clean.)
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="11.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Development settings never ship. appsettings.Development.json turns anonymous writes on
+      (plan §5 OQ20), so a container started with ASPNETCORE_ENVIRONMENT=Development must not find
+      it. Without it the app falls back to appsettings.json, which has AllowAnonymousWrites=false
+      and no connection string, so it fails closed at startup.
+    -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>
