@@ -13,3 +13,6 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 0 rulings (cross-agent update)
+- The landing route `/` auto-plays bursts, including strobe (prototype default mode is `loop`). At the 2c design-review, decide whether the photosensitivity notice and reduced-motion handling move earlier than Phase 7.

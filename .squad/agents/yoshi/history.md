@@ -13,3 +13,8 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 0 rulings (cross-agent update)
+- Run the Signal Forms spike with Luigi before 2c (OQ17).
+- Phase 3 schema must state two things: show-vs-shell sky precedence (one sim, one gravity) and `burstHeight` as a fraction of ground height (760), not of the 800 sky.
+- Phase 4 may need a dev-only second user, to exercise the non-owner path (see §3.4 interim identity).

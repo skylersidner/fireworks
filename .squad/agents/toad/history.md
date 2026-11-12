@@ -13,3 +13,7 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 0 rulings (cross-agent update)
+- The Phase 5 non-owner remix branch can only be tested through Phase 4 two-user service tests before Phase 8, because the interim identity makes everyone the default user.
+- The Railway round trip runs with `Identity__AllowAnonymousWrites` temporarily on (OQ20).

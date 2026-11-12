@@ -13,3 +13,9 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 0 rulings (cross-agent update)
+- OQ20 ruling: `Identity:AllowAnonymousWrites` is false in `appsettings.json` and true in Development. Railway env var `Identity__AllowAnonymousWrites` is toggled on only for testing. `api/me` includes `canWrite`.
+- `.dockerignore` must exclude `.squad/`, `.claude/`, `plans/`, and `prototypes/`.
+- `CreationListItem` carries the derived palette.
+- Angular stays on port 4200. The API stays on 5180.

@@ -13,3 +13,8 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 0 rulings (cross-agent update)
+- Before 2c starts, run the Signal Forms spike with Yoshi (OQ17). Use Signal Forms if they're stable in the installed Angular 22. Otherwise use typed reactive forms. Record the outcome.
+- `session.canWrite` comes from `api/me` and hides write controls when false (OQ20).
+- Angular dev server stays on port 4200 (OQ12).

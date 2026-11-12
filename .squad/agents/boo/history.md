@@ -13,3 +13,6 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 0 rulings (cross-agent update)
+- Production writes are off until Phase 8 (OQ20). This is what makes OQ3 (share links show the latest edit, so a link can be rewritten) and OQ13 (owner-based deletion, which is effectively anyone's deletion under the interim identity) acceptable in the interim. Restate both as conditions in the Phase 4 and 5 security reviews.
