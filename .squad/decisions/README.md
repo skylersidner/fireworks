@@ -52,3 +52,7 @@
 |---|---|
 | **Anonymous play; persistence is owned by a user ID from day one,** resolved through `ICurrentUser`, with a configured default user until Phase 8. | `plans/initial-implementation.md` §3.4 |
 | **Shells first, shows later. No public gallery. No CI.** | `plans/initial-implementation.md` §5 |
+| **Production writes are off until Phase 8.** `AllowAnonymousWrites` is false in `appsettings.json` and true in Development, switched on in Railway only while testing. `api/me` reports `canWrite`. | plan §3.4, §5 OQ20 |
+| **Stage coordinates follow the prototype:** a fixed 800-unit height, width follows the window, and cue `x` is a fraction of the width. | plan §5 OQ5 |
+| **Names and ports:** `Fireworks.*`, API 5180, DB 5433, Angular dev server on 4200 (not run alongside Monster of the Week). | plan §5 OQ12 |
+| **Forms: Signal Forms if they're stable in the installed Angular 22, otherwise typed reactive forms.** Checked by Yoshi and Luigi before 2c. | plan §5 OQ17 |

@@ -1,7 +1,7 @@
 # Fireworks Sandbox — Initial Implementation Plan
 
 **Stack:** .NET 10 + Angular 22, mirroring `monster-of-the-week-net-angular`.
-**Status:** Draft. These decisions are confirmed (2026-11-12): identity model, shells first then shows, no public gallery, no CI. The rest of §5 uses recommended defaults.
+**Status:** Phase 0 complete (2026-11-12). Skyler has decided OQ1, 2, 4, 5, 11, 12, 17 and 20. Every other question in §5 uses its recommended default, except OQ19, which waits for Phase 8.
 
 ## 1. Overview
 
@@ -107,7 +107,7 @@ The saved unit is an **envelope** with `kind: "shell" | "show"`.
 {
   "version": 1,
   "name": "Triple Break",                 // 1..80 chars
-  "burstHeight": 0.55,                    // 0.30..0.85 (fraction of sky)
+  "burstHeight": 0.55,                    // 0.30..0.85 (fraction of ground height, 760 units; prototype: GROUND - h*GROUND)
   "angleJitter": 4,                       // 0..20 degrees
   "sky": { "gravity": 160, "wind": 0 },   // optional; defaults applied on load
   "breaks": [                             // 1..4
@@ -145,9 +145,11 @@ Each cue stores its own seed, so reordering or deleting cues never changes how t
   - Controllers and services never read the config directly; they only ask `ICurrentUser`.
   - Swapping in real auth later means replacing one DI registration with a claims-based implementation and adding `[Authorize]` / a fallback policy. The schema and service code don't change.
 - **Reading share links stays public.** `GET` by share code needs no identity. Creations are unlisted: reachable only by link, with no public gallery.
-- **Interim exposure (accepted risk).** Before Phase 8, anyone who reaches the deployed site saves as the default user and can edit any default-user creation. Mitigations until Phase 8:
-  - Rate limits.
-  - An optional `Identity:AllowAnonymousWrites` flag (default `true` in dev). Setting it to `false` on Railway makes the deployment read-only for saves.
+- **Interim exposure, contained (decided, OQ20).** Before Phase 8, anyone who reaches the deployed site saves as the default user and could edit or delete any creation. So:
+  - `Identity:AllowAnonymousWrites` is **`false` in `appsettings.json`** (production) and **`true` in `appsettings.Development.json`**.
+  - On Railway, saving is switched on only while testing, via the `Identity__AllowAnonymousWrites=true` env var, then switched off again.
+  - `GET api/me` reports `canWrite`, so the client hides Save, Remix and Delete when writes are off rather than letting them fail with 403.
+  - Write endpoints are rate-limited.
 
 ---
 
@@ -198,7 +200,7 @@ Data and service code:
   - `IdentityOptions` bound from `Identity:DefaultUserId` and `Identity:AllowAnonymousWrites`.
   - `FireworksDbInitializer` upserts the default user row.
   - `ICurrentUser { Guid? UserId; bool IsAuthenticated; }` with an interim `DefaultUserCurrentUser` implementation, registered as scoped.
-  - `GET api/me` returns `{ userId, displayName, isAuthenticated: false }`.
+  - `GET api/me` returns `{ userId, displayName, isAuthenticated: false, canWrite }`. `canWrite` reflects `AllowAnonymousWrites` in the interim, and "is authenticated" after Phase 8.
   - Tests: the service resolves the configured ID, and startup fails fast if `DefaultUserId` is missing or invalid.
 - The Angular side gets `core/session.ts`, which fetches `api/me` into a `currentUser` signal. Pages read identity only through this service.
 
@@ -225,9 +227,9 @@ Config:
 
 - `Dockerfile`: the reference's three stages, with paths renamed.
 - `docker-compose.yml`: `postgres:18`, container `fireworks-postgres`, database `fireworks`, user `fireworks_app`, host port **5433**:5432 so it doesn't collide with the MotW container.
-- `.env.example`, `.dockerignore`, `.gitignore`, and `railway.toml`.
+- `.env.example`, `.dockerignore` (also excludes `.squad/`, `.claude/`, `plans/` and `prototypes/`), and `railway.toml`. (`.gitignore` landed in Phase 0.)
 - `README.md` covering:
-  - The dev loop: `docker compose up -d postgres`, then `dotnet run`, then `npm start` and open :4200.
+  - The dev loop: `docker compose up -d postgres`, then `dotnet run`, then `npm start` and open :4200. The Angular dev server stays on 4200 (decided, OQ12), so don't run this app and Monster of the Week's frontend at the same time.
   - The warnings about the wwwroot folder and `dotnet clean`.
   - The test commands.
   - A table of negative controls ("verify the verifier"): deliberate breakages that each check must catch.
@@ -294,9 +296,11 @@ Config:
 **2c. Shell Designer page**
 
 - Route `/` lazy-loads `designer-page`.
+- **Before 2c starts: forms spike (decided, OQ17).** Yoshi and Luigi check whether Angular Signal Forms are stable (not experimental or developer preview) in the installed Angular 22 version. If they are, the designer uses Signal Forms. If not, it uses typed reactive forms as below. Record the outcome as a decision record either way.
+- **Design-review note:** the default mode is the preview loop, so `/` auto-plays bursts, including strobe, as soon as it opens. Rosalina decides whether the photosensitivity notice and reduced-motion handling move forward from Phase 7 to here.
 - Layout: a 340px panel next to the stage, stacking vertically below 760px.
 - `ShellDesignerStore` (an `@Injectable()` scoped to the page) holds the `shell`, `activeBreak`, `sky`, `quality` and `mode` signals. Its methods are `loadPreset`, `addBreak` (up to 4, copying the previous break), `removeBreak` and `applyJson`.
-- The form is a typed `NonNullableFormBuilder` with a `FormArray` of breaks. Changes run through `normalize` and then go into `store.shell`.
+- The form (fallback if Signal Forms aren't stable) is a typed `NonNullableFormBuilder` with a `FormArray` of breaks. Either way, changes run through `normalize` and then go into `store.shell`.
 - Presentational components: `playback-controls`, `preset-bar`, `shell-fields`, `break-tabs`, `break-fields`, `sky-fields`, `quality-fields`, `json-panel`, `hud`.
 - Shared form controls (ControlValueAccessors): `range-row`, and `select-row` with color swatches and a rainbow gradient.
 - The Space key fires, except when a form element has focus.
@@ -332,6 +336,8 @@ Config:
     - The **client** upgrades older documents step by step (`engine/model/upgrade.ts`).
     - A new optional field with a default, or a new enum value, needs no version bump. Anything else does.
   - Fields that are never saved: `starBudget`, `persistence` and mode.
+  - **Sky precedence in shows:** a ShowDocument has a show-level `sky`, and its embedded shells can carry their own. The schema must say which wins (recommended: the show's `sky` wins, and a shell's `sky` is stripped when it's embedded).
+  - **Coordinates (decided, OQ5):** the prototype's model. The world is a fixed 800 units tall, width follows the window, and cue `x` is a fraction of the width.
   - The share code format: 8 characters from an alphabet without look-alikes (no 0/O/I/l).
   - The ownership model: creations belong to `owner_user_id`, reads by share code are public, and writes are owner-only (§3.4).
 - **Shared fixtures** in the repo-root `schema/` folder, read by both the C# and the TypeScript tests:
@@ -354,7 +360,7 @@ Config:
 - **Contracts** (`Contracts/CreationContracts.cs`):
   - Document types: `ShellDocumentDto`, `BreakDto`, `SkyDto`, `ShowDocumentDto`, `CueDto`.
   - Requests: `CreateCreationRequest(kind, JsonElement document)` and `UpdateCreationRequest`.
-  - Responses: `CreationResponse` (includes `isOwner`, computed from `ICurrentUser`) and `CreationListItem`.
+  - Responses: `CreationResponse` (includes `isOwner`, computed from `ICurrentUser`) and `CreationListItem` (`shareCode`, `kind`, `name`, `updatedAt`, plus a derived `palette`: the distinct break colors the My creations swatch cards need, so the list doesn't ship whole documents).
 - **Validation** (`Services/Creations/CreationDocumentValidator.cs`):
   - Its own `JsonSerializerOptions`: camelCase, `UnmappedMemberHandling = Disallow` so unknown fields return 400, and a camelCase enum converter that applies only to these options.
   - Ranges come from `CreationLimits.cs`, which mirrors `limits.ts`.
@@ -420,7 +426,9 @@ Config:
 3. Remix it.
 4. Edit the original as its owner; the change shows on the share link.
 
-Deep links also work on Railway.
+Deep links also work on Railway. The Railway round trip runs with writes switched on for the test, and they're switched off afterward.
+
+**Known limit before Phase 8:** every visitor is the default user, so `isOwner` is always true in the running app, and the remix-on-save branch for non-owners can't be seen there. It's covered by the Phase 4 two-user service tests. Whether to add a dev-only second user is a question for Yoshi and Bowser in Phase 4.
 
 ### Phase 6: Show Builder (outline)
 
@@ -496,24 +504,24 @@ Every phase ends with Mario's phase-gate. Koopa's retrospective is optional. Scr
 |---|---|---|
 | 1 | **Identity** | ✅ **Decided:** anonymous session for play, with persistence tied to a user ID from the start. A configured default user stands in until the auth pass (§3.4, Phase 8). |
 | 2 | **Is a "creation" a shell only, or shells and shows?** | ✅ **Decided:** shells first (Phases 4–5), shows later (Phase 6). The schema for both is frozen in Phase 3. |
-| 3 | **Do share links show the latest edit, or a fixed snapshot?** | **The latest edit** (the owner can update it). Remix creates a new creation owned by the remixer. |
+| 3 | **Do share links show the latest edit, or a fixed snapshot?** | Default accepted: **the latest edit** (the owner can update it). Remix creates a new creation owned by the remixer. Safe before Phase 8 because production writes are off (OQ20). |
 | 4 | **Public gallery?** | ✅ **Decided: no.** Links are unlisted, and "My creations" is a server-side list per user. |
-| 5 | **Coordinates across aspect ratios** | `x` is a fraction of the world width, and the world is a fixed 800 units tall. The alternative is a fixed 16:9 letterboxed stage. |
-| 6 | **Are gravity and wind saved with a shell?** | **Yes**, in an optional `sky` block. Motion blur and star budget are viewer settings and are not saved. |
-| 7 | **Database** | Postgres 18 with `jsonb`, as in the reference. |
-| 8 | **Landing route** | The designer at `/`. |
-| 9 | **Audio** | Out of scope for now. It can be added later as an optional field. |
-| 10 | **Mobile** | Desktop first, with the stacked layout and touch-to-fire on small screens. Automatic quality comes in Phase 7. |
+| 5 | **Coordinates across aspect ratios** | ✅ **Decided:** like the prototype. A fixed 800-unit height, width follows the window, and `x` is a fraction of the width. |
+| 6 | **Are gravity and wind saved with a shell?** | Default accepted: **yes**, in an optional `sky` block. Motion blur and star budget aren't saved. Sky precedence inside shows is settled in Phase 3. |
+| 7 | **Database** | Default accepted: Postgres 18 with `jsonb`, as in the reference. |
+| 8 | **Landing route** | Default accepted: the designer at `/`. Rosalina confirms it at the design-review before 2c. |
+| 9 | **Audio** | Default accepted: out of scope for now. It can be added later as an optional field. |
+| 10 | **Mobile** | Default accepted: desktop first, with the stacked layout and touch-to-fire on small screens. Automatic quality comes in Phase 7. |
 | 11 | **CI** | ✅ **Decided:** none, matching the reference. |
-| 12 | **Naming** | `Fireworks.slnx`, `Fireworks.Api`, `fireworks-web`, `fireworks-postgres`, API port 5180, host DB port 5433. |
-| 13 | **Moderation** | An 80-character name limit, deletion by the owner, and a SQL takedown runbook. No content filter. |
-| 14 | **List thumbnails** | Palette swatch cards. Rendered thumbnails come later. |
-| 15 | **Copy the `.squad/` and `.claude/skills` tooling?** | Not in the skeleton. |
-| 16 | **Engine as a folder or as an ng-packagr library?** | A folder, plus the boundary spec. |
-| 17 | **Typed reactive forms or Signal Forms?** | Typed reactive forms, matching the reference. |
-| 18 | **Custom domain** | Railway's generated domain for now. |
-| 19 | **Auth provider for Phase 8** | External OIDC (for example Google and GitHub) with cookie sessions. Decide before Phase 8 starts. |
-| 20 | **Allow saves on the public Railway deployment before Phase 8?** | Default `AllowAnonymousWrites=true` so the full flow can be tested. Set it to `false` if the URL will be shared before auth exists. |
+| 12 | **Naming and ports** | ✅ **Decided:** `Fireworks.slnx`, `Fireworks.Api`, `fireworks-web`, `fireworks-postgres`, API port 5180, host DB port 5433. The Angular dev server stays on 4200, and this app isn't run alongside Monster of the Week's frontend. |
+| 13 | **Moderation** | Default accepted: an 80-character name limit, deletion by the owner, and a SQL takedown runbook. No content filter. Safe before Phase 8 because production writes are off (OQ20). |
+| 14 | **List thumbnails** | Default accepted: palette swatch cards, fed by `CreationListItem.palette`. Rendered thumbnails come later. |
+| 15 | **Copy the `.squad/` and `.claude/skills` tooling?** | ✅ **Resolved:** the Squad team was set up as `.claude/agents/` plus `.squad/`. The reference's `.claude/skills` aren't needed. |
+| 16 | **Engine as a folder or as an ng-packagr library?** | Default accepted: a folder, plus the boundary spec. |
+| 17 | **Typed reactive forms or Signal Forms?** | ✅ **Decided:** Signal Forms if they're stable in the installed Angular 22, otherwise typed reactive forms. Yoshi and Luigi check before 2c. |
+| 18 | **Custom domain** | Default accepted: Railway's generated domain for now. |
+| 19 | **Auth provider for Phase 8** | Deferred to Phase 8. Recommended: external OIDC (for example Google and GitHub) with cookie sessions. |
+| 20 | **Allow saves on the public Railway deployment before Phase 8?** | ✅ **Decided:** off in production (`appsettings.json` false, Development true). Switched on in Railway only while testing. `api/me` reports `canWrite`, and the UI hides the write controls when it's false. |
 
 ---
 
