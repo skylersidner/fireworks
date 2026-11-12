@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/.angular/
+.env
+
+# The Angular production build is written straight into the API project's wwwroot by
+# angular.json's outputPath. It is a build artifact and is never committed.
+src/api/Fireworks.Api/wwwroot/
+
+# OS and local tooling noise. Team config in .claude/agents/ and .squad/ IS committed;
+# only per-machine Claude Code settings are ignored.
+.DS_Store
+.claude/settings.local.json

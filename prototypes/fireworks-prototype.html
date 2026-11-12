@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fireworks Sandbox — Shell Prototype</title>
+<style>
+  :root {
+    --bg: #04060c; --panel: #0d111c; --panel2: #141a29; --line: #232b40;
+    --text: #e6e9f2; --dim: #8b93a8; --accent: #ffb347; --accent2: #ff7a59;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { display: flex; height: 100%; }
+  #panel { width: 340px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
+    overflow-y: auto; padding: 14px 14px 40px; }
+  #stage { flex: 1; position: relative; min-width: 0; cursor: crosshair; }
+  #stage canvas { display: block; }
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .02em; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 12px; }
+  section { border-top: 1px solid var(--line); padding: 12px 0 6px; }
+  section > h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
+    margin: 0 0 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .row { display: grid; grid-template-columns: 96px 1fr 44px; gap: 8px; align-items: center; margin: 6px 0; }
+  .row label { color: var(--dim); }
+  .row .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-size: 12px; }
+  .row.wide { grid-template-columns: 96px 1fr; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  select, input[type=text], textarea { width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font: inherit; }
+  textarea { font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; height: 180px; resize: vertical; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 10px; font: inherit; cursor: pointer; }
+  button:hover { border-color: #3a4562; }
+  button.primary { background: linear-gradient(180deg, var(--accent), var(--accent2)); color: #1a0d00;
+    border: none; font-weight: 600; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .presets button { font-size: 12px; padding: 4px 8px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
+  .tabs button { padding: 4px 10px; font-size: 12px; }
+  .tabs button.active { border-color: var(--accent); color: var(--accent); }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -2px;
+    margin-left: 6px; box-shadow: 0 0 6px currentColor; }
+  .sel-wrap { display: flex; align-items: center; gap: 6px; }
+  .note { color: var(--dim); font-size: 11px; margin-top: 4px; }
+  #hud { position: absolute; top: 10px; right: 12px; text-align: right; color: var(--dim);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; pointer-events: none; text-shadow: 0 1px 2px #000; }
+  #hint { position: absolute; top: 10px; left: 12px; color: var(--dim); font-size: 12px; pointer-events: none;
+    text-shadow: 0 1px 2px #000; }
+  #err { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #ff9a8a; padding: 30px; text-align: center; }
+  @media (max-width: 760px) {
+    #app { flex-direction: column-reverse; }
+    #panel { width: 100%; height: 45%; border-right: none; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1>Fireworks Sandbox</h1>
+    <div class="sub">Shell designer prototype · PixiJS v8</div>
+
+    <section>
+      <h2>Playback</h2>
+      <div class="btns">
+        <button class="primary" id="btnLaunch">Launch (Space)</button>
+        <button id="btnReplay" title="Re-fire the last launch with the same seed">Replay last</button>
+        <button id="btnClear">Clear sky</button>
+      </div>
+      <div class="row wide" style="margin-top:10px">
+        <label>Mode</label>
+        <select id="mode">
+          <option value="loop">Preview loop (current shell)</option>
+          <option value="manual">Manual (click sky / Space)</option>
+          <option value="show">Auto show (random presets)</option>
+        </select>
+      </div>
+      <div class="note">Click anywhere in the sky to burst the current shell at that point.</div>
+    </section>
+
+    <section class="presets">
+      <h2>Presets</h2>
+      <div class="btns" id="presets"></div>
+    </section>
+
+    <section>
+      <h2>Shell</h2>
+      <div id="shellFields"></div>
+    </section>
+
+    <section>
+      <h2><span>Breaks</span><span class="btns"><button id="addBreak" title="Add break">+ add</button><button id="delBreak" title="Remove this break">− remove</button></span></h2>
+      <div class="tabs" id="breakTabs"></div>
+      <div id="breakFields"></div>
+    </section>
+
+    <section>
+      <h2>Sky &amp; physics</h2>
+      <div id="worldFields"></div>
+    </section>
+
+    <section>
+      <h2>Shell JSON <span class="btns"><button id="btnCopy">Copy</button><button id="btnApply">Apply</button></span></h2>
+      <textarea id="json" spellcheck="false"></textarea>
+      <div class="note" id="jsonNote">This is the document the .NET API would persist. Edit and Apply to load it.</div>
+    </section>
+  </aside>
+  <main id="stage">
+    <div id="hint">Click the sky to fire · Space to launch</div>
+    <div id="hud"></div>
+    <div id="err"></div>
+  </main>
+</div>
+
+<script type="module">
+import { Application, Container, Graphics, ParticleContainer, Particle, RenderTexture, Sprite, Texture }
+  from 'https://cdn.jsdelivr.net/npm/pixi.js@8.23.0/dist/pixi.min.mjs';
+
+/* ============================================================
+   Data model — what gets persisted
+   ============================================================ */
+const COLORS = {
+  red: 0xff3b30, orange: 0xff8a1f, gold: 0xffc94a, green: 0x3dff6e, cyan: 0x4de8ff,
+  blue: 0x4a6bff, purple: 0xb05cff, pink: 0xff5cc8, white: 0xffffff, silver: 0xcfd8ff,
+};
+const PALETTE = Object.keys(COLORS);
+const PATTERNS = ['peony', 'ring', 'palm', 'heart'];
+const TRAILS = ['none', 'tail', 'glitter'];
+const EFFECTS = ['none', 'crackle', 'crossette', 'strobe'];
+
+const newBreak = (o = {}) => ({
+  pattern: 'peony', stars: 120, speed: 220, color1: 'red', color2: 'none', changeAt: 0.6,
+  burn: 1.6, drag: 0.9, size: 1, trail: 'none', effect: 'none', delay: 0.6, ...o,
+});
+const newShell = (name, o = {}) => ({
+  version: 1, name, burstHeight: 0.65, angleJitter: 4, ...o,
+  breaks: (o.breaks || [newBreak()]).map(b => newBreak(b)),
+});
+
+const PRESETS = [
+  newShell('Peony', { breaks: [{ color1: 'red', color2: 'gold', changeAt: 0.65 }] }),
+  newShell('Chrysanthemum', { breaks: [{ color1: 'silver', color2: 'blue', changeAt: 0.7, trail: 'tail', stars: 140, speed: 230, burn: 1.8 }] }),
+  newShell('Willow', { burstHeight: 0.72, breaks: [{ color1: 'gold', trail: 'glitter', stars: 110, speed: 210, burn: 3.6, drag: 1.5, size: 0.8 }] }),
+  newShell('Palm', { burstHeight: 0.6, breaks: [{ pattern: 'palm', color1: 'gold', trail: 'tail', stars: 9, speed: 270, burn: 2.2, drag: 0.8, size: 1.8 }] }),
+  newShell('Ring', { breaks: [{ pattern: 'ring', color1: 'cyan', stars: 70, speed: 230, burn: 1.4 }] }),
+  newShell('Crossette', { breaks: [{ color1: 'green', trail: 'tail', stars: 28, speed: 210, burn: 1.0, drag: 1.0, effect: 'crossette', size: 1.2 }] }),
+  newShell('Crackling Heart', { breaks: [{ pattern: 'heart', color1: 'pink', stars: 90, speed: 200, burn: 1.5, drag: 1.0, effect: 'crackle' }] }),
+  newShell('Strobe', { breaks: [{ color1: 'white', stars: 150, speed: 220, burn: 2.4, drag: 1.2, effect: 'strobe', size: 0.8 }] }),
+  newShell('Rainbow', { breaks: [{ color1: 'rainbow', stars: 160, speed: 240, burn: 1.7, trail: 'tail' }] }),
+  newShell('Triple Break', { burstHeight: 0.55, breaks: [
+    { color1: 'blue', stars: 80, speed: 170, burn: 1.2 },
+    { pattern: 'ring', color1: 'gold', stars: 60, speed: 210, burn: 1.3, delay: 0.7 },
+    { color1: 'white', stars: 120, speed: 240, burn: 1.0, effect: 'crackle', delay: 0.8 },
+  ] }),
+];
+
+const world = { gravity: 160, wind: 0, persistence: 0.78, starBudget: 1 };
+let shell = structuredClone(PRESETS[0]);
+let activeBreak = 0;
+
+/* ============================================================
+   Deterministic RNG
+   ============================================================ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ============================================================
+   Simulation — plain TS-style code, no Pixi/DOM dependencies.
+   World units: fixed 800 tall, width follows aspect ratio.
+   ============================================================ */
+const WORLD_H = 800, GROUND = 760, STEP = 1 / 120, CAP = 40000;
+const K_STAR = 0, K_EMBER = 1, K_GLITTER = 2, K_POP = 3, K_FLASH = 4, K_HEAD = 5;
+const T_NONE = 0, T_TAIL = 1, T_GLITTER = 2;
+const E_NONE = 0, E_CRACKLE = 1, E_CROSSETTE = 2, E_STROBE = 3;
+
+const P = {
+  n: 0,
+  x: new Float32Array(CAP), y: new Float32Array(CAP), vx: new Float32Array(CAP), vy: new Float32Array(CAP),
+  age: new Float32Array(CAP), life: new Float32Array(CAP), drag: new Float32Array(CAP),
+  grav: new Float32Array(CAP), size: new Float32Array(CAP), emit: new Float32Array(CAP),
+  change: new Float32Array(CAP), alpha: new Float32Array(CAP),
+  c1: new Uint32Array(CAP), c2: new Uint32Array(CAP), seed: new Int32Array(CAP),
+  kind: new Uint8Array(CAP), trail: new Uint8Array(CAP), effect: new Uint8Array(CAP), gen: new Uint8Array(CAP),
+};
+const FIELDS = ['x','y','vx','vy','age','life','drag','grav','size','emit','change','alpha','c1','c2','seed','kind','trail','effect','gen'];
+let shells = [];
+let simTime = 0;
+
+function prand(i) { // per-particle deterministic stream
+  let a = (P.seed[i] = (P.seed[i] + 0x6D2B79F5) | 0);
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+function spawn(kind, x, y, vx, vy, life, o) {
+  if (P.n >= CAP) return -1;
+  const i = P.n++;
+  P.kind[i] = kind; P.x[i] = x; P.y[i] = y; P.vx[i] = vx; P.vy[i] = vy;
+  P.age[i] = o.age ?? 0; P.life[i] = life; P.drag[i] = o.drag ?? 0; P.grav[i] = o.grav ?? 1;
+  P.size[i] = o.size ?? 1; P.emit[i] = 0; P.change[i] = o.change ?? 2; P.alpha[i] = o.alpha ?? 1;
+  P.c1[i] = o.c1 ?? 0xffffff; P.c2[i] = o.c2 ?? P.c1[i]; P.seed[i] = o.seed ?? 1;
+  P.trail[i] = o.trail ?? 0; P.effect[i] = o.effect ?? 0; P.gen[i] = o.gen ?? 0;
+  return i;
+}
+
+function kill(i) {
+  const last = --P.n;
+  if (i !== last) {
+    for (const f of FIELDS) P[f][i] = P[f][last];
+  }
+}
+
+function starColor(i) {
+  return (P.age[i] / P.life[i]) < P.change[i] ? P.c1[i] : P.c2[i];
+}
+
+/* Launch a shell so it bursts at (tx, ty). Fully deterministic from seed. */
+function launch(def, tx, ty, seed) {
+  const rng = mulberry32(seed);
+  const g = world.gravity;
+  const h = Math.max(60, GROUND - ty);
+  const vy = -Math.sqrt(2 * g * h);
+  const fuse = -vy / g;
+  const jitter = Math.tan((def.angleJitter * Math.PI) / 180) * h;
+  const x0 = tx + (rng() - 0.5) * 2 * jitter;
+  shells.push({ def: structuredClone(def), rng, x: x0, y: GROUND, vx: (tx - x0) / fuse, vy,
+    t: 0, fuse, idx: 0, rising: true, emit: 0 });
+}
+
+function directions(pattern, n, rng) {
+  const out = [];
+  if (pattern === 'ring') {
+    const tilt = 0.25 + rng() * 0.9, roll = rng() * Math.PI, ct = Math.cos(tilt);
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2;
+      const x = Math.cos(a), y = Math.sin(a) * ct;
+      out.push([x * Math.cos(roll) - y * Math.sin(roll), x * Math.sin(roll) + y * Math.cos(roll)]);
+    }
+  } else if (pattern === 'palm') {
+    const off = rng() * Math.PI * 2;
+    for (let k = 0; k < n; k++) {
+      const a = off + (k / n) * Math.PI * 2 + (rng() - 0.5) * 0.25;
+      const m = 0.8 + rng() * 0.2;
+      out.push([Math.cos(a) * m, Math.sin(a) * m]);
+    }
+  } else if (pattern === 'heart') {
+    const roll = (rng() - 0.5) * 0.4;
+    for (let k = 0; k < n; k++) {
+      const t = (k / n) * Math.PI * 2;
+      const hx = 16 * Math.sin(t) ** 3 / 17;
+      const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17;
+      out.push([hx * Math.cos(roll) - hy * Math.sin(roll), hx * Math.sin(roll) + hy * Math.cos(roll)]);
+    }
+  } else { // peony: Fibonacci sphere, randomly rotated, projected to 2D
+    const ax = rng() * Math.PI * 2, ca = Math.cos(ax), sa = Math.sin(ax);
+    const golden = Math.PI * (3 - Math.sqrt(5)), off = rng() * 6.28;
+    for (let k = 0; k < n; k++) {
+      const z = 1 - (2 * (k + 0.5)) / n, r = Math.sqrt(1 - z * z), phi = off + k * golden;
+      const x = r * Math.cos(phi), y = r * Math.sin(phi);
+      const y2 = y * ca - z * sa;
+      const j = 0.94 + rng() * 0.12;
+      out.push([x * j, y2 * j]);
+    }
+  }
+  return out;
+}
+
+function burst(s, br) {
+  const rng = s.rng;
+  const n = Math.max(1, Math.round(br.stars * world.starBudget));
+  const rainbow = br.color1 === 'rainbow';
+  const c1 = COLORS[br.color1] ?? 0xffffff;
+  const c2 = br.color2 !== 'none' ? (COLORS[br.color2] ?? c1) : c1;
+  const flashColor = rainbow ? 0xffffff : c1;
+  spawn(K_FLASH, s.x, s.y, 0, 0, 0.16, { c1: lighten(flashColor), size: 1 + br.stars / 120 });
+  const eff = EFFECTS.indexOf(br.effect), tr = TRAILS.indexOf(br.trail);
+  for (const [dx, dy] of directions(br.pattern, n, rng)) {
+    const sp = br.speed * (0.94 + rng() * 0.12);
+    const col = rainbow ? COLORS[PALETTE[(rng() * PALETTE.length) | 0]] : c1;
+    spawn(K_STAR, s.x, s.y, dx * sp + s.vx * 0.3, dy * sp + s.vy * 0.3, br.burn * (0.88 + rng() * 0.24), {
+      drag: br.drag, size: br.size, c1: col, c2: rainbow ? col : c2, change: br.color2 !== 'none' ? br.changeAt : 2,
+      trail: tr, effect: eff, seed: (rng() * 2 ** 31) | 0,
+    });
+  }
+}
+
+function lighten(c) {
+  const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+  const m = v => Math.min(255, (v + 255) >> 1);
+  return (m(r) << 16) | (m(g) << 8) | m(b);
+}
+
+function onDeath(i) {
+  if (P.kind[i] !== K_STAR) return;
+  const x = P.x[i], y = P.y[i], vx = P.vx[i], vy = P.vy[i];
+  if (P.effect[i] === E_CRACKLE) {
+    const k = 3 + ((prand(i) * 5) | 0);
+    for (let j = 0; j < k; j++) {
+      const a = prand(i) * 6.283, sp = 30 + prand(i) * 70;
+      spawn(K_POP, x, y, vx * 0.2 + Math.cos(a) * sp, vy * 0.2 + Math.sin(a) * sp, 0.06 + prand(i) * 0.07, {
+        age: -prand(i) * 0.3, drag: 5, grav: 0.2, c1: prand(i) < 0.5 ? 0xffffff : 0xffe3a0, size: 1,
+      });
+    }
+  } else if (P.effect[i] === E_CROSSETTE && P.gen[i] === 0) {
+    const a0 = prand(i) * Math.PI / 2, col = P.c2[i];
+    for (let j = 0; j < 4; j++) {
+      const a = a0 + j * Math.PI / 2;
+      spawn(K_STAR, x, y, vx * 0.4 + Math.cos(a) * 110, vy * 0.4 + Math.sin(a) * 110, 0.8 + prand(i) * 0.3, {
+        drag: P.drag[i], size: P.size[i] * 0.8, c1: col, c2: col, trail: P.trail[i], effect: E_NONE, gen: 1,
+        seed: (prand(i) * 2 ** 31) | 0,
+      });
+    }
+    spawn(K_POP, x, y, 0, 0, 0.07, { c1: 0xffffff, size: 1.4 });
+  }
+}
+
+function step(dt) {
+  simTime += dt;
+  const g = world.gravity, wind = world.wind;
+
+  // Shells (few, plain objects)
+  for (let s = shells.length - 1; s >= 0; s--) {
+    const sh = shells[s];
+    sh.t += dt;
+    sh.vy += g * dt; sh.x += sh.vx * dt; sh.y += sh.vy * dt;
+    if (sh.rising) {
+      sh.emit += 150 * dt;
+      while (sh.emit >= 1) {
+        sh.emit -= 1;
+        const r = sh.rng;
+        spawn(K_EMBER, sh.x, sh.y, -sh.vx * 0.05 + (r() - 0.5) * 20, -sh.vy * 0.08 + (r() - 0.5) * 20, 0.25 + r() * 0.35,
+          { drag: 3, grav: 0.4, c1: 0xffb347, size: 0.8, alpha: 0.7, seed: (r() * 2 ** 31) | 0 });
+      }
+      spawn(K_HEAD, sh.x, sh.y, 0, 0, dt * 1.01, { c1: 0xffe2b0 });
+    }
+    if (sh.t >= sh.fuse) {
+      const br = sh.def.breaks[sh.idx];
+      burst(sh, br);
+      sh.idx++;
+      sh.rising = false;
+      if (sh.idx < sh.def.breaks.length) {
+        sh.fuse = sh.t + Math.max(0.1, sh.def.breaks[sh.idx].delay);
+        sh.vx *= 0.3; sh.vy = -60;
+      } else {
+        shells.splice(s, 1);
+      }
+    }
+  }
+
+  // Particles (typed arrays). Iterate downward so swap-remove is safe.
+  for (let i = P.n - 1; i >= 0; i--) {
+    P.age[i] += dt;
+    if (P.age[i] >= P.life[i]) { onDeath(i); kill(i); continue; }
+    const f = Math.exp(-P.drag[i] * dt);
+    P.vx[i] = P.vx[i] * f + wind * dt * (P.kind[i] === K_STAR ? 0.6 : 1);
+    P.vy[i] = P.vy[i] * f + g * P.grav[i] * dt;
+    P.x[i] += P.vx[i] * dt; P.y[i] += P.vy[i] * dt;
+
+    if (P.kind[i] === K_STAR && P.trail[i] !== T_NONE && P.age[i] > 0) {
+      const glitter = P.trail[i] === T_GLITTER;
+      P.emit[i] += (glitter ? 55 : 70) * dt;
+      while (P.emit[i] >= 1) {
+        P.emit[i] -= 1;
+        if (glitter) {
+          spawn(K_GLITTER, P.x[i], P.y[i], (prand(i) - 0.5) * 30, (prand(i) - 0.5) * 30, 0.5 + prand(i) * 0.6, {
+            drag: 2.5, grav: 0.5, c1: prand(i) < 0.7 ? 0xffd27a : 0xffffff, size: 0.7, seed: (prand(i) * 2 ** 31) | 0,
+          });
+        } else {
+          spawn(K_EMBER, P.x[i], P.y[i], P.vx[i] * 0.15 + (prand(i) - 0.5) * 10, P.vy[i] * 0.15 + (prand(i) - 0.5) * 10,
+            0.35 + prand(i) * 0.2, { drag: 3, grav: 0.3, c1: starColor(i), size: 0.9 * P.size[i], alpha: 0.55 });
+        }
+      }
+    }
+  }
+}
+
+/* ============================================================
+   Renderer — Pixi v8. Reads the sim arrays each frame.
+   ============================================================ */
+const stageEl = document.getElementById('stage');
+const hud = document.getElementById('hud');
+const live = [];   // Particle objects in sim index order (also pc.particleChildren)
+const pool = [];
+let app, pc, worldRoot, worldLayer, fadeRoot, fadeRect, trailRT, trailSprite, skyline, dotTex;
+let lastW = 0, lastH = 0, scale = 1;
+
+function makeDotTexture() {
+  const s = 64, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.12, 'rgba(255,255,255,0.95)');
+  grd.addColorStop(0.3, 'rgba(255,255,255,0.35)');
+  grd.addColorStop(0.6, 'rgba(255,255,255,0.08)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, s, s);
+  return Texture.from(c);
+}
+
+function drawSkyline(w, h) {
+  skyline.clear();
+  const rng = mulberry32(7);
+  const base = GROUND * scale;
+  let x = 0;
+  while (x < w) {
+    const bw = 30 + rng() * 70, bh = 20 + rng() * 90 * (0.5 + 0.5 * Math.sin(x / w * Math.PI));
+    skyline.rect(x, base - bh * scale, bw, bh * scale + (h - base)).fill(0x070912);
+    for (let wy = base - bh * scale + 8; wy < base - 6; wy += 11) {
+      for (let wx = x + 6; wx < x + bw - 6; wx += 10) {
+        if (rng() < 0.12) skyline.rect(wx, wy, 3, 4).fill({ color: 0xffd58a, alpha: 0.35 + rng() * 0.3 });
+      }
+    }
+    x += bw + rng() * 6;
+  }
+  skyline.rect(0, base, w, h - base).fill(0x05070d);
+}
+
+function handleResize() {
+  const w = app.screen.width, h = app.screen.height;
+  if (w === lastW && h === lastH) return;
+  lastW = w; lastH = h;
+  scale = h / WORLD_H;
+  worldLayer.scale.set(scale);
+  trailRT.resize(w, h);
+  fadeRect.clear().rect(0, 0, w, h).fill(0x04060c);
+  fadeRect.alpha = 1;
+  app.renderer.render({ container: fadeRoot, target: trailRT, clear: true });
+  drawSkyline(w, h);
+}
+
+const texScale = 1 / 64;
+function sync() {
+  // grow / shrink the live Particle list to match the sim count
+  while (live.length < P.n) live.push(pool.pop() || new Particle({ texture: dotTex, anchorX: 0.5, anchorY: 0.5 }));
+  while (live.length > P.n) pool.push(live.pop());
+  for (let i = 0; i < P.n; i++) {
+    const p = live[i], k = P.kind[i], t = P.age[i] / P.life[i];
+    let a, px, col;
+    if (P.age[i] < 0) { a = 0; px = 1; col = P.c1[i]; }
+    else if (k === K_STAR) {
+      a = Math.min(1, P.age[i] / 0.04) * (t > 0.75 ? (1 - t) / 0.25 : 1);
+      if (P.effect[i] === E_STROBE && t > 0.3) a *= ((P.age[i] * 14 + (P.seed[i] & 7)) % 2) < 1 ? 1 : 0.06;
+      px = 11 * P.size[i] * (t > 0.75 ? 0.6 + 0.4 * (1 - t) / 0.25 : 1);
+      col = starColor(i);
+    } else if (k === K_EMBER) {
+      a = P.alpha[i] * (1 - t) ** 1.5; px = 6 * P.size[i]; col = P.c1[i];
+    } else if (k === K_GLITTER) {
+      const fl = Math.sin((P.age[i] + (P.seed[i] & 1023)) * 97.3) > 0.2 ? 1 : 0.15;
+      a = fl * (1 - t); px = 5 * P.size[i]; col = P.c1[i];
+    } else if (k === K_POP) {
+      a = 1 - t; px = 12 * P.size[i]; col = P.c1[i];
+    } else if (k === K_FLASH) {
+      a = 0.9 * (1 - t) ** 2; px = 140 * P.size[i]; col = P.c1[i];
+    } else { a = 1; px = 13; col = P.c1[i]; } // head
+    p.x = P.x[i]; p.y = P.y[i];
+    p.scaleX = p.scaleY = px * texScale;
+    if (p._lastTint !== col) { p.tint = col; p._lastTint = col; }
+    p.alpha = a;
+  }
+  pc.particleChildren = live;
+  if (pc.update) pc.update();
+}
+
+/* ============================================================
+   Main loop with fixed timestep
+   ============================================================ */
+let acc = 0, launchCount = 0, lastLaunch = null, modeTimer = 0, fpsAvg = 60;
+const baseSeed = 20261112;
+
+function fire(def, tx, ty) {
+  const seed = (baseSeed + launchCount++ * 7919) | 0;
+  lastLaunch = { def: structuredClone(def), tx, ty, seed };
+  launch(def, tx, ty, seed);
+}
+function worldWidth() { return lastW / scale; }
+function defaultTarget(def) {
+  return [worldWidth() / 2, GROUND - def.burstHeight * GROUND];
+}
+function shellDuration(def) {
+  const h = def.burstHeight * GROUND;
+  let t = Math.sqrt(2 * h / world.gravity);
+  def.breaks.forEach((b, k) => { if (k) t += b.delay; });
+  return t + Math.max(...def.breaks.map(b => b.burn)) * 1.1 + 0.4;
+}
+
+function tick(ticker) {
+  handleResize();
+  const dt = Math.min(0.1, ticker.deltaMS / 1000);
+  fpsAvg = fpsAvg * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
+
+  // playback modes
+  const mode = modeSel.value;
+  modeTimer -= dt;
+  if (mode === 'loop' && modeTimer <= 0 && shells.length === 0) {
+    const [tx, ty] = defaultTarget(shell);
+    fire(shell, tx, ty);
+    modeTimer = shellDuration(shell);
+  } else if (mode === 'show' && modeTimer <= 0) {
+    const r = Math.random;
+    const def = r() < 0.25 ? shell : PRESETS[(r() * PRESETS.length) | 0];
+    const w = worldWidth();
+    fire(def, w * (0.15 + r() * 0.7), GROUND - (0.45 + r() * 0.35) * GROUND);
+    modeTimer = 0.35 + r() * 1.4;
+  }
+
+  acc += dt;
+  let steps = 0;
+  while (acc >= STEP && steps < 24) { step(STEP); acc -= STEP; steps++; }
+  if (steps === 24) acc = 0;
+
+  sync();
+  fadeRect.alpha = 1 - world.persistence;
+  app.renderer.render({ container: fadeRoot, target: trailRT, clear: false });
+  app.renderer.render({ container: worldRoot, target: trailRT, clear: false });
+
+  hud.textContent = `${P.n.toLocaleString()} particles · ${fpsAvg.toFixed(0)} fps\nseed ${lastLaunch ? lastLaunch.seed : '—'}`;
+  hud.style.whiteSpace = 'pre';
+}
+
+async function start() {
+  app = new Application();
+  await app.init({
+    resizeTo: stageEl, background: '#04060c', antialias: false, preference: 'webgl',
+    resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true,
+  });
+  stageEl.prepend(app.canvas);
+  dotTex = makeDotTexture();
+
+  pc = new ParticleContainer({
+    texture: dotTex,
+    dynamicProperties: { position: true, vertex: true, color: true, rotation: true, uvs: true },
+  });
+  pc.blendMode = 'add';
+  worldLayer = new Container(); worldLayer.addChild(pc);
+  worldRoot = new Container(); worldRoot.addChild(worldLayer);
+
+  fadeRect = new Graphics();
+  fadeRoot = new Container(); fadeRoot.addChild(fadeRect);
+
+  // Half-float target avoids the faint 8-bit 'ghost' streaks that a fading trail buffer leaves behind.
+  try { trailRT = RenderTexture.create({ width: 16, height: 16, resolution: app.renderer.resolution, format: 'rgba16float' }); }
+  catch { trailRT = RenderTexture.create({ width: 16, height: 16, resolution: app.renderer.resolution }); }
+  trailSprite = new Sprite(trailRT);
+  skyline = new Graphics();
+  app.stage.addChild(trailSprite, skyline);
+
+  handleResize();
+  app.ticker.add(tick);
+
+  app.canvas.addEventListener('pointerdown', e => {
+    const r = app.canvas.getBoundingClientRect();
+    const wx = (e.clientX - r.left) / scale, wy = (e.clientY - r.top) / scale;
+    if (wy < GROUND - 60) {
+      if (modeSel.value === 'loop') modeTimer = shellDuration(shell);
+      fire(shell, wx, wy);
+    }
+  });
+}
+
+/* ============================================================
+   Editor UI (stand-in for the Angular forms)
+   ============================================================ */
+const modeSel = document.getElementById('mode');
+const jsonEl = document.getElementById('json');
+const jsonNote = document.getElementById('jsonNote');
+
+function rangeRow(parent, label, get, set, min, max, stepv, fmt = v => v) {
+  const row = document.createElement('div'); row.className = 'row';
+  const l = document.createElement('label'); l.textContent = label;
+  const inp = document.createElement('input'); inp.type = 'range';
+  inp.min = min; inp.max = max; inp.step = stepv; inp.value = get();
+  const val = document.createElement('span'); val.className = 'val'; val.textContent = fmt(get());
+  inp.addEventListener('input', () => { set(parseFloat(inp.value)); val.textContent = fmt(parseFloat(inp.value)); changed(); });
+  row.append(l, inp, val); parent.append(row);
+}
+function selectRow(parent, label, get, set, options, colors = false) {
+  const row = document.createElement('div'); row.className = 'row wide';
+  const l = document.createElement('label'); l.textContent = label;
+  const wrap = document.createElement('div'); wrap.className = 'sel-wrap';
+  const sel = document.createElement('select');
+  for (const o of options) { const op = document.createElement('option'); op.value = o; op.textContent = o; sel.append(op); }
+  sel.value = get();
+  const sw = document.createElement('span'); sw.className = 'swatch';
+  const paint = () => {
+    const c = COLORS[sel.value];
+    sw.style.display = colors && (c !== undefined || sel.value === 'rainbow') ? 'inline-block' : 'none';
+    sw.style.color = sw.style.background = sel.value === 'rainbow' ? '#ff5cc8' : '#' + (c ?? 0).toString(16).padStart(6, '0');
+    if (sel.value === 'rainbow') sw.style.background = 'conic-gradient(red, gold, lime, cyan, blue, magenta, red)';
+  };
+  sel.addEventListener('change', () => { set(sel.value); paint(); changed(); });
+  paint();
+  wrap.append(sel); if (colors) wrap.append(sw);
+  row.append(l, wrap); parent.append(row);
+}
+
+function buildShellFields() {
+  const el = document.getElementById('shellFields'); el.innerHTML = '';
+  const row = document.createElement('div'); row.className = 'row wide';
+  const l = document.createElement('label'); l.textContent = 'Name';
+  const inp = document.createElement('input'); inp.type = 'text'; inp.value = shell.name;
+  inp.addEventListener('input', () => { shell.name = inp.value; changed(false); });
+  row.append(l, inp); el.append(row);
+  rangeRow(el, 'Burst height', () => shell.burstHeight, v => shell.burstHeight = v, 0.3, 0.85, 0.01, v => Math.round(v * 100) + '%');
+  rangeRow(el, 'Angle jitter', () => shell.angleJitter, v => shell.angleJitter = v, 0, 20, 1, v => v + '°');
+}
+
+function buildBreakTabs() {
+  const el = document.getElementById('breakTabs'); el.innerHTML = '';
+  shell.breaks.forEach((_, k) => {
+    const b = document.createElement('button');
+    b.textContent = `Break ${k + 1}`;
+    if (k === activeBreak) b.className = 'active';
+    b.onclick = () => { activeBreak = k; buildBreakTabs(); buildBreakFields(); };
+    el.append(b);
+  });
+  document.getElementById('delBreak').disabled = shell.breaks.length <= 1;
+  document.getElementById('addBreak').disabled = shell.breaks.length >= 4;
+}
+
+function buildBreakFields() {
+  const el = document.getElementById('breakFields'); el.innerHTML = '';
+  const b = () => shell.breaks[activeBreak];
+  selectRow(el, 'Pattern', () => b().pattern, v => b().pattern = v, PATTERNS);
+  rangeRow(el, 'Stars', () => b().stars, v => b().stars = v, 4, 400, 1);
+  rangeRow(el, 'Burst speed', () => b().speed, v => b().speed = v, 60, 400, 5);
+  selectRow(el, 'Color', () => b().color1, v => b().color1 = v, [...PALETTE, 'rainbow'], true);
+  selectRow(el, 'Changes to', () => b().color2, v => b().color2 = v, ['none', ...PALETTE], true);
+  rangeRow(el, 'Change at', () => b().changeAt, v => b().changeAt = v, 0.1, 0.95, 0.05, v => Math.round(v * 100) + '%');
+  rangeRow(el, 'Burn time', () => b().burn, v => b().burn = v, 0.3, 5, 0.1, v => v.toFixed(1) + 's');
+  rangeRow(el, 'Air drag', () => b().drag, v => b().drag = v, 0, 4, 0.05, v => v.toFixed(2));
+  rangeRow(el, 'Star size', () => b().size, v => b().size = v, 0.4, 3, 0.05, v => v.toFixed(2));
+  selectRow(el, 'Trail', () => b().trail, v => b().trail = v, TRAILS);
+  selectRow(el, 'Effect', () => b().effect, v => b().effect = v, EFFECTS);
+  if (activeBreak > 0) rangeRow(el, 'Delay', () => b().delay, v => b().delay = v, 0.1, 2.5, 0.05, v => v.toFixed(2) + 's');
+}
+
+function buildWorldFields() {
+  const el = document.getElementById('worldFields'); el.innerHTML = '';
+  rangeRow(el, 'Gravity', () => world.gravity, v => world.gravity = v, 40, 400, 5);
+  rangeRow(el, 'Wind', () => world.wind, v => world.wind = v, -80, 80, 1);
+  rangeRow(el, 'Motion blur', () => world.persistence, v => world.persistence = v, 0, 0.92, 0.01, v => Math.round(v * 100) + '%');
+  rangeRow(el, 'Star budget', () => world.starBudget, v => world.starBudget = v, 0.25, 1, 0.05, v => Math.round(v * 100) + '%');
+}
+
+function buildPresets() {
+  const el = document.getElementById('presets');
+  PRESETS.forEach(p => {
+    const b = document.createElement('button'); b.textContent = p.name;
+    b.onclick = () => loadShell(structuredClone(p), true);
+    el.append(b);
+  });
+}
+
+function loadShell(s, fireNow) {
+  shell = s; activeBreak = 0;
+  buildShellFields(); buildBreakTabs(); buildBreakFields(); changed(false);
+  if (fireNow && app) { const [tx, ty] = defaultTarget(shell); fire(shell, tx, ty); modeTimer = shellDuration(shell); }
+}
+
+let jsonDirty = false;
+function changed() {
+  jsonEl.value = JSON.stringify(shell, null, 2);
+  jsonNote.textContent = 'This is the document the .NET API would persist. Edit and Apply to load it.';
+}
+
+document.getElementById('addBreak').onclick = () => {
+  if (shell.breaks.length >= 4) return;
+  const prev = shell.breaks[shell.breaks.length - 1];
+  shell.breaks.push(newBreak({ ...prev, delay: 0.6 }));
+  activeBreak = shell.breaks.length - 1; buildBreakTabs(); buildBreakFields(); changed();
+};
+document.getElementById('delBreak').onclick = () => {
+  if (shell.breaks.length <= 1) return;
+  shell.breaks.splice(activeBreak, 1);
+  activeBreak = Math.max(0, activeBreak - 1); buildBreakTabs(); buildBreakFields(); changed();
+};
+document.getElementById('btnLaunch').onclick = () => { const [tx, ty] = defaultTarget(shell); fire(shell, tx, ty); };
+document.getElementById('btnReplay').onclick = () => {
+  if (!lastLaunch) return;
+  launch(lastLaunch.def, lastLaunch.tx, lastLaunch.ty, lastLaunch.seed);
+};
+document.getElementById('btnClear').onclick = () => { shells = []; P.n = 0; };
+document.getElementById('btnCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText(jsonEl.value); jsonNote.textContent = 'Copied to clipboard.'; }
+  catch { jsonEl.select(); jsonNote.textContent = 'Copy was blocked — the text is selected, press Ctrl/Cmd+C.'; }
+};
+document.getElementById('btnApply').onclick = () => {
+  try {
+    const parsed = JSON.parse(jsonEl.value);
+    if (!Array.isArray(parsed.breaks) || !parsed.breaks.length) throw new Error('needs a non-empty "breaks" array');
+    loadShell(newShell(parsed.name || 'Custom', parsed), true);
+    jsonNote.textContent = 'Applied.';
+  } catch (e) { jsonNote.textContent = 'Invalid shell JSON: ' + e.message; }
+};
+modeSel.addEventListener('change', () => { modeTimer = 0; });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    e.preventDefault(); document.getElementById('btnLaunch').click();
+  }
+});
+
+buildPresets(); buildWorldFields(); loadShell(shell, false);
+start().catch(err => {
+  const el = document.getElementById('err');
+  el.style.display = 'flex';
+  el.textContent = 'Could not start the renderer: ' + (err && err.message ? err.message : err);
+});
+</script>
+</body>
+</html>
