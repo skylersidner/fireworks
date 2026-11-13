@@ -302,7 +302,7 @@ Config:
 
 **2c. Shell Designer page**
 
-- Route `/` lazy-loads `designer-page`.
+- Route `/` lazy-loads `designer-page`, and it **auto-plays** in preview-loop mode (decided 2026-11-12). Visitors whose OS asks for reduced motion start in Manual, and a non-blocking flashing notice appears on first visit (Rosalina's spec: `docs/fireworks-app/design/designer-2c.md`). The Phase 1 status page moves to **`/status`** without the canary (decided). It's also the route with no stage for the 2d leak check.
 - **Forms (decided, OQ17):** the designer uses Angular **Signal Forms** (`@angular/forms/signals`), which are stable in Angular 22.
 - **Design-review note:** the default mode is the preview loop, so `/` auto-plays bursts, including strobe, as soon as it opens. Rosalina decides whether the photosensitivity notice and reduced-motion handling move forward from Phase 7 to here. She also reviews three items Luigi left open in Phase 1:
   - The toast and success colors are placeholders; the prototype has no such tokens.
@@ -312,14 +312,14 @@ Config:
 - `ShellDesignerStore` (an `@Injectable()` scoped to the page) holds the `shell`, `activeBreak`, `sky`, `quality` and `mode` signals. Its methods are `loadPreset`, `addBreak` (up to 4, copying the previous break), `removeBreak` and `applyJson`.
 - The form is a Signal Form over the shell model, with the breaks as an array field. Changes run through `normalize` and then go into `store.shell`. `range-row` and `select-row` are Signal Forms custom controls, not ControlValueAccessors.
 - Presentational components: `playback-controls`, `preset-bar`, `shell-fields`, `break-tabs`, `break-fields`, `sky-fields`, `quality-fields`, `json-panel`, `hud`.
-- Shared form controls (ControlValueAccessors): `range-row`, and `select-row` with color swatches and a rainbow gradient.
+- Shared form controls (Signal Forms custom controls): `range-row`, and `select-row` with color swatches and a rainbow gradient.
 - The Space key fires, except when a form element has focus.
-- The working draft autosaves to localStorage (`fireworks.draft.v1`), so nothing is lost before the backend exists.
+- The working draft autosaves to localStorage (`fireworks.draft.v1`), so nothing is lost before the backend exists. **Decided:** the draft keeps the shell (including `sky`) *and* this device's display settings (mode, motion blur, star budget, Reduce flashing) and the active break tab. **Purpose of the draft (Skyler, 2026-11-13):** never lose the current state when you leave the sandbox for any reason (reload, `/status`, closing the tab). Form changes only set a **dirty** flag; nothing else is tracked for persistence. Loading a preset or applying JSON **asks for confirmation only when it would replace something the visitor changed** (Skyler, 2026-11-13). Only shell and sky changes count; display settings and the active tab are autosaved but never trigger the question. A preset (which keeps the sky) asks only if the shell changed. Apply asks if the shell changed, or if the JSON carries `sky` and the sky changed. Changes the app makes itself (forced Manual, OS-driven Reduce flashing) never count. No baseline snapshot. A preset, or JSON without `sky`, **keeps the current sky**; JSON with `sky` replaces it. Held Space fires **once**. The first-visit flashing notice **pauses playback until it's dismissed**. Under OS reduced motion the designer opens in **Manual on every load**, whatever mode the draft saved (decided). The draft belongs to the designer, not `core/session.ts`.
 
 **2d. Parity and performance pass**
 
 - Compare side by side with the prototype: every preset, every mode, Replay, Clear, resize, and JSON Copy/Apply.
-- Check fps at the 40k cap in Chrome, Firefox and Safari.
+- ~~fps at the 40k cap~~ **Benched until the end of the project (Skyler, 2026-11-13), tests included**, pending a re-evaluation of the requirement. Skyler's underlying concern is not overloading the browser's CPU, not visual frame rate. The measurement kit stays at `tools/fps-compare/`, but it isn't part of any gate. See §6.
 - Check explicitly whether `rgba16float` is supported, because on Safari the failure may only appear at render time.
 
 **Done when:**
@@ -327,7 +327,7 @@ Config:
 - Change detection doesn't run on every frame (confirmed in the DevTools profiler).
 - Navigating away and back 20 times doesn't leak WebGL contexts.
 - The engine tests and boundary spec are green.
-- The app is deployed.
+- The app is deployed. **Deferred with Railway (1d).** Firefox and Safari parity, the Safari trail-format check and the deployed checks run at the first Railway deploy (Skyler, 2026-11-13). Phase 2 closed on Chrome parity plus Mario's gate.
 
 **Risks:**
 - The ParticleContainer API changes. The version is pinned.
@@ -424,7 +424,7 @@ Config:
   - "Save as new".
   - Share copies `/s/:code` to the clipboard and shows a toast.
   - A dirty indicator.
-  - `/c/:shareCode` opens a creation in the designer. If `isOwner` is false, saving becomes a remix.
+  - `/c/:shareCode` loads a **working copy** of the saved record into the designer's form (Skyler, 2026-11-13). You edit the copy, which is autosaved like any draft, and the persisted record changes only on Save. If `isOwner` is false, saving becomes a remix.
   - Anonymous play never needs the server. The localStorage draft keeps unsaved work. Save/remix controls appear based on `session.canWrite()`, which reflects `Identity:AllowAnonymousWrites` in the interim (false in production unless switched on for testing) and depends on login after Phase 8.
 - **Player** at `/s/:shareCode`:
   - Full screen, lazy-loaded. It fetches the creation, upgrades it, normalizes it, and plays it.
@@ -465,7 +465,7 @@ Deep links also work on Railway. The Railway round trip runs with writes switche
 - **CSP and security headers:** test whether Pixi needs its `pixi.js/unsafe-eval` build.
 - **Accessibility:**
   - `prefers-reduced-motion` turns off strobe and dims the burst flash.
-  - A photosensitivity notice on the player.
+  - A photosensitivity notice on the player. **Moved earlier (decided):** the designer gets it in 2c, and the player's notice and Reduce flashing ship with the player in Phase 5.
   - Full keyboard access.
 - **Rendering quality:** pick `starBudget` automatically from measured fps, add a touch-friendly layout, and cap DPR at 1.5 on mobile.
 - **Operations:**
@@ -548,6 +548,8 @@ Every phase ends with Mario's phase-gate. Koopa's retrospective is optional. Scr
 ---
 
 ## 6. Out of scope / future ideas
+
+- **Benched for end-of-project re-evaluation (Skyler, 2026-11-13): performance requirements.** The original Phase 2d fps bar (≥90% of the prototype's median, never below 30) and its tests are parked. The concern to re-evaluate is CPU/process load in the browser, not visual frame rate. The kit is at `tools/fps-compare/` (Toad's record `toad-fps-kit-measurement.md`).
 
 - Sound: launch thumps and burst booms delayed by distance, plus music sync.
 - Video export, which works because playback is repeatable: step the simulation offline, then encode with WebCodecs or MediaRecorder.

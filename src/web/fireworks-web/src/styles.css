@@ -24,9 +24,12 @@
   --color-surface: #0d111c; /* --panel: the designer panel */
   --color-surface-raised: #141a29; /* --panel2: inputs, buttons, modal cards */
 
-  /* Borders */
+  /* Borders. `border` is decorative (1.34:1 on surface); form fields use `border-control`, which
+     meets WCAG 1.4.11's 3:1 for the edge that identifies a field (designer-2c.md §4.1). */
   --color-border: #232b40; /* --line */
   --color-border-hover: #3a4562; /* prototype `button:hover` border */
+  --color-border-control: #56627f; /* new: text inputs, selects, the textarea */
+  --color-border-control-hover: #6b7594; /* new: their hover edge */
 
   /* Text */
   --color-text-primary: #e6e9f2; /* --text */
@@ -41,18 +44,26 @@
   /* Danger / error text */
   --color-danger: #ff9a8a; /* prototype `#err` (WebGL failure message) */
 
-  /* Positive state. Not in the prototype; placeholder pending Rosalina. */
+  /* Positive state. Not in the prototype; confirmed in the 2c design review. */
   --color-success: #7ddc9f;
 
-  /* Notification toasts. Not in the prototype; placeholders pending Rosalina. Deep tinted fills
-     with light tinted text, so they read on the dark stage without glowing like a firework. */
-  --color-toast-success: #12301f;
-  --color-on-toast-success: #c9f2d7;
-  --color-toast-error: #3a1414;
-  --color-on-toast-error: #ffd2ca;
+  /* Role surfaces (toasts, the API-down banner, Phase 5 save banners). Named for the role, not one
+     component (designer-2c.md §4.1). Deep tinted fills with light tinted text, so they read on the
+     dark stage without glowing like a firework. */
+  --color-success-surface: #12301f;
+  --color-on-success-surface: #c9f2d7;
+  --color-danger-surface: #3a1414;
+  --color-on-danger-surface: #ffd2ca;
 
   /* Modal scrim */
   --color-scrim: color-mix(in oklab, #000 60%, transparent);
+
+  /* Type scale (designer-2c.md §4.2; prototype sizes). */
+  --text-heading: 15px; /* h1 */
+  --text-body: 13px; /* body, inputs, buttons */
+  --text-body--line-height: 1.4;
+  --text-small: 12px; /* subtitle, hint, preset and tab buttons, values */
+  --text-caption: 11px; /* section headings, notes, HUD, textarea */
 }
 
 /*
@@ -78,6 +89,14 @@
   border-color: var(--color-border-hover);
 }
 
+@utility border-control {
+  border-color: var(--color-border-control);
+}
+
+@utility border-control-hover {
+  border-color: var(--color-border-control-hover);
+}
+
 @utility bg-accent-gradient {
   background: linear-gradient(180deg, var(--color-accent), var(--color-accent-secondary));
 }
@@ -96,5 +115,80 @@
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+  }
+}
+
+/*
+ * Designer building blocks (designer-2c.md §2, §4.3, §5). Plain classes rather than repeated
+ * utility strings, so every button and field shares one definition of edge, padding and states.
+ */
+@layer components {
+  .section {
+    @apply border-t border-default pt-3 pb-1.5;
+  }
+
+  .section-heading {
+    @apply m-0 mb-2 flex items-center justify-between text-caption font-semibold tracking-[0.1em] text-muted uppercase;
+  }
+
+  .note {
+    @apply m-0 mt-1 text-caption text-muted;
+  }
+
+  .btn {
+    @apply cursor-pointer rounded-md border border-default bg-surface-raised px-2.5 py-1.5 text-body text-primary;
+    &:hover:not(:disabled) {
+      @apply border-hover;
+    }
+    &:disabled {
+      @apply cursor-not-allowed opacity-45;
+    }
+  }
+
+  .btn-primary {
+    @apply border-0 bg-accent-gradient font-semibold text-on-accent;
+  }
+
+  .btn-sm {
+    @apply px-2 py-1 text-small;
+  }
+
+  /* Buttons in a section heading must not inherit its uppercase caption styling (§3.4). */
+  .btn-heading {
+    @apply px-2 py-0.5 text-small font-normal tracking-normal normal-case;
+  }
+
+  .tab-active {
+    @apply border-accent text-accent;
+    &:hover:not(:disabled) {
+      @apply border-accent;
+    }
+  }
+
+  .field {
+    @apply w-full rounded-md border border-control bg-surface-raised px-[7px] py-[5px] text-primary;
+    font: inherit;
+    &:hover {
+      @apply border-control-hover;
+    }
+  }
+
+  textarea.field {
+    font: 11px/1.35 var(--font-mono);
+  }
+
+  /* Reduce flashing switch (§5.4): a 28x16 track over the native checkbox. */
+  .switch {
+    @apply relative m-0 inline-block h-4 w-7 cursor-pointer appearance-none rounded-full border border-control bg-surface-raised align-middle;
+    &::after {
+      content: '';
+      @apply absolute top-px left-px size-3 rounded-full bg-text-primary transition-transform;
+    }
+    &:checked {
+      @apply border-accent bg-accent;
+    }
+    &:checked::after {
+      @apply translate-x-3 bg-on-accent;
+    }
   }
 }

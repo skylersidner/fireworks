@@ -2,56 +2,49 @@
 
 <aside
   class="fixed right-4 bottom-4 z-50 grid w-[min(24rem,calc(100vw-2rem))] gap-2"
-  aria-live="polite"
+  aria-label="Notifications"
 >
+  <div class="grid gap-2" aria-live="polite">
+    @for (notification of notificationService.notifications(); track notification.id) {
+      @if (notification.kind !== 'error') {
+        <div
+          class="flex items-center justify-between rounded-lg border border-default bg-success-surface px-3 py-[0.65rem] text-on-success-surface"
+          data-kind="success"
+        >
+          <span>{{ notification.message }}</span>
+          <button
+            type="button"
+            class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit"
+            (click)="notificationService.dismiss(notification.id)"
+            aria-label="Dismiss notification"
+          >
+            ×
+          </button>
+        </div>
+      }
+    }
+  </div>
   @for (notification of notificationService.notifications(); track notification.id) {
-    <div
-      class="flex items-center justify-between rounded-lg border border-default px-3 py-[0.65rem]"
-      [class.bg-toast-error]="notification.kind === 'error'"
-      [class.text-on-toast-error]="notification.kind === 'error'"
-      [class.bg-toast-success]="notification.kind !== 'error'"
-      [class.text-on-toast-success]="notification.kind !== 'error'"
-    >
-      <span>{{ notification.message }}</span>
-      <button
-        type="button"
-        class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit"
-        (click)="notificationService.dismiss(notification.id)"
-        aria-label="Dismiss notification"
+    @if (notification.kind === 'error') {
+      <div
+        class="flex items-center justify-between rounded-lg border border-default bg-danger-surface px-3 py-[0.65rem] text-on-danger-surface"
+        role="alert"
+        data-kind="error"
+        (mouseenter)="notificationService.pause(notification.id)"
+        (mouseleave)="notificationService.resume(notification.id)"
+        (focusin)="notificationService.pause(notification.id)"
+        (focusout)="notificationService.resume(notification.id)"
       >
-        ×
-      </button>
-    </div>
+        <span>{{ notification.message }}</span>
+        <button
+          type="button"
+          class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit"
+          (click)="notificationService.dismiss(notification.id)"
+          aria-label="Dismiss notification"
+        >
+          ×
+        </button>
+      </div>
+    }
   }
 </aside>
-
-@if (isApiUnavailable()) {
-  <div
-    class="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-4"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="api-modal-title"
-  >
-    <section
-      class="w-full max-w-[28rem] rounded-xl border border-default bg-surface-raised p-[1.2rem] shadow-[0_16px_34px_rgba(0,0,0,0.5)]"
-    >
-      <h2 id="api-modal-title" class="m-0 text-[15px] text-primary">API unavailable</h2>
-      <p class="mt-[0.65rem] mb-0 text-muted">
-        The app cannot reach the API health endpoint right now. Restore API availability and try
-        again.
-      </p>
-      <button
-        type="button"
-        (click)="checkApiAvailability()"
-        [disabled]="isCheckingApiAvailability()"
-        class="mt-4 inline-flex cursor-pointer items-center gap-[0.45rem] rounded-md border-0 bg-accent-gradient px-[0.95rem] py-[0.55rem] font-semibold text-on-accent disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        @if (isCheckingApiAvailability()) {
-          Checking...
-        } @else {
-          Try again
-        }
-      </button>
-    </section>
-  </div>
-}

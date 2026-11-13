@@ -1,0 +1,130 @@
+<!-- DOM order is panel, then stage, as in the prototype (§7.2): the h1 is read first and Tab order
+     matches the visual order. At 760px and narrower the column is reversed so the stage sits on top. -->
+<div class="flex h-full overflow-hidden max-[761px]:flex-col-reverse">
+  <aside
+    class="w-[340px] flex-none overflow-y-auto border-r border-default bg-surface px-[14px] pt-[14px] pb-10 max-[761px]:h-[45dvh] max-[761px]:w-full max-[761px]:border-t max-[761px]:border-r-0"
+    data-testid="designer-panel"
+  >
+    <h1 class="m-0 mb-0.5 text-heading tracking-[0.02em]">Fireworks Sandbox</h1>
+    <p class="m-0 mb-3 text-small text-muted">Shell designer</p>
+
+    @if (showApiBanner()) {
+      <app-api-banner [checking]="apiChecking()" (retry)="retryApi()" />
+    }
+
+    <section class="section">
+      <app-playback-controls
+        [mode]="store.displayForm.mode"
+        [canReplay]="canReplay()"
+        [paused]="store.playbackPaused()"
+        [coarse]="coarse()"
+        (launch)="launch()"
+        (replay)="replay()"
+        (clear)="clear()"
+      />
+    </section>
+
+    <section class="section">
+      <app-preset-bar (selected)="loadPreset($event)" />
+    </section>
+
+    <section class="section">
+      <app-shell-fields [fields]="store.form" />
+    </section>
+
+    <section class="section">
+      <app-break-tabs
+        [count]="store.shell().breaks.length"
+        [active]="store.activeBreak()"
+        (selected)="store.selectBreak($event)"
+        (add)="store.addBreak()"
+        (remove)="store.removeBreak()"
+      />
+      @if (activeBreakFields(); as fields) {
+        <app-break-fields
+          [fields]="fields"
+          [index]="store.activeBreak()"
+          [reduceFlashing]="store.reduceFlashing()"
+        />
+      }
+    </section>
+
+    <section class="section">
+      <app-sky-fields [fields]="store.form.sky" />
+    </section>
+
+    <section class="section">
+      <app-quality-fields
+        [fields]="store.displayForm"
+        [reduceFlashing]="store.reduceFlashing()"
+        [fromDevice]="store.reduceFlashingFromDevice()"
+        (reduceFlashingChange)="store.setReduceFlashing($event)"
+      />
+    </section>
+
+    <section class="section">
+      <app-json-panel
+        [text]="store.jsonText()"
+        [note]="store.jsonNote()"
+        [hasEdits]="store.hasJsonEdits()"
+        (edit)="store.editJson($event)"
+        (revert)="store.revertJson()"
+        (apply)="applyJson()"
+        (copied)="onCopied($event)"
+      />
+    </section>
+
+    <p class="sr-only" aria-live="polite" data-testid="announcer">{{ store.announcement() }}</p>
+  </aside>
+
+  <main class="relative min-h-0 min-w-0 flex-1 cursor-crosshair bg-surface-sunken">
+    <!-- Sized with h-full/w-full, not absolute inset-0: the stage's own :host sets position:
+         relative, which would override absolute and leave it 0px tall. -->
+    <app-fireworks-stage
+      class="h-full w-full"
+      [shell]="store.shell()"
+      [sky]="store.sky()"
+      [mode]="store.mode()"
+      [quality]="store.quality()"
+      [paused]="store.playbackPaused()"
+      (stats)="stats.set($event)"
+    />
+    <!-- Inside <main>, right after the stage element (§7.2). The initial focus move and the
+         panel note reach the visitor instead of DOM order. -->
+    @if (store.flashNoticeVisible()) {
+      <app-flash-notice
+        [reduceFlashing]="store.reduceFlashing()"
+        [mode]="store.mode()"
+        (turnOn)="dismissNotice(true)"
+        (dismiss)="dismissNotice(false)"
+      />
+    }
+    <p
+      class="pointer-events-none absolute top-2.5 left-3 m-0 text-small text-muted [text-shadow:0_1px_2px_#000] max-[480px]:max-w-[55%]"
+      data-testid="hint"
+    >
+      {{ coarse() ? 'Tap the sky to fire' : 'Click the sky to fire · Space to launch' }}
+    </p>
+    <app-hud [stats]="stats()" />
+    @if (stage()?.renderer() === 'canvas' && stage()?.status() === 'running') {
+      <p
+        class="pointer-events-none absolute bottom-2.5 left-3 m-0 max-w-[60%] text-caption text-muted [text-shadow:0_1px_2px_#000]"
+        data-testid="canvas-note"
+      >
+        Your browser is drawing without the GPU, so glow and trails may look simpler. Turning on
+        hardware acceleration in your browser settings usually fixes this.
+      </p>
+    }
+  </main>
+</div>
+
+@if (dialog(); as d) {
+  <app-confirm-dialog
+    [title]="d.title"
+    [body]="d.body"
+    [confirmLabel]="d.action"
+    [cancelLabel]="cancelLabel"
+    (confirmed)="confirmReplace()"
+    (cancelled)="cancelReplace()"
+  />
+}

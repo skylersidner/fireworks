@@ -20,3 +20,39 @@
 - Payload gaps to track: `api/me` has no `canWrite`, so the client can't honor `AllowAnonymousWrites=false`; `CreationListItem` fields are unspecified but OQ14 swatch cards need colors; the base `appsettings.json` value of `AllowAnonymousWrites` is unstated (only "true in dev"); embedded shells inside a show carry their own `sky`, which conflicts with the show-level `sky` (one sim, one gravity).
 - OQ12 port plan is incomplete: both apps' Angular dev servers default to 4200 (reference `package.json` start is bare `ng serve`), so "run side by side" doesn't hold for the web app.
 - OQ15 is stale: `.squad/` and `.claude/agents/` already exist in this repo.
+
+### 2026-11-12 — Phase 2 planning: acceptance criteria
+- Wrote `docs/fireworks-app/acceptance/phase-2.md`: criteria 2a.1–2d.7 and parity rows P1–P27 drawn from the prototype's code, not its UI text.
+- Oracle facts worth remembering: the first seed is `20261112`, and each launch adds 7919. Replay re-fires the `lastLaunch` snapshot, so edits made after a launch don't reach Replay, and Replay doesn't advance the seed. Clear doesn't wipe the trail buffer. A click is ignored at world y ≥ 700, which is 87.5% of the stage height. Add break copies the *last* break; remove deletes the *active* one. Delay shows only on breaks 2–4. The prototype's JSON has no `sky`. Its Apply keeps unknown keys and accepts more than 4 breaks.
+- The 24-step loop cap can't be reached because of the 0.1 s dt clamp, so a cap test needs to bypass the clamp. The `rgba16float` try/catch can't catch Safari's render-time failure.
+- Golden expected values must come from running the prototype's sim, never from the port, or the golden tests only freeze the port.
+- Payload and surface gaps: `app.html`'s API-unavailable modal is a full-screen scrim that would block the designer, which makes no API calls. The 20-navigation leak check needs a second route, and `**` redirects to `/`. `app.startup.spec.ts` expects two `/health/live` calls, one from the home page. The plan contradicts itself on CVA versus Signal Forms custom controls for `range-row`/`select-row`.
+- Questions raised (Q1–Q4): the fps bar (recommended: at least 90% of the prototype's and at least 30), whether the designer stays usable with the API down (yes), the Phase 1 status page moving to `/status`, and what the draft holds (the ShellDocument with `sky` only, overwritten without confirmation).
+
+### 2026-11-12 — Phase 2 acceptance update for Skyler's rulings
+- Updated `docs/fireworks-app/acceptance/phase-2.md` in place: 2a.6(f) now "absent `sky` stays absent, `effectiveSky()` resolves" (Yoshi's confirmation pending); 2a.8 moved the crossette guard control to the 2a.11 unit spec (children spawn with `E_NONE`, `engine/sim/simulation.ts` l.298–318, proto l.313, so goldens can't reach it); 2c.9/2c.10 rewritten for the wider draft; new 2c.14 and 2c.16–2c.21 (Reduce flashing renderer, confirm-over-unsaved, reduced motion, notice, Space exclusions, one API-down surface, no URL in toasts); 2d.3/2d.4/2d.6 and parity rows P1, P3, P6, P12, P13, P16, P20, P21, P23, P24 marked with Rosalina's §9 deviations.
+- New open questions raised: Q5 (reduced motion vs restored draft mode; recommend Manual wins) and Q6 (what "unsaved edits" means before saving exists; recommend a baseline kept in the draft).
+- Pattern: a ruling that widens what's persisted (display settings in the draft) collides with "OS default until chosen" settings. Persist a setting only once chosen, or it freezes the default.
+- Rosalina's spec (§9 "Not departures", N2) still says no confirm on preset; that's stale against Skyler's ruling. The Postgres-at-every-gate record (`toad-postgres-gated-suite-is-required-for-program-cs.md`) is not standing; the acceptance doc doesn't cite it.
+
+### 2026-11-12 — Phase 2 acceptance: Q5/Q6 rulings and Yoshi's normalize shape
+- Skyler ruled Q5 (reduced motion forces Manual every load; my recommendation) and Q6 (unsaved edits = any change to shell, display settings or tab since the last preset/Apply/default; not my recommendation, Skyler wants display and tab to count). Updated 2c.9(iii) (baseline stored with the draft, outside the document), 2c.10, 2c.11 (bad baseline vs corrupt document), 2c.16, 2c.17, P23; 2a.6 rewritten for `normalizeShell`'s `{ok, shell, adjustments[]} | {ok:false, errors[]}` (`yoshi-phase2a-engine-boundaries.md`).
+- Pattern: when a ruling makes app-driven state count as a user edit (forced Manual, OS-following Reduce flashing), check it against every automatic override, or every load reads as "edited". Raised Q7 for that.
+- Code vs record drift: `engine/model/normalize.ts` l.29–60 still ships `adjusted` (no `kind`), string `errors` plus `issues`, and says a defaulted field is not an adjustment. Yoshi's record says `adjustments` with `kind` including `defaulted`. Criteria follow the record.
+
+### 2026-11-13 — Phase 2 acceptance: dirty flag replaces baseline
+- Rewrote `docs/fireworks-app/acceptance/phase-2.md` 2c.9/2c.10/2c.11/2c.16/2c.17/2c.18 for Skyler's ruling: persisted `dirty` flag, no baseline, confirm only when dirty, set-it-back stays dirty, app-made changes never dirty (answers Q7). Added 2c.22 (presets/sky-less JSON keep sky), 2c.1 in-app `/status` back link, separate-press 2d.4 procedure, P1/P6/P13/P21/P23 updates, rulings 8–14, Phase 5 working-copy note, Q8 (a–d), F11–F14.
+- Luigi was rewriting the store concurrently: `designer-draft.ts` already had `dirty`, reading a missing flag as not dirty (opposite of my Q8(b) recommendation). Re-grep the code right before writing findings; it moves under a running brief.
+- Pattern: a "pause until X" ruling ripples into every criterion that times a first burst from page load (P1, 2c.17, 2d.4 setup). Search for "within about 1 s" when a pause lands.
+- `status-page.html` l.46 uses `<a href="/">` (document reload), which defeats the "never lose state" purpose only if the draft flush misses; criterion now requires router navigation.
+
+### 2026-11-13 — Phase 2 close-out: 2c.18 aligned to §7.2, Q8 decided
+- Rewrote 2c.18 in `docs/fireworks-app/acceptance/phase-2.md` to `docs/fireworks-app/design/designer-2c.md` §7.2 as built: `Turn on Reduce flashing` / `Continue` (no `Got it`, no ×, no Escape), focus to first button only when on `body`, focus to `Launch` on dismiss, Launch/Replay disabled with `title="Close the flashing notice to start."`, presets/Apply load without firing, timers don't advance (no backlog on dismiss), Display switch flips notice copy without dismissing.
+- Q8 moved to rulings 15–18: (a) Skyler; (b) coordinator, built by Luigi; (c)/(d) Rosalina §7.2. F11/F12 marked closed. No Phase 2 questions remain open.
+- Pattern: when a design spec lands after criteria, button labels in criteria go stale first; grep criteria for quoted button copy against the spec's Buttons section.
+
+### 2026-11-13 — Phase 2 acceptance: replace-only confirm, fps benched
+- Skyler reversed Q8(a): only shell and sky changes count; preset asks only on shell-changed, Apply asks on shell-changed or (JSON has `sky` and sky-changed). Rewrote 2c.9(iii)/2c.11/2c.16/2c.17/2c.18, P13/P21/P23, rulings 1/7/9/15 struck in place, added rulings 19–20 and F15. Toad's repro (fresh → Continue → Manual → Willow → no dialog) is 2c.16(c).
+- Derived, not asked: a preset doesn't clear sky-changed (it doesn't replace the sky); a legacy single `dirty: true` reads as both changed (Q8(b) logic). Flagged in the report.
+- fps benched (plan §6): removed 2d.4 only. Kept 2d.1 (parity checklist is a plan 2d Done-when, not fps) and 2a.14(c)/P12 HUD fps readout (display parity, not a perf requirement). P27 got its own load procedure since it pointed at 2d.4.
+- Pattern: when a removed criterion is a procedure other rows cite ("The 2d.4 procedure"), the citing rows need the procedure inlined, not just the reference deleted.

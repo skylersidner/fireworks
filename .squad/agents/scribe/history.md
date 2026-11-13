@@ -13,3 +13,7 @@
 
 ## Learnings
 
+
+### 2026-11-12 — Phase 1 logging (Scribe)
+- Partial overlaps between records are flagged in the session log, not marked "Superseded". Mark a record only when a newer one replaces the whole of it. A partial overlap leaves the older record binding on its other items.
+- Phase 1 logs are not committed. They go into the Phase 2 commit, since other agents are writing to `.squad/` concurrently.

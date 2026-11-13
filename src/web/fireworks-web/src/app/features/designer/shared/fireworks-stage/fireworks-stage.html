@@ -1,0 +1,13 @@
+<div
+  #host
+  class="stage-host"
+  role="img"
+  aria-label="Fireworks sky"
+  (pointerdown)="onPointerDown($event)"
+></div>
+@if (status() === 'failed') {
+  <div class="stage-error" role="alert" data-testid="stage-error">
+    Fireworks can't start in this browser: {{ error() }}. The controls still work, and your shell is
+    kept in this browser.
+  </div>
+}

@@ -32,3 +32,15 @@
 - Skyler ruled "My creations follows the write switch" before Phase 8. I settled 403 over empty 200 (honest, same gate test as writes; client never calls when canWrite false). Record: `yoshi-phase1-plan-followups.md`; README §5 row added on coordinator's instruction (Skyler's rulings go there).
 - Plan now: §3.4 lists ICurrentUser's three members; Phase 4 has service-layer gate + Forbidden, 404 for non-owned, IP-partitioned limiter, EndpointDataSource gate test; Phase 8 lists the real identity-module seam; Phase 1 Done-when names the Postgres-gated suite; 2a boundary spec has no allow-list (canary moves or dies); 2c lists Luigi's open token/toast items for Rosalina.
 - Shipped toolchain vs reference: npm 11.17.0 (ref 11.12.1), Vitest 5.1.0 (ref ^4.0.8), jsdom 30.1.3 (ref ^28), Angular 22.2.6 exact (ref ^22.0.7). `IdentityOptions` rename to `DefaultUserOptions` still pending (Bowser, before Phase 4).
+
+### 2026-11-12 — Phase 1 cross-agent update (Scribe)
+- The `IdentityOptions` to `DefaultUserOptions` rename is done (Bowser's fix round). Item 2 of `yoshi-phase1-parity-review.md` is closed, and the "rename still pending" line above is stale.
+- Item 1's accepted `System.Security.Cryptography.Pkcs` 10.0.13 pin no longer exists. `decisions/records/bowser-net11-retarget.md` removed it, along with the `e_sqlite3` pin, when the backend moved to net11.0. Drop it from the accepted-deviation list. The record is not marked superseded, because its other items still bind.
+
+### 2026-11-12 — Phase 2a engine-boundary review
+- The boundary spec (`engine/engine-boundary.spec.ts`) checks direct package specifiers only. Bypasses: relative `sim -> ../render/pixi-renderer`, an `app/` static import of `pixi-renderer.ts` (Pixi leaves the lazy chunk), `` import(`pixi.js`) ``, `import('pixi.js', {with})`, `'a//b'` strings eating a line, `@pixi/*`, no `@angular` rule for `render/`. Fix: layer-edge rule, transitive reach rule, fail-closed parser. Skill: `.squad/skills/import-boundary-spec/SKILL.md`.
+- Today's real edges are clean: model leaf; sim->model; loop->model,sim; render->model,sim; app dynamic-imports pixi-renderer only (`fireworks-stage.ts` l.59).
+- No module-level `let`/`var` in the engine; PRESETS deep-frozen; DEFAULT_SKY/BREAK/QUALITY and COLORS are `Readonly` in type only.
+- Ruled: `sky` absent stays absent (2a.6(f) means effective value). normalize gains `adjustments` (path/kind/from/to) and structured `errors`; Phase 3 strict validator = normalize + zero adjustments. Missing `version` must become a `defaulted` adjustment. Record: `yoshi-phase2a-engine-boundaries.md`.
+- Phase 6 inheritance: TimelineDriver needs a per-step hook (`beforeStep`) with an integer step counter, plus `fireSeeded`. Worst-case shell lifetime at the limits is about 21 s (rise 5.7 + delays 7.5 + burn 5.6 + crossette/glitter tail about 2.2), which bounds the seek fast-forward window.
+- Toolchain: `ng test` needs `export PATH="$HOME/.nvm/versions/node/v26.5.0/bin:$PATH"`. The sustained-load cap spec takes about 2.6 s and hit the 5 s timeout once in a full engine run.

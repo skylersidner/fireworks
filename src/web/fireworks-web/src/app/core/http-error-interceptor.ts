@@ -6,9 +6,16 @@ import { NotificationService } from './notifications';
 import { isSelfHandledRequest } from './self-handled-request';
 
 /**
- * Logs every failed request and shows a generic error toast, unless the request is self-handled
- * (core/self-handled-request.ts) or opted out with SUPPRESS_ERROR_TOAST. Rethrows, so the caller
- * still sees the error.
+ * The fallback toast for a call that doesn't render its own error (designer-2c.md §6.3 item 3).
+ * It never quotes a method, URL or status: those go to the console only.
+ */
+export const GENERIC_ERROR_MESSAGE =
+  'Something went wrong talking to the server. Try again in a moment.';
+
+/**
+ * Logs every failed request (method, URL, status) and shows the generic error toast, unless the
+ * request is self-handled (core/self-handled-request.ts) or opted out with SUPPRESS_ERROR_TOAST.
+ * Rethrows, so the caller still sees the error.
  */
 export const httpErrorInterceptor: HttpInterceptorFn = (req, next) => {
   const notificationService = inject(NotificationService);
@@ -19,18 +26,12 @@ export const httpErrorInterceptor: HttpInterceptorFn = (req, next) => {
       if (error instanceof HttpErrorResponse) {
         console.error(`HTTP ${error.status} ${req.method} ${req.urlWithParams}`);
         if (!isSelfHandled) {
-          const message =
-            error.status > 0
-              ? `Request failed (${error.status}) for ${req.method} ${req.urlWithParams}`
-              : `Request failed for ${req.method} ${req.urlWithParams}`;
-          notificationService.error(message);
+          notificationService.error(GENERIC_ERROR_MESSAGE);
         }
       } else {
         console.error(`Unexpected HTTP pipeline error for ${req.method} ${req.urlWithParams}`);
         if (!isSelfHandled) {
-          notificationService.error(
-            `Unexpected request failure for ${req.method} ${req.urlWithParams}`,
-          );
+          notificationService.error(GENERIC_ERROR_MESSAGE);
         }
       }
 

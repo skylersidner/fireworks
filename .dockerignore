@@ -22,3 +22,5 @@ src/api/Fireworks.Api/wwwroot/
 plans/
 docs/
 prototypes/
+# Local measuring kits (tools/fps-compare): run on a developer machine, never shipped.
+tools/

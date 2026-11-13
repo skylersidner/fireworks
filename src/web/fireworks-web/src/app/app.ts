@@ -1,14 +1,13 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 
-import { HealthService } from './core/health';
+import { ApiStatusService } from './core/api-status';
 import { NotificationService } from './core/notifications';
 
 /**
- * Application root, and host for the two app-wide concerns that sit above every page: the
- * notification toast host and the API-availability probe with its modal. The probe is also the
- * only visible check that the dev proxy's /health rule works, since a broken proxy rule otherwise
- * fails silently.
+ * Application root: the notification toast host, and the one API-availability probe. Nothing here
+ * blocks a page. Since Phase 2c the probe's result is shown by the page that needs it (the
+ * designer's non-blocking banner, `/status`'s text), not by a modal (designer-2c.md §6.3).
  */
 @Component({
   selector: 'app-root',
@@ -18,26 +17,9 @@ import { NotificationService } from './core/notifications';
 })
 export class App implements OnInit {
   readonly notificationService = inject(NotificationService);
-  private readonly healthService = inject(HealthService);
-
-  readonly isCheckingApiAvailability = signal(false);
-  readonly isApiUnavailable = signal(false);
+  private readonly apiStatus = inject(ApiStatusService);
 
   ngOnInit(): void {
-    this.checkApiAvailability();
-  }
-
-  checkApiAvailability(): void {
-    this.isCheckingApiAvailability.set(true);
-    this.healthService.getLiveness().subscribe({
-      next: () => {
-        this.isCheckingApiAvailability.set(false);
-        this.isApiUnavailable.set(false);
-      },
-      error: () => {
-        this.isCheckingApiAvailability.set(false);
-        this.isApiUnavailable.set(true);
-      },
-    });
+    this.apiStatus.check();
   }
 }

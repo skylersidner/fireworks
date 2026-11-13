@@ -6,10 +6,12 @@ import { HttpRequest } from '@angular/common/http';
  * interceptor, so the exemption list cannot drift when a second interceptor arrives (Phase 8).
  *
  * Current entries:
- *  - /health/live  The root App's API-availability probe renders its own modal. Toasting as well
- *                  would show the same failure twice.
+ *  - /health/live  ApiStatusService's availability probe; the designer shows its own banner.
+ *                  Toasting as well would show the same outage twice.
+ *  - /api/me       SessionService turns a failure into `status: 'unavailable'` and canWrite false.
+ *                  One outage, one message (designer-2c.md §6.3 item 2).
  */
-const SELF_HANDLED_PATHS: ReadonlySet<string> = new Set(['/health/live']);
+const SELF_HANDLED_PATHS: ReadonlySet<string> = new Set(['/health/live', '/api/me']);
 
 export function isSelfHandledRequest(request: HttpRequest<unknown>): boolean {
   return SELF_HANDLED_PATHS.has(pathOf(request.url));

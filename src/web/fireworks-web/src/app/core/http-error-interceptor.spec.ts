@@ -2,7 +2,7 @@ import { HttpClient, HttpContext, provideHttpClient, withInterceptors } from '@a
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { SUPPRESS_ERROR_TOAST } from './http-context-tokens';
-import { httpErrorInterceptor } from './http-error-interceptor';
+import { GENERIC_ERROR_MESSAGE, httpErrorInterceptor } from './http-error-interceptor';
 import { NotificationService } from './notifications';
 
 describe('httpErrorInterceptor', () => {
@@ -28,24 +28,31 @@ describe('httpErrorInterceptor', () => {
     vi.restoreAllMocks();
   });
 
-  it('toasts a failed request with its status, and rethrows', () => {
+  it('toasts the generic message (no method, URL or status), logs the detail, and rethrows', () => {
     let errored = false;
-    client.get('/api/me').subscribe({ error: () => (errored = true) });
-    http.expectOne('/api/me').flush('x', { status: 503, statusText: 'Unavailable' });
+    client.post('/api/creations?x=1', {}).subscribe({ error: () => (errored = true) });
+    http.expectOne('/api/creations?x=1').flush('x', { status: 503, statusText: 'Unavailable' });
 
     expect(errored).toBe(true);
-    expect(notifications.notifications().map((n) => n.message)).toEqual([
-      'Request failed (503) for GET /api/me',
-    ]);
+    expect(notifications.notifications().map((n) => n.message)).toEqual([GENERIC_ERROR_MESSAGE]);
+    expect(GENERIC_ERROR_MESSAGE).toBe(
+      'Something went wrong talking to the server. Try again in a moment.',
+    );
+    expect(console.error).toHaveBeenCalledWith('HTTP 503 POST /api/creations?x=1');
   });
 
-  it('toasts a network failure without a status', () => {
-    client.get('/api/me').subscribe({ error: () => undefined });
-    http.expectOne('/api/me').error(new ProgressEvent('error'));
+  it('toasts a network failure with the same generic message', () => {
+    client.get('/api/creations').subscribe({ error: () => undefined });
+    http.expectOne('/api/creations').error(new ProgressEvent('error'));
 
-    expect(notifications.notifications().map((n) => n.message)).toEqual([
-      'Request failed for GET /api/me',
-    ]);
+    expect(notifications.notifications().map((n) => n.message)).toEqual([GENERIC_ERROR_MESSAGE]);
+  });
+
+  it('does not toast the self-handled session load (api/me)', () => {
+    client.get('/api/me').subscribe({ error: () => undefined });
+    http.expectOne('/api/me').flush('x', { status: 503, statusText: 'Unavailable' });
+
+    expect(notifications.notifications()).toEqual([]);
   });
 
   it('does not toast the self-handled liveness probe', () => {

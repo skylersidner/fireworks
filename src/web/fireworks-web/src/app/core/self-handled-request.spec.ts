@@ -14,6 +14,20 @@ describe('isSelfHandledRequest', () => {
     expect(isSelfHandledRequest(get(url))).toBe(true);
   });
 
+  it.each(['/api/me', '/api/me?x=1', 'https://fireworks.example/api/me'])(
+    'exempts the session load: %s',
+    (url) => {
+      expect(isSelfHandledRequest(get(url))).toBe(true);
+    },
+  );
+
+  it.each(['/api/me/creations', '/api/meta', '/me', '/api/creations?next=/api/me'])(
+    'does not exempt paths near the session load: %s',
+    (url) => {
+      expect(isSelfHandledRequest(get(url))).toBe(false);
+    },
+  );
+
   it('exempts the liveness probe with HttpParams', () => {
     expect(isSelfHandledRequest(get('/health/live', new HttpParams().set('a', 'b')))).toBe(true);
   });

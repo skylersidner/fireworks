@@ -1,0 +1,49 @@
+<main class="mx-auto flex max-w-xl flex-col gap-5 px-4 py-10">
+  <header>
+    <h1 class="m-0 text-heading tracking-[0.02em]">Fireworks Sandbox</h1>
+    <p class="mt-0.5 mb-0 text-small text-muted">Status</p>
+  </header>
+
+  <section class="section">
+    <h2 class="section-heading">Status</h2>
+    <dl class="m-0 grid grid-cols-[96px_1fr] gap-x-2 gap-y-1.5">
+      <dt class="text-muted">API</dt>
+      <dd class="m-0" data-testid="health-status">
+        @switch (apiStatus.status()) {
+          @case ('available') {
+            <span class="text-success">Healthy</span>
+          }
+          @case ('unavailable') {
+            <span class="text-danger">Unavailable</span>
+          }
+          @default {
+            <span class="text-muted">Checking…</span>
+          }
+        }
+      </dd>
+
+      <dt class="text-muted">Saving</dt>
+      <dd class="m-0" data-testid="write-status">
+        @switch (session.status()) {
+          @case ('loading') {
+            <span class="text-muted">Checking…</span>
+          }
+          @case ('unavailable') {
+            <span class="text-danger">Unknown (could not load session)</span>
+          }
+          @default {
+            @if (session.canWrite()) {
+              <span class="text-success">Enabled</span>
+            } @else {
+              <span class="text-muted">Disabled on this deployment</span>
+            }
+          }
+        }
+      </dd>
+    </dl>
+  </section>
+
+  <p class="m-0">
+    <a routerLink="/" class="text-accent" data-testid="back-to-designer">Back to the designer</a>
+  </p>
+</main>

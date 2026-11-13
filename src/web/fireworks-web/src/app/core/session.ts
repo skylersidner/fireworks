@@ -28,8 +28,9 @@ export class SessionService {
 
   /**
    * Fetches `api/me` into `currentUser`. The returned observable completes once the session has
-   * settled and never errors. A failure leaves `currentUser` null and `canWrite` false; the HTTP
-   * error interceptor has already toasted it.
+   * settled and never errors. A failure leaves `currentUser` null and `canWrite` false. It is
+   * self-handled (core/self-handled-request.ts), so the interceptor does not toast it: one outage
+   * shows one message, the designer's API banner.
    *
    * app.config.ts subscribes to this from an initializer WITHOUT returning it, so the first render
    * does not wait on `api/me`. That is safe only while no route guard reads identity: write
