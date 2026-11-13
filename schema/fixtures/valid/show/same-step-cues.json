@@ -1,0 +1,53 @@
+{
+  "description": "Two cues with t 1.0 and 1.004 (both round to step 120), ids out of array order.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "shells": {
+      "s1": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      }
+    },
+    "cues": [
+      {
+        "id": "b",
+        "t": 1.004,
+        "shell": "s1",
+        "x": 0.25,
+        "seed": 7
+      },
+      {
+        "id": "a",
+        "t": 1.0,
+        "shell": "s1",
+        "x": 0.75,
+        "seed": 8
+      }
+    ]
+  }
+}

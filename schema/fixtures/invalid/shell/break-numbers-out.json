@@ -1,0 +1,52 @@
+{
+  "description": "speed, changeAt, burn and delay above their maximums; drag and size below their minimums.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Peony",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 120,
+        "speed": 405,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.96,
+        "burn": 5.1,
+        "drag": -0.01,
+        "size": 0.39,
+        "trail": "none",
+        "effect": "none",
+        "delay": 2.55
+      }
+    ]
+  },
+  "errors": [
+    {
+      "path": "breaks[0].burn",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].changeAt",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].delay",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].drag",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].size",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].speed",
+      "code": "out-of-range"
+    }
+  ]
+}

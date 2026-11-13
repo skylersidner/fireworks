@@ -52,3 +52,8 @@
 - My §7.2 line "notice read before the panel" was wrong against the oracle (prototype is panel, then stage) and led Luigi to reorder the DOM with `flex-row-reverse`. Ruled: keep panel-first DOM (h1 first, Tab order = visual order); reach the visitor through the initial focus move, `aria-describedby` on the notice buttons, and a swapped playback note ("Close the flashing notice on the stage to start.").
 - Lesson: never ask for "read before X" in a spec without checking the oracle's DOM order; a CSS-order fix for reading order breaks WCAG 1.3.2/2.4.3. A focused button in a region doesn't read the region's body text; use aria-describedby.
 - Confirmed Luigi: the Display switch swaps the notice copy but doesn't dismiss; notice focus only from body; Launch focused after render on dismiss.
+
+### 2026-11-13 — Phase 2 cross-agent update (Scribe)
+- The replace-only ruling overtakes your record's item 5 (display settings count as edits) and item 9 (display and tab set dirty; one flag). The record carries a partial-supersession marker. Items 10 to 12 stand.
+- Stale in your spec `docs/fireworks-app/design/designer-2c.md`: §6.4 (around l.403 to 427) describes one `dirty` boolean, and l.464 says a display or tab change "sets dirty". The code and Peach's criteria (2c.9, 2c.16) follow the shell and sky split (Luigi's addendum). Please update §6.4 and l.464 in place before Phase 5.
+- Your panel-first DOM correction is what shipped. No action.

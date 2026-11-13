@@ -1,0 +1,11 @@
+{
+  "description": "An extra envelope key owner beside a valid shell: unknown-property at the envelope path (the owner is never a request field).",
+  "body": "{\"kind\":\"shell\",\"document\":{\"version\":1,\"name\":\"Peony\",\"burstHeight\":0.65,\"angleJitter\":4,\"breaks\":[{\"pattern\":\"peony\",\"stars\":120,\"speed\":220,\"color1\":\"red\",\"color2\":\"gold\",\"changeAt\":0.65,\"burn\":1.6,\"drag\":0.9,\"size\":1,\"trail\":\"none\",\"effect\":\"none\",\"delay\":0.6}]},\"owner\":\"x\"}",
+  "status": 400,
+  "errors": [
+    {
+      "path": "owner",
+      "code": "unknown-property"
+    }
+  ]
+}

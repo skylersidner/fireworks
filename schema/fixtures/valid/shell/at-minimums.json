@@ -1,0 +1,30 @@
+{
+  "description": "Every numeric field (shell, break, sky) at its minimum, one break.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "A",
+    "burstHeight": 0.3,
+    "angleJitter": 0,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 4,
+        "speed": 60,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.1,
+        "burn": 0.3,
+        "drag": 0,
+        "size": 0.4,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.1
+      }
+    ],
+    "sky": {
+      "gravity": 40,
+      "wind": -80
+    }
+  }
+}

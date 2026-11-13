@@ -84,5 +84,9 @@ describe('Reduce flashing leaves the simulation unchanged', () => {
     expect(on.flagSeen).toBe(true);
     expect(Math.max(...off.trace.map((row) => row[0]))).toBeGreaterThan(5000);
     expect(on.trace).toEqual(off.trace);
-  });
+    // Explicit timeout (as Yoshi's L7 did for the cap spec): two 1,200-frame runs through all
+    // ten presets take ~3.6 s alone and went past the default 5 s in the full suite (Peach F16).
+    // The work stays as is, because the 1,200 frames are what carry the >5,000 peak and every
+    // effect Reduce flashing touches. Full-suite durations measured 2026-11-13: see toad history.
+  }, 30_000);
 });

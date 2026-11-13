@@ -1,6 +1,13 @@
 // @vitest-environment node
-import { BREAK_LIMITS, SHELL_LIMITS, SKY_LIMITS } from './limits';
-import { FALLBACK_NAME, normalizeQuality, normalizeShell, normalizeSky } from './normalize';
+import { BREAK_LIMITS, CUE_LIMITS, SHELL_LIMITS, SKY_LIMITS } from './limits';
+import {
+  childPath,
+  FALLBACK_NAME,
+  normalizeQuality,
+  normalizeShell,
+  normalizeShow,
+  normalizeSky,
+} from './normalize';
 import { PRESETS } from './presets';
 import { COLORS, PALETTE } from './colors';
 import {
@@ -303,5 +310,120 @@ describe('frozen defaults (L3, L6)', () => {
     }
     expect(newShell('x').breaks[0]).not.toBe(DEFAULT_SHELL.breaks[0]);
     expect(Object.isFrozen(newShell('x'))).toBe(false);
+  });
+});
+
+describe('property names in paths (schema.md §6.2 rule 11)', () => {
+  const LONE_HIGH = String.fromCharCode(0xd800);
+  const LONE_LOW = String.fromCharCode(0xdc00);
+  const FFFD = String.fromCharCode(0xfffd);
+
+  it('plain names after a dot (none at the root), anything else in brackets', () => {
+    expect(childPath('', 'stars')).toBe('stars');
+    expect(childPath('breaks[0]', '_x-1')).toBe('breaks[0]._x-1');
+    expect(childPath('', 'a.b')).toBe('["a.b"]');
+    expect(childPath('', '')).toBe('[""]');
+    expect(childPath('', '1a')).toBe('["1a"]');
+    expect(childPath('', 'a b')).toBe('["a b"]');
+    expect(childPath('', 'a[0]')).toBe('["a[0]"]');
+    expect(childPath('', 'é')).toBe('["é"]');
+    expect(childPath('', 'a\n')).toBe('["a\n"]');
+    expect(childPath('breaks[0]', 'a"b')).toBe('breaks[0]["a\\"b"]');
+    expect(childPath('sky', 'a\\b')).toBe('sky["a\\\\b"]');
+  });
+
+  it('keeps surrogate pairs and writes each unpaired surrogate as U+FFFD', () => {
+    expect(childPath('', `st${LONE_HIGH}ars`)).toBe(`["st${FFFD}ars"]`);
+    expect(childPath('', `${LONE_LOW}${LONE_HIGH}`)).toBe(`["${FFFD}${FFFD}"]`);
+    expect(childPath('', `a${LONE_HIGH}`)).toBe(`["a${FFFD}"]`);
+    expect(childPath('', '\u{1F386}')).toBe('["\u{1F386}"]');
+  });
+
+  it('dropped keys use it at every level', () => {
+    const preset = structuredClone(PRESETS[0]) as unknown as Record<string, unknown>;
+    const result = normalizeShell({
+      ...preset,
+      'a.b': 1,
+      '': 2,
+      sky: { gravity: 160, wind: 0, 'x y': 3 },
+      breaks: [{ ...DEFAULT_BREAK, 'a"b': 4, [`st${LONE_HIGH}ars`]: 5 }],
+    });
+    expect(result.adjustments.map((a) => a.path)).toEqual([
+      '["a.b"]',
+      '[""]',
+      'sky["x y"]',
+      'breaks[0]["a\\"b"]',
+      `breaks[0]["st${FFFD}ars"]`,
+    ]);
+  });
+});
+
+/** schema.md §12.5: lenient-only show rules (the server has no lenient mode). */
+describe('normalizeShow, lenient-only rules (schema.md §12.5)', () => {
+  const embedded = () => {
+    const s = structuredClone(PRESETS[0]) as unknown as Record<string, unknown>;
+    delete s['sky'];
+    return s;
+  };
+  const show = () => ({
+    version: 1,
+    name: 'Show',
+    sky: { gravity: 160, wind: 0 },
+    duration: 10,
+    shells: { s1: embedded() } as Record<string, unknown>,
+    cues: [{ id: 'c1', t: 1, shell: 's1', x: 0.5, seed: 42 }] as Record<string, unknown>[],
+  });
+  const withCue = (patch: Record<string, unknown>) => {
+    const s = show();
+    s.cues[0] = { ...s.cues[0], ...patch };
+    return s;
+  };
+
+  it('the minimal show is ok with no adjustments', () => {
+    expect(normalizeShow(show())).toMatchObject({ ok: true, adjustments: [] });
+  });
+
+  it.each([1.5, 2147483648, -2147483649])('seed %d is a hard error, never adjusted', (seed) => {
+    const r = normalizeShow(withCue({ seed }));
+    expect(r.ok).toBe(false);
+    expect(r.adjustments).toEqual([]);
+  });
+
+  it.each(['id', 't', 'shell', 'x', 'seed'])('a cue without %s is a hard error', (field) => {
+    const s = show();
+    delete s.cues[0][field];
+    expect(normalizeShow(s).ok).toBe(false);
+  });
+
+  it('show sky {} is a hard error (no DEFAULT_SKY fill)', () => {
+    expect(normalizeShow({ ...show(), sky: {} }).ok).toBe(false);
+  });
+
+  it('duration and cue t, x and burstHeight are clamped', () => {
+    const cases: [ReturnType<typeof show>, string, number][] = [
+      [{ ...show(), duration: 601 }, 'duration', 600],
+      [withCue({ t: -1 }), 'cues[0].t', 0],
+      [withCue({ x: 1.5 }), 'cues[0].x', 1],
+      [withCue({ burstHeight: 0.9 }), 'cues[0].burstHeight', CUE_LIMITS.burstHeight.max],
+    ];
+    for (const [input, path, to] of cases) {
+      const r = normalizeShow(input);
+      expect(r.ok, path).toBe(true);
+      expect(r.adjustments, path).toEqual([{ path, kind: 'clamped', from: expect.anything(), to }]);
+    }
+  });
+
+  it('null shell sky and null cue burstHeight are defaulted and absent from the result', () => {
+    const shellResult = normalizeShell({ ...structuredClone(PRESETS[0]), sky: null });
+    if (!shellResult.ok) throw new Error('expected ok');
+    expect(shellResult.adjustments).toEqual([{ path: 'sky', kind: 'defaulted', from: null }]);
+    expect('sky' in shellResult.shell).toBe(false);
+
+    const r = normalizeShow(withCue({ burstHeight: null }));
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.adjustments).toEqual([
+      { path: 'cues[0].burstHeight', kind: 'defaulted', from: null },
+    ]);
+    expect('burstHeight' in r.show.cues[0]).toBe(false);
   });
 });

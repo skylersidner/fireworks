@@ -31,3 +31,7 @@
 - The "aspnet:10.0 runs as root" entry above is stale. The fix round added `USER $APP_UID`, and the image is `aspnet:11.0` after the net11 retarget. Development settings are no longer published.
 - Condition 4 of your Phase 1 review (verify `X-Forwarded-For` on Railway) is open while Railway is deferred. Phase 4's limiter waits on it.
 - Yoshi's "My creations" ruling (`GET api/me/creations` returns 403 when `CanWrite` is false) puts a GET endpoint under the write gate. Include it in your Phase 4 review and in the enumerated gate test.
+
+### 2026-11-13 — Phase 2 cross-agent update (Scribe)
+- Phase 2 had no security review (not in the phase map). The draft is client-only localStorage. The JSON paste runs through normalize, which clamps and rejects.
+- For Phase 4: the server's shell rule is Phase 3's strict validator (normalize plus zero adjustments, Yoshi). Review the server validator against that rule: a document the client would adjust must be rejected by the server, not stored.

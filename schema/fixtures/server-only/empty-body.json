@@ -1,0 +1,11 @@
+{
+  "description": "An empty body (zero bytes): not-json.",
+  "body": "",
+  "status": 400,
+  "errors": [
+    {
+      "path": "",
+      "code": "not-json"
+    }
+  ]
+}

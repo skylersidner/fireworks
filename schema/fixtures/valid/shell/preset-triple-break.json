@@ -1,0 +1,54 @@
+{
+  "description": "The Triple Break preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Triple Break",
+    "burstHeight": 0.55,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 80,
+        "speed": 170,
+        "color1": "blue",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1.2,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.6
+      },
+      {
+        "pattern": "ring",
+        "stars": 60,
+        "speed": 210,
+        "color1": "gold",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1.3,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.7
+      },
+      {
+        "pattern": "peony",
+        "stars": 120,
+        "speed": 240,
+        "color1": "white",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "none",
+        "effect": "crackle",
+        "delay": 0.8
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "description": "Values off the slider step are valid (burstHeight 0.333, speed 61).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Peony",
+    "burstHeight": 0.333,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 120,
+        "speed": 61,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.65,
+        "burn": 1.6,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.6
+      }
+    ]
+  }
+}

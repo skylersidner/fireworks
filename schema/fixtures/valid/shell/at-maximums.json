@@ -1,0 +1,72 @@
+{
+  "description": "Every numeric field (shell, break, sky) at its maximum, four breaks, an 80-character name.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
+    "burstHeight": 0.85,
+    "angleJitter": 20,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 400,
+        "speed": 400,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.95,
+        "burn": 5,
+        "drag": 4,
+        "size": 3,
+        "trail": "none",
+        "effect": "none",
+        "delay": 2.5
+      },
+      {
+        "pattern": "peony",
+        "stars": 400,
+        "speed": 400,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.95,
+        "burn": 5,
+        "drag": 4,
+        "size": 3,
+        "trail": "none",
+        "effect": "none",
+        "delay": 2.5
+      },
+      {
+        "pattern": "peony",
+        "stars": 400,
+        "speed": 400,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.95,
+        "burn": 5,
+        "drag": 4,
+        "size": 3,
+        "trail": "none",
+        "effect": "none",
+        "delay": 2.5
+      },
+      {
+        "pattern": "peony",
+        "stars": 400,
+        "speed": 400,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.95,
+        "burn": 5,
+        "drag": 4,
+        "size": 3,
+        "trail": "none",
+        "effect": "none",
+        "delay": 2.5
+      }
+    ],
+    "sky": {
+      "gravity": 400,
+      "wind": 80
+    }
+  }
+}

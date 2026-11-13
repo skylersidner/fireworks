@@ -1,0 +1,52 @@
+{
+  "description": "The other side of break-numbers-out: speed, changeAt, burn and delay below their minimums; drag and size above their maximums (schema.md \u00a75.2 item 4).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Peony",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 120,
+        "speed": 55,
+        "color1": "red",
+        "color2": "gold",
+        "changeAt": 0.05,
+        "burn": 0.25,
+        "drag": 4.05,
+        "size": 3.05,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.05
+      }
+    ]
+  },
+  "errors": [
+    {
+      "path": "breaks[0].burn",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].changeAt",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].delay",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].drag",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].size",
+      "code": "out-of-range"
+    },
+    {
+      "path": "breaks[0].speed",
+      "code": "out-of-range"
+    }
+  ]
+}

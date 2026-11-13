@@ -1,0 +1,11 @@
+{
+  "description": "No document: missing.",
+  "body": "{\"kind\":\"shell\"}",
+  "status": 400,
+  "errors": [
+    {
+      "path": "document",
+      "code": "missing"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "description": "The Crackling Heart preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Crackling Heart",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "heart",
+        "stars": 90,
+        "speed": 200,
+        "color1": "pink",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1.5,
+        "drag": 1,
+        "size": 1,
+        "trail": "none",
+        "effect": "crackle",
+        "delay": 0.6
+      }
+    ]
+  }
+}

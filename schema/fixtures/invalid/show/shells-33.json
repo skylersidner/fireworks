@@ -1,0 +1,756 @@
+{
+  "description": "33 shells: only shell-count, no shell walked and no unknown-shell.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "shells": {
+      "s1": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s2": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s3": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s4": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s5": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s6": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s7": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s8": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s9": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s10": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s11": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s12": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s13": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s14": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s15": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s16": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s17": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s18": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s19": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s20": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s21": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s22": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s23": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s24": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s25": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s26": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s27": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s28": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s29": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s30": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s31": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s32": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s33": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      }
+    },
+    "cues": [
+      {
+        "id": "c1",
+        "t": 1,
+        "shell": "s1",
+        "x": 0.5,
+        "seed": 12345
+      }
+    ]
+  },
+  "errors": [
+    {
+      "path": "shells",
+      "code": "shell-count"
+    }
+  ]
+}

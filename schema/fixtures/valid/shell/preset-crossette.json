@@ -1,0 +1,26 @@
+{
+  "description": "The Crossette preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Crossette",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 28,
+        "speed": 210,
+        "color1": "green",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1,
+        "drag": 1,
+        "size": 1.2,
+        "trail": "tail",
+        "effect": "crossette",
+        "delay": 0.6
+      }
+    ]
+  }
+}

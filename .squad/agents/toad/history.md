@@ -63,3 +63,31 @@
 - Mario's `mario-parity2.mjs` counts `Delay` while tab 1 is selected (always 0). Re-checked separately.
 - P9's "draft has no mode field" conflicts with 2c.9(ii)/2c.10 (mode is a display setting outside the document). Read it as the document and flagged it to Peach for rewording.
 - `tools/fps-compare/README.md` now says the kit is benched (plan §6) and the bar is historical.
+
+### 2026-11-13 — Phase 2 cross-agent update (Scribe)
+- Phase 3 fixtures must use normalize's paths (`breaks[1].color1`, `sky.wind`, `name`, `version`), not free-form field names. Source: Yoshi's record, item 4.
+- fps is benched (plan §6; `tools/fps-compare/README.md`). Your pass bar is historical. Your fps record is marked superseded in part.
+- The `[BindGroup] textureSource destroyed while still bound` warning you reported is fixed by Luigi's teardown order (glow texture destroyed after `app.destroy`). Smoke: 3 warnings before, 0 after.
+- P9's Check column wording is still open with Peach.
+
+### 2026-11-13 — Phase 3 shared fixtures
+- Built `schema/limits.json` (20 rows; `show.cues.count` min 1 per Skyler's Q4), `schema/fixtures/**` (140 files: valid/shell 21, valid/show 9, invalid/shell 66, invalid/show 38, server-only 6), `schema/fixtures/upgrade/README.md`, `schema/README.md`.
+- **Fixtures are generated, never hand-edited:** `schema/tools/generate-fixtures.mjs` (`--check` diffs the disk). It bundles `presets.ts` with the web app's esbuild (Node can't import extensionless TS), reads boundaries from `limits.json`, and splices text `JSON.stringify` can't make via sentinels (`"@@raw:1e400@@"`, `"@@key:__proto__@@"`). Every non-ASCII char is `\u`-escaped.
+- Expected errors are transcribed from schema.md §6/§12 only. Luigi's `validate.ts` then passed all 134 valid/invalid fixtures on the first run: two independent derivations from the doc agreeing.
+- Max show: compact `{kind, document}` body 189,359 B UTF-8, 210,479 B `\u`-escaped (limit 262,144).
+- Luigi had already written `limits.spec.ts` (via `SCHEMA_LIMIT_ROWS` in `limits.ts`) and the runner `schema-fixtures.spec.ts`; I added `schema-fixtures-format.spec.ts` (shape, codes from the §6.3 table, presets, `__proto__` own key, boundaries, size, layout). 17 negative controls, all caught (scratchpad `toad5/nc.py`). Luigi's runner throws at module load on a bad kind or bad JSON, which fails the whole file (426 → 291 tests), so it's loud, not per-file.
+- Shared files being edited in parallel (schema.md, limits.ts): mutate with an exact one-occurrence swap and reverse the swap; never restore from a backup copy, which would clobber a teammate's concurrent edit.
+
+### 2026-11-13 — Phase 3 follow-up: edge-case fixtures (schema.md §2.6, §6.2 rules 7–13, §12.3–12.4 "(new)")
+- 35 new fixtures through the generator, 175 total: valid/shell 21, valid/show 9, invalid/shell 71 (+5), invalid/show 51 (+13), server-only 23 (+17). Expected errors transcribed from schema.md only.
+- Luigi's rule 11 `childPath` had already landed in `normalize.ts`, so all four `unknown-key-*` fixtures passed his runner on the first run (and two mutants show the runner does catch the old `parent.name` form).
+- Server-only format grew `contentType` (415 only) and `byteMarkers` (`@@byte:ff@@` → 0xFF). Record `toad-phase3-server-only-wire-fields.md`. README has the harness rules, including the root-array/root-string `(document, not-object)` translation.
+- Format spec now parses rule 11 paths (rejects a bracketed plain name and any lone surrogate in a path), scans bodies for repeated names (JSON.parse hides them), and checks the marker bytes with a fatal `TextDecoder`.
+- The Edit tool turned my `�` escape in the generator into a literal U+FFFD. Output is identical, but grep the source for non-ASCII after edits that contain escapes.
+- Negative-control runner `scratchpad/toad6/nc.py`: 14 generator mutants, all caught. Twice, a mutant's replacement text wasn't unique, so the reverse swap failed; the runner now asserts the replacement is absent before writing. Restored both by hand and verified with `--check`.
+- Node 26.5.0 full suite: 953 tests in 29 files, typecheck clean.
+
+### 2026-11-13: reduce-flashing spec timeout (Peach F16)
+- `fireworks-stage.reduce-flashing.spec.ts` now has an explicit `30_000` timeout (same pattern as Yoshi's L7 on the cap spec). The work is unchanged (2 runs x 1,200 frames, all ten presets), so the 2026-11-12 negative control (halve starBudget when Reduce flashing is on) still applies as recorded.
+- Measured in three full `npm test -- --watch=false --reporters=verbose` runs (Node 26.5.0, 953/953 passed each time): 6263, 5628, 6636 ms, with 1-minute load average 10 to 52 (other work on the machine). Alone it's ~3.6 s. The 30 s budget gives a ~4.5x margin over the worst full-suite run.
+- `--reporters=verbose` on the Angular unit-test builder prints per-test durations; that's the way to measure these.

@@ -1,0 +1,22 @@
+{
+  "shell.burstHeight": { "min": 0.3, "max": 0.85, "integer": false },
+  "shell.angleJitter": { "min": 0, "max": 20, "integer": false },
+  "break.stars": { "min": 4, "max": 400, "integer": true },
+  "break.speed": { "min": 60, "max": 400, "integer": false },
+  "break.changeAt": { "min": 0.1, "max": 0.95, "integer": false },
+  "break.burn": { "min": 0.3, "max": 5, "integer": false },
+  "break.drag": { "min": 0, "max": 4, "integer": false },
+  "break.size": { "min": 0.4, "max": 3, "integer": false },
+  "break.delay": { "min": 0.1, "max": 2.5, "integer": false },
+  "sky.gravity": { "min": 40, "max": 400, "integer": false },
+  "sky.wind": { "min": -80, "max": 80, "integer": false },
+  "shell.name.codePoints": { "min": 1, "max": 80, "integer": true },
+  "shell.breaks.count": { "min": 1, "max": 4, "integer": true },
+  "show.duration": { "min": 1, "max": 600, "integer": false },
+  "show.shells.count": { "min": 0, "max": 32, "integer": true },
+  "show.cues.count": { "min": 1, "max": 1000, "integer": true },
+  "cue.t": { "min": 0, "max": "show.duration", "integer": false },
+  "cue.x": { "min": 0, "max": 1, "integer": false },
+  "cue.burstHeight": { "min": 0.3, "max": 0.85, "integer": false },
+  "cue.seed": { "min": -2147483648, "max": 2147483647, "integer": true }
+}

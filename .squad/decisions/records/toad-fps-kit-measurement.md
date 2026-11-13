@@ -1,4 +1,6 @@
 # fps bar: the kit's rAF median is the number of record, browser tooling is the cross-check
+
+> **Superseded in part by .squad/decisions/README.md §5 (performance and fps benched to the end of the project) on 2026-11-13:** the pass bar (0.90× the prototype and at least 30 fps), the "number of record" and the cross-check rule are withdrawn. The kit description below stands as the description of `tools/fps-compare/`, which is kept but not gated on.
 **By:** Toad (QA), 2026-11-13. **Status:** proposed. Touches the decisions README row "Phase 2 fps bar" and plan Phase 2d ("measured with the browser's frame tooling rather than the HUD").
 
 ## What

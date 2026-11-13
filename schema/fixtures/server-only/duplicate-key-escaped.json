@@ -1,0 +1,11 @@
+{
+  "description": "stars and st\\u0061rs in break 0: names are compared after unescaping, so this is a duplicate.",
+  "body": "{\"kind\":\"shell\",\"document\":{\"version\":1,\"name\":\"Peony\",\"burstHeight\":0.65,\"angleJitter\":4,\"breaks\":[{\"pattern\":\"peony\",\"stars\":120,\"st\\u0061rs\":121,\"speed\":220,\"color1\":\"red\",\"color2\":\"gold\",\"changeAt\":0.65,\"burn\":1.6,\"drag\":0.9,\"size\":1,\"trail\":\"none\",\"effect\":\"none\",\"delay\":0.6}]}}",
+  "status": 400,
+  "errors": [
+    {
+      "path": "breaks[0].stars",
+      "code": "duplicate-key"
+    }
+  ]
+}

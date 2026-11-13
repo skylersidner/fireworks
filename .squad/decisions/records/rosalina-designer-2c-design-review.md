@@ -1,6 +1,8 @@
 # Designer 2c design-review rulings: tokens, API-down state, flashing safety
 **By:** Rosalina (Designer), 2026-11-12. Full spec: `docs/fireworks-app/design/designer-2c.md`.
 
+> **Superseded in part by luigi-2c-dirty-flag-and-notice-hold.md on 2026-11-13:** item 5's clause that display settings "count as edits" and item 9's list of changes that set dirty (display settings, tab) and its "confirm only when dirty" rule are replaced by Skyler's replace-only ruling. Only shell and sky changes count, tracked as separate flags. Items 1–4, 6–8, 10–12 stand. The spec §6.4 still shows the single-flag wording and is pending an update.
+
 ## What
 1. **Tokens.** Luigi's Phase 1 semantic names in `src/web/fireworks-web/src/styles.css` are confirmed, except: `toast-success`/`toast-error` (and their `on-` pairs) are renamed `success-surface`, `danger-surface`, `on-success-surface`, `on-danger-surface` (values unchanged); `border-control` `#56627f` and `border-control-hover` `#6b7594` are added for text inputs, selects and the textarea; font-size tokens `text-heading` 15px, `text-body` 13px, `text-small` 12px, `text-caption` 11px are added. Firework colors are engine data (`engine/model/colors.ts`), never CSS tokens.
 2. **API down is one non-blocking banner, not a modal plus a toast.** The `/health/live` modal is replaced by a `role="status"` banner in the designer panel. `GET api/me` becomes self-handled (no toast). The interceptor's generic toast never quotes a method or URL.

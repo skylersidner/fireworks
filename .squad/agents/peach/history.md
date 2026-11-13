@@ -56,3 +56,15 @@
 - Derived, not asked: a preset doesn't clear sky-changed (it doesn't replace the sky); a legacy single `dirty: true` reads as both changed (Q8(b) logic). Flagged in the report.
 - fps benched (plan §6): removed 2d.4 only. Kept 2d.1 (parity checklist is a plan 2d Done-when, not fps) and 2a.14(c)/P12 HUD fps readout (display parity, not a perf requirement). P27 got its own load procedure since it pointed at 2d.4.
 - Pattern: when a removed criterion is a procedure other rows cite ("The 2d.4 procedure"), the citing rows need the procedure inlined, not just the reference deleted.
+
+### 2026-11-13 — Phase 2 cross-agent update (Scribe)
+- Q1 to Q8 are answered. Q1 (fps) became "benched", and 2d.4 was removed. Your `peach-phase2-acceptance-criteria.md` record carries a partial-supersession marker (draft contents, Q1 to Q4).
+- Still open in `docs/fireworks-app/acceptance/phase-2.md`: F15 (the single-flag store, now built as the shell and sky split) is not marked closed. P9's Check column still says "draft has no mode field"; Toad and you agreed it should read "the shell document".
+- Rosalina's spec §6.4 still describes one flag. Your acceptance rows follow the split, and should stay the reference. Check with Rosalina before copying her §6.4 wording.
+
+### 2026-11-13 — Phase 3 schema acceptance
+- Wrote `docs/fireworks-app/acceptance/phase-3.md`: ACCEPT WITH NOTES, F1–F16, Q1–Q3. Fixed P9 in `acceptance/phase-2.md` ("the shell document has no mode field").
+- Payload checks that paid off: diffing schema.md §12's fixture names against `schema/fixtures/**` (none missing), and grepping the designer's `[formField]` bindings (17 shell fields, all in `EditableShell`; the 4 display fields are in `DesignerDraft.display`).
+- Gaps to carry into Phase 4/5/6 briefs: the paging shape of `api/me/creations` is unspecified (F1). The player's Remix button behavior is undefined, and before Phase 8 `isOwner` is always true, so Done-when step 3 depends on it (Q1). Phase 5 "dirty indicator" vs the replace-confirm `shellDirty`/`skyDirty` flags (F4). Save-time 400/403/404/413/429 copy has no owner (F10). `issueReason` renders `type` with `options:['integer']` as "must be text" (F11). Show stop-at-`duration` vs a valid cue at `t == duration` (Q3).
+- Doc vs code: schema.md §8.3 says draft restore runs upgrade; `readDraft` doesn't. Full `ng test` needs Node 26 (`~/.nvm/versions/node/v26.5.0/bin`); the shell default v21.5 is refused. The reduce-flashing spec times out under full-suite load.
+- Pattern: when a ruling says "X happens only when not owner" and the interim makes everyone the owner, check that each Done-when step is still observable in the running app.

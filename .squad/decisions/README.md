@@ -61,3 +61,12 @@
 | **Performance/fps requirements are benched until the end of the project, tests included.** The concern to re-evaluate is browser CPU load, not visual frame rate. No gate checks fps. | plan Phase 2d, §6 |
 | **Names and ports:** `Fireworks.*`, API 5180, DB 5433, Angular dev server on 4200 (not run alongside Monster of the Week). | plan §5 OQ12 |
 | **Forms: Angular Signal Forms on Angular 22.** Stable there and the direction Angular is heading. This is a deliberate departure from the reference's reactive forms. | plan §5 OQ17 |
+| **A cue's `t` is its launch time.** | `docs/fireworks-app/schema.md` §4.3 · `records/yoshi-phase3-creation-schema.md` |
+| **Share links are not locked.** Improvements may change how existing links play; prototype goldens are regression guards updated by reviewed change; version bumps are for document-shape changes only. | schema.md §8.1 |
+| **`remixedFrom` is visible only to the remix's owner;** everyone else gets `null`. | schema.md §2.1 |
+| **An empty show can't be saved** (1..1000 cues); caps are 32 shells, 1000 cues, 600 s. | schema.md §4, §5.1 |
+| **A blank name saves as "Custom".** | schema.md §6.4 |
+| **A link never opens the saved record for editing.** `/c/:code` is the only editing link, for shells and shows; it loads a dirty working copy with exactly the saved settings. No edit-in-place route; the player's Remix just opens the working copy. | schema.md §11.1–11.2 · `records/yoshi-phase3-creation-schema.md` |
+| **Save on a working copy:** an owned source offers "Update original" (PUT) or "Save as new" (remix); otherwise Save creates a new creation with `remixedFrom` set. Before Phase 8 `isOwner` is always true. | schema.md §11.4–11.5 |
+| **Opening a link over unsaved changes asks first,** only when the shell or sky is dirty (same rule as Apply with `sky`). | schema.md §11.3 |
+| **A show runs until the last particle fades.** `duration` is the launch window only; a cue at `t == duration` is valid and its burst is seen. | schema.md §4.5 |

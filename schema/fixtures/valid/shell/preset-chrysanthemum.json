@@ -1,0 +1,26 @@
+{
+  "description": "The Chrysanthemum preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Chrysanthemum",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 140,
+        "speed": 230,
+        "color1": "silver",
+        "color2": "blue",
+        "changeAt": 0.7,
+        "burn": 1.8,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "tail",
+        "effect": "none",
+        "delay": 0.6
+      }
+    ]
+  }
+}

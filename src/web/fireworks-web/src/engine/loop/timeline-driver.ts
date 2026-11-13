@@ -8,7 +8,8 @@ export interface TimelineCue {
   readonly shell: string;
   /** Fraction of the world width. */
   readonly x: number;
-  readonly burstHeight: number | null;
+  /** Absent means the shell's own `burstHeight` (schema.md §4.3); never `null`. */
+  readonly burstHeight?: number;
   readonly seed: number;
 }
 

@@ -1,0 +1,26 @@
+{
+  "description": "The Ring preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Ring",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "ring",
+        "stars": 70,
+        "speed": 230,
+        "color1": "cyan",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1.4,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.6
+      }
+    ]
+  }
+}

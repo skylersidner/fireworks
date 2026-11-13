@@ -1,0 +1,16 @@
+{
+  "description": "No breaks key.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Peony",
+    "burstHeight": 0.65,
+    "angleJitter": 4
+  },
+  "errors": [
+    {
+      "path": "breaks",
+      "code": "break-count"
+    }
+  ]
+}

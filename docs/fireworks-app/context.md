@@ -22,7 +22,7 @@ Context handoff for a Claude Code session. Pair it with `prototypes/fireworks-pr
 ## Target architecture
 
 ### 1. Data model (persisted JSON)
-- **Shell:** `name`, `burstHeight` (0–1 fraction of the sky), `angleJitter` (degrees), and `breaks[]` (one or more, which makes multi-break shells possible). Includes a `version` field so the schema can change later.
+- **Shell:** `name`, `burstHeight` (0.3–0.85, a fraction of the ground height, 760 units; the v1 contract is `docs/fireworks-app/schema.md`), `angleJitter` (degrees), and `breaks[]` (one or more, which makes multi-break shells possible). Includes a `version` field so the schema can change later.
 - **Break:** `pattern` (peony | ring | palm | heart), `stars`, `speed`, `color1` (or `rainbow`), `color2` (or `none`), `changeAt`, `burn`, `drag`, `size`, `trail` (none | tail | glitter), `effect` (none | crackle | crossette | strobe), and `delay` (seconds after the previous break; used for every break except the first).
 - **Show (next step):** a timeline of cues. Each cue has `{ shellRef or embedded shell, launchTime, x position, burst point/angle }`, with music offsets possible later. Shared shows should **embed copies** of their shells so edits or deletes don't break old links.
 

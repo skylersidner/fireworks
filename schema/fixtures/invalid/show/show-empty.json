@@ -1,0 +1,21 @@
+{
+  "description": "0 shells and 0 cues: an empty show cannot be saved (Skyler, Q4). No cue means no unknown-shell, and no shell rule fires.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "shells": {},
+    "cues": []
+  },
+  "errors": [
+    {
+      "path": "cues",
+      "code": "cue-count"
+    }
+  ]
+}

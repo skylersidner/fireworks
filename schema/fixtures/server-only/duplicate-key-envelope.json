@@ -1,0 +1,11 @@
+{
+  "description": "kind \"shell\" twice (both valid) and a document with stars 401: only the envelope issue, because the document is walked only when the envelope is clean (schema.md \u00a72.6).",
+  "body": "{\"kind\":\"shell\",\"kind\":\"shell\",\"document\":{\"version\":1,\"name\":\"Peony\",\"burstHeight\":0.65,\"angleJitter\":4,\"breaks\":[{\"pattern\":\"peony\",\"stars\":401,\"speed\":220,\"color1\":\"red\",\"color2\":\"gold\",\"changeAt\":0.65,\"burn\":1.6,\"drag\":0.9,\"size\":1,\"trail\":\"none\",\"effect\":\"none\",\"delay\":0.6}]}}",
+  "status": 400,
+  "errors": [
+    {
+      "path": "kind",
+      "code": "duplicate-key"
+    }
+  ]
+}

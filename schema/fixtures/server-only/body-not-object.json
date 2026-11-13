@@ -1,0 +1,11 @@
+{
+  "description": "The body is [] (valid JSON, not an object): not-object at the body root.",
+  "body": "[]",
+  "status": 400,
+  "errors": [
+    {
+      "path": "",
+      "code": "not-object"
+    }
+  ]
+}

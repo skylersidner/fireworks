@@ -1,0 +1,26 @@
+{
+  "description": "The Willow preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Willow",
+    "burstHeight": 0.72,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 110,
+        "speed": 210,
+        "color1": "gold",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 3.6,
+        "drag": 1.5,
+        "size": 0.8,
+        "trail": "glitter",
+        "effect": "none",
+        "delay": 0.6
+      }
+    ]
+  }
+}

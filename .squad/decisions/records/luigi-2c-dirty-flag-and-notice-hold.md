@@ -1,6 +1,8 @@
 # Designer 2c fix round: dirty flag replaces the baseline; the flashing notice holds playback
 **By:** Luigi (Frontend), 2026-11-13. **Status:** proposed. Implements Skyler's 2026-11-13 rulings (plan Phase 2c, decisions README §5), Rosalina's updated `designer-2c.md` §6.2, §6.4 and §7.2, and Peach's 2c.11 as the coordinator settled it. Supersedes points 1–2 of `luigi-designer-2c.md`.
 
+> **Superseded in part by the Addendum below (2026-11-13):** points 1–3 of this record (one `dirty` flag, with display settings and the tab as sources) are replaced by `shellDirty` and `skyDirty`. Points 4–7 stand. The Addendum's own statements stand as written.
+
 ## What
 1. **Draft layout.** `fireworks.draft.v1` is `{ shell, activeBreak, display: { mode, persistence, starBudget, reduceFlashing }, dirty }`. There's no `baseline` and no `stateJson`. A stored 2c draft that still has `baseline` reads fine, because the key is ignored.
 2. **Reading `dirty` fails safe.** Only an explicit `false` reads as clean. A missing, `null`, string, number or object value reads as dirty, so a preset or Apply asks before overwriting a restored draft (2c.11).

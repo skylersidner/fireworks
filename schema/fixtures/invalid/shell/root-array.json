@@ -1,0 +1,11 @@
+{
+  "description": "The document is an array.",
+  "kind": "shell",
+  "document": [],
+  "errors": [
+    {
+      "path": "",
+      "code": "not-object"
+    }
+  ]
+}

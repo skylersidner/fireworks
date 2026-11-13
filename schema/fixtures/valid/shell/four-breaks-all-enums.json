@@ -1,0 +1,68 @@
+{
+  "description": "Four breaks that together use every pattern, trail and effect, rainbow in color1, and both none and a palette color in color2.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "All enums",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 120,
+        "speed": 220,
+        "color1": "rainbow",
+        "color2": "none",
+        "changeAt": 0.65,
+        "burn": 1.6,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "none",
+        "effect": "none",
+        "delay": 0.6
+      },
+      {
+        "pattern": "ring",
+        "stars": 120,
+        "speed": 220,
+        "color1": "blue",
+        "color2": "silver",
+        "changeAt": 0.65,
+        "burn": 1.6,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "tail",
+        "effect": "crackle",
+        "delay": 0.6
+      },
+      {
+        "pattern": "palm",
+        "stars": 120,
+        "speed": 220,
+        "color1": "gold",
+        "color2": "orange",
+        "changeAt": 0.65,
+        "burn": 1.6,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "glitter",
+        "effect": "crossette",
+        "delay": 0.6
+      },
+      {
+        "pattern": "heart",
+        "stars": 120,
+        "speed": 220,
+        "color1": "pink",
+        "color2": "white",
+        "changeAt": 0.65,
+        "burn": 1.6,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "tail",
+        "effect": "strobe",
+        "delay": 0.6
+      }
+    ]
+  }
+}

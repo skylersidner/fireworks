@@ -98,18 +98,18 @@ Reference root: `/Users/skylerasidner/personal projects/monster-of-the-week-net-
    - JSON Apply needs real validation.
 7. **Photosensitivity.** Strobe and burst flashes are flashing content, so the app honors `prefers-reduced-motion` (Phase 7).
 
-### 3.3 Creation data model draft (v1)
+### 3.3 Creation data model (v1)
 
-The saved unit is an **envelope** with `kind: "shell" | "show"`.
+The saved unit is an **envelope** with `kind: "shell" | "show"`. The full contract (limits, validation codes, version policy, fixtures) is `docs/fireworks-app/schema.md`; this section is the summary.
 
 ```jsonc
 // ShellDocument v1 (kind = "shell")
 {
   "version": 1,
-  "name": "Triple Break",                 // 1..80 chars
+  "name": "Triple Break",                 // 1..80 code points after cleaning; blank saves as "Custom"
   "burstHeight": 0.55,                    // 0.30..0.85 (fraction of ground height, 760 units; prototype: GROUND - h*GROUND)
   "angleJitter": 4,                       // 0..20 degrees
-  "sky": { "gravity": 160, "wind": 0 },   // optional; defaults applied on load
+  "sky": { "gravity": 160, "wind": 0 },   // optional; absent plays under DEFAULT_SKY
   "breaks": [                             // 1..4
     { "pattern": "peony", "stars": 80, "speed": 170, "color1": "blue", "color2": "none",
       "changeAt": 0.6, "burn": 1.2, "drag": 0.9, "size": 1, "trail": "none",
@@ -124,18 +124,18 @@ The saved unit is an **envelope** with `kind: "shell" | "show"`.
 {
   "version": 1,
   "name": "Finale",
-  "sky": { "gravity": 160, "wind": 0 },
-  "duration": 45.0,                       // seconds, <= 600
-  "shells": { "s1": { /* embedded ShellDocument */ } },
-  "cues": [                               // <= 1000
-    { "id": "c1", "t": 0.0, "shell": "s1", "x": 0.5, "burstHeight": null, "seed": 1293847 }
-  ]                                        // x = fraction of world width; burstHeight null = shell default
+  "sky": { "gravity": 160, "wind": 0 },   // required; the show's sky wins, embedded shells have no sky
+  "duration": 45.0,                       // seconds, 1..600: the launch window; playback runs until the last particle fades
+  "shells": { "s1": { /* embedded ShellDocument without sky */ } },   // <= 32
+  "cues": [                               // 1..1000: an empty show can't be saved
+    { "id": "c1", "t": 0.0, "shell": "s1", "x": 0.5, "seed": 1293847 }
+  ]   // t = launch time; x = fraction of world width; optional burstHeight (absent = shell's own, never null)
 }
 ```
 
-The envelope the API returns is `{ shareCode, kind, name, schemaVersion, document, remixedFrom?, createdAt, updatedAt }`.
+The envelope the API returns is `{ shareCode, kind, name, schemaVersion, document, isOwner, remixedFrom, createdAt, updatedAt }`. `remixedFrom` is always present and is visible only to the remix's owner; everyone else gets `null`.
 
-Each cue stores its own seed, so reordering or deleting cues never changes how the other cues play.
+Each cue stores its own seed, and cues firing on the same step fire in `(fireStep, id)` order, so reordering or deleting cues never changes how the other cues play. Share links are not locked: improvements to the sim may change how a saved link plays, and version bumps are for document-shape changes only (schema.md §8.1).
 
 ### 3.4 Identity model (decided)
 
@@ -344,15 +344,15 @@ Config:
     - Writes accept only the current version.
     - The server stores `schema_version`.
     - The **client** upgrades older documents step by step (`engine/model/upgrade.ts`).
-    - A new optional field with a default, or a new enum value, needs no version bump. Anything else does.
+    - A version bump is for document-shape changes only. A new optional field, a new enum value, and any change to how a document plays need no bump.
+    - **Share links are not locked** (Skyler, 2026-11-13): improvements may change how existing links play. The prototype goldens stay as regression guards, and an intentional sim change updates them in a reviewed change, with no version bump.
   - Fields that are never saved: `starBudget`, `persistence` and mode.
-  - **Sky precedence in shows:** a ShowDocument has a show-level `sky`, and its embedded shells can carry their own. The schema must say which wins (recommended: the show's `sky` wins, and a shell's `sky` is stripped when it's embedded).
+  - **Sky precedence in shows:** the show's required `sky` wins, and a shell's `sky` is stripped when it's embedded (an embedded `sky` is invalid).
+  - **Cues:** `t` is the launch time (Skyler, 2026-11-13). A show needs at least 1 cue; caps are 32 shells, 1000 cues and 600 s.
   - **Coordinates (decided, OQ5):** the prototype's model. The world is a fixed 800 units tall, width follows the window, and cue `x` is a fraction of the width.
   - The share code format: 8 characters from an alphabet without look-alikes (no 0/O/I/l).
   - The ownership model: creations belong to `owner_user_id`, reads by share code are public, and writes are owner-only (§3.4).
-- **Shared fixtures** in the repo-root `schema/` folder, read by both the C# and the TypeScript tests:
-  - `schema/fixtures/valid/*.json`: the presets, a 4-break shell and a minimal show.
-  - `schema/fixtures/invalid/*.json`, one per rule: stars 401, 5 breaks, an unknown pattern, missing breaks, an unknown property, version 99, a 200-character name.
+- **Shared fixtures** in the repo-root `schema/` folder, read by both the C# and the TypeScript tests: `schema/limits.json` plus `schema/fixtures/{valid,invalid}/{shell,show}/*.json` and `schema/fixtures/server-only/*.json`. The full list, each invalid fixture's complete expected `(path, code)` multiset, and the format are in schema.md §12.
 - `engine/model/validate.ts` with a spec that runs over every fixture.
 
 **Done when:** the schema doc is reviewed, the fixtures are committed, and the TS validator passes all of them.
@@ -361,21 +361,27 @@ Config:
 
 - **Entity `Creation : ITimestamped`:**
   - `id` (uuid) and `share_code` (varchar(12), unique).
-  - `kind` (stored as a string) and `name` (varchar(80)).
+  - `kind` (stored as a string) and `name` (varchar(80); Postgres counts characters, which are code points, so it matches the schema's 80-code-point limit).
   - `schema_version` and `document` (`jsonb`; tests on SQLite store it as TEXT).
+  - `palette` (the swatch color names for `CreationListItem`).
+  - `name`, `schema_version` and `palette` are **computed from the validated document at write time** and stored as columns, so the server never re-reads a stored document and needs no upgraders (schema.md §2.2, §8.1).
   - `owner_user_id` (uuid, FK to `users`, required, cascade on delete).
-  - `remixed_from_id` (self-reference, set to null when the original is deleted).
+  - `remixed_from_id` (self-reference, set to null when the original is deleted). The response's `remixedFrom` is the source's share code only when the current user owns the remix; everyone else gets `null` (Skyler, 2026-11-13).
   - Timestamps.
-  - An index on `(owner_user_id, updated_at desc)` for the "my creations" list, and an `AddCreations` migration.
+  - An index on `(owner_user_id, updated_at desc, share_code)` for the "my creations" list (the tiebreak makes page boundaries stable), and an `AddCreations` migration.
 - **Contracts** (`Contracts/CreationContracts.cs`):
-  - Document types: `ShellDocumentDto`, `BreakDto`, `SkyDto`, `ShowDocumentDto`, `CueDto`.
-  - Requests: `CreateCreationRequest(kind, JsonElement document)` and `UpdateCreationRequest`.
-  - Responses: `CreationResponse` (includes `isOwner`, computed from `ICurrentUser`) and `CreationListItem` (`shareCode`, `kind`, `name`, `updatedAt`, plus a derived `palette`: the distinct break colors the My creations swatch cards need, so the list doesn't ship whole documents).
+  - Document types: `ShellDocumentDto`, `BreakDto`, `SkyDto`, `ShowDocumentDto`, `CueDto`. They are built by the validator's walk, not deserialized from the request.
+  - Requests: `CreateCreationRequest(kind, JsonElement document)`, `UpdateCreationRequest(JsonElement document)` and `RemixCreationRequest(JsonElement document)`. The remix body is the visitor's edited working copy (Phase 5), validated against the source's `kind`.
+  - Responses: `CreationResponse` (includes `isOwner`, computed from `ICurrentUser`) and `CreationListItem` (`shareCode`, `kind`, `name`, `updatedAt`, plus a derived `palette`: the distinct break colors the My creations swatch cards need, so the list doesn't ship whole documents). The list endpoint returns `CreationListPage(items, page, pageSize, totalCount)`, the reference's `PagedSearchResultResponse` shape (schema.md §2.2.1).
 - **Validation** (`Services/Creations/CreationDocumentValidator.cs`):
-  - Its own `JsonSerializerOptions`: camelCase, `UnmappedMemberHandling = Disallow` so unknown fields return 400, and a camelCase enum converter that applies only to these options.
-  - Ranges come from `CreationLimits.cs`, which mirrors `limits.ts`.
+  - **Walks a `JsonElement`** (parsed with the default `JsonDocumentOptions`) with the same walk order and skip rules as the TS validator, and builds the canonical DTO from the walk. The walker detects duplicate keys itself through `EnumerateObject()` and walks the last value, as `JSON.parse` does; `AllowDuplicateProperties = false` throws without a path (measured on .NET 11, `bowser-phase3-validator-feasibility.md`). Deserializing into DTOs with `UnmappedMemberHandling = Disallow` was rejected: it stops at the first unknown member, reports STJ's paths, and rejects a valid `120.0` for an `int` (schema.md §6.5).
+  - Integers are tested by value (`TryGetDouble`, then `double.IsFinite`, because `TryGetDouble` returns true with `+Infinity` for `1e400`), never by format. The server never adjusts a document.
+  - The body is gated with `Utf8.IsValid` (invalid is `not-json`); `ValueEquals` is wrapped in try/catch; names and property names have a raw-token fallback, because `GetString` and `JsonProperty.Name` throw on lone surrogates (schema.md §6.5).
+  - Every C# regex for share codes, shell keys and cue ids is anchored `^…\z`, never `$` (.NET `$` matches before a final `\n`), with no `IgnoreCase`.
+  - `Services/Creations/CreationEnvelopeReader.cs` runs the envelope walk (schema.md §2.6): body bytes, `Utf8.IsValid`, parse, then `kind` and `document`. The document is walked only when the envelope has no issues.
+  - Ranges come from `CreationLimits.cs`, which is checked against `schema/limits.json`.
   - The re-serialized, canonical JSON is what gets stored.
-  - Failures return `ServiceResult.Validation` with messages that name the field path.
+  - Failures return `ServiceResult.Validation` with the complete issue list, each with `path`, `code` and `message` (schema.md §2.4). `ServiceError` gains an optional issue list to carry it.
 - **Repository and service:**
   - `ICreationRepository` / `ICreationService`.
   - `ShareCodeGenerator` uses `RandomNumberGenerator.GetItems` and retries if the code is already taken.
@@ -390,21 +396,24 @@ Config:
   | `GET api/creations/{shareCode}` | Public; returns the creation |
   | `PUT api/creations/{shareCode}` | Owner only; returns 200, 400, 403 (writes off) or 404 (missing or not owned) |
   | `DELETE api/creations/{shareCode}` | Owner only; returns 204, 403 (writes off) or 404 (missing or not owned) |
-  | `POST api/creations/{shareCode}/remix` | Creates a copy owned by the current user, with `remixedFrom` set; 403 when writes are off |
-  | `GET api/me/creations` | The current user's creations, paged, newest first; 403 when `CanWrite` is false |
+  | `POST api/creations/{shareCode}/remix` | Body `{ document }`, the edited working copy. Creates a creation owned by the current user, with `remixedFrom` set; 201, 400, 403 (writes off) or 404 (unknown source). The client uses it for a non-owner's Save and for an owner's "Save as new" (schema.md §11.4) |
+  | `GET api/me/creations?page&pageSize&kind` | The current user's creations as a `CreationListPage`: offset paging (`page` from 1, `pageSize` default 24, clamped to 1..100), `updatedAt` desc then `shareCode`, optional `kind` filter (bad value is 400 `(kind, enum)`), past the end is an empty page (schema.md §2.2.1); 403 when `CanWrite` is false |
 
   - Map `ServiceErrorType.Forbidden` to 403 in `ToErrorResult`.
-  - Add `[RequestSizeLimit(65536)]`.
+  - Add `[RequestSizeLimit(262144)]` (256 KiB) on the write endpoints. This is Yoshi's measured recommendation (a worst-case show at every limit is 215 KB), pending Boo's Phase 4 security review.
+  - **Write actions read `Request.Body` themselves, with `[Consumes("application/json")]`; they don't bind `[FromBody] JsonElement`.** Binding returns MVC's ProblemDetails for bad JSON instead of `{ message, errors }`, and lets invalid UTF-8 through to throw later (measured). The 413 from `[RequestSizeLimit]` still applies to the manual read. Boo reviews the manual read and Kestrel's global `MaxRequestBodySize` (still the 30 MB default elsewhere) with the 256 KiB number.
+  - The share-code route constraint is `^[1-9A-HJ-NP-Za-km-z]{8}\z`: with `$`, `abcdefgh%0A` reached the action.
   - **No `[Authorize(Policy)]` before Phase 8.** No authentication scheme is registered, so a failing policy has nothing to Forbid with and throws. The service-layer `CanWrite` check is the gate in the interim and stays after Phase 8, when `CanWrite` means "is authenticated" and Phase 8 adds the policy on top.
 - **Abuse controls:**
   - A fixed-window rate limiter on writes (for example 20 per minute and 300 per day), **partitioned by client IP** before Phase 8. Every interim visitor resolves to the same default `UserId`, so a user-keyed partition would be one global bucket any single client could drain. Phase 8 partitions by user when `IsAuthenticated`, falling back to IP.
   - `/health/live` is excluded from the limiter, so Railway's probe is never throttled.
   - It depends on the forwarded-headers setup to see the real client IP. `ForwardedHeadersOptions.ForwardLimit` stays 1 (the default) while the known lists are cleared, so the rightmost, edge-appended `X-Forwarded-For` entry wins. Don't rely on the limiter until the 1d check has confirmed whether Railway's edge appends to or overwrites a client-sent `X-Forwarded-For`; if 1d hasn't run, run that check on Phase 4's first deploy.
+- **Docker context:** `schema/` is test input only (the `Dockerfile` copies only `src/web/fireworks-web/` and `src/api/`), but `.dockerignore` doesn't list it. Bowser decides whether to add it; if the API reads `limits.json` at runtime, it stays in the context and is copied (schema.md §6.6).
 - **Tests:**
   - A gate test that enumerates every non-GET endpoint from `EndpointDataSource` (the router, not a hand-written list) plus `GET api/me/creations`, and asserts each returns 403 when `CanWrite` is false.
   - A reflection or grep test that only the identity module and tests reference the default-user options type (§3.4).
   - Service tests with a fake repository and a fake `ICurrentUser`. Owner vs. non-owner paths are tested with two user IDs, so ownership is proven before real auth exists.
-  - A `CreationApiHarness` (Kestrel and SQLite) covering model binding, 400 responses, 413 for oversized requests, and every fixture: valid ones return 201, invalid ones return 400.
+  - A `CreationApiHarness` (Kestrel and SQLite) covering the body read, 400 responses with the exact `errors` multiset, 413 for oversized requests, 415 for a non-JSON content type, and every fixture: valid ones return 201, invalid ones return 400. It posts each document's raw text, and translates the two root-not-object fixtures to `(document, not-object)` (schema.md §12.1).
   - A `[PostgresFact]` test that proves the `jsonb` column and the unique index.
 
 **Done when:**
@@ -419,45 +428,53 @@ Config:
 ### Phase 5: Client integration (save, share, player, remix)
 
 - `core/creations.ts` (a `CreationsService`), with hand-written TypeScript interfaces that mirror the C# records (the reference convention).
+- **Links and Save (Skyler, 2026-11-13; schema.md §11):**
+  - **A link never opens the saved record for editing.** `/c/:shareCode` is the only editing link, for both kinds: it loads a **working copy** with exactly the saved settings, as a new, unsaved (dirty) form, then redirects to the editor (`/` for a shell) so a reload restores the edited copy from the draft. There's no edit-in-place route. The draft remembers the copy's `source` (`shareCode`, `kind`, `isOwner`, `updatedAt`) as client state.
+  - **Opening a link over unsaved changes asks first,** only when the shell or sky is dirty (the same rule as Apply with `sky`). Cancel keeps the current draft.
+  - **Save:** fresh work (no `source`) is `POST api/creations`. A working copy of a creation the current user owns offers **"Update original"** (PUT, which changes what its share link plays) or **"Save as new"** (`POST …/remix`, so `remixedFrom` is set). Any other working copy saves with `POST …/remix` and the copy as the body. After any save, `source` is the record just written.
 - **Designer:**
-  - Save: POST the first time, then PUT.
-  - "Save as new".
   - Share copies `/s/:code` to the clipboard and shows a toast.
-  - A dirty indicator.
-  - `/c/:shareCode` loads a **working copy** of the saved record into the designer's form (Skyler, 2026-11-13). You edit the copy, which is autosaved like any draft, and the persisted record changes only on Save. If `isOwner` is false, saving becomes a remix.
+  - A dirty indicator. Whether a successful Save clears the dirty flags is Rosalina's and Luigi's call at the Phase 5 design-review (Peach F4).
+  - Draft restore and JSON Apply go through `upgradeShell` before normalize, like the player and `/c/:code` (Luigi; schema.md §8.3, Peach F6).
+  - A blank name saves as "Custom"; Save is not blocked (Skyler, 2026-11-13).
   - Anonymous play never needs the server. The localStorage draft keeps unsaved work. Save/remix controls appear based on `session.canWrite()`, which reflects `Identity:AllowAnonymousWrites` in the interim (false in production unless switched on for testing) and depends on login after Phase 8.
 - **Player** at `/s/:shareCode`:
   - Full screen, lazy-loaded. It fetches the creation, upgrades it, normalizes it, and plays it.
-  - An overlay shows the name and a "Remix" button.
+  - An overlay shows the name and a "Remix" button, which opens `/c/:shareCode`: a working copy, with no API call until the visitor saves.
   - Unknown codes get a 404 page.
 - **My creations** at `/mine`:
-  - Lists creations from `GET api/me/creations`, with open, share and delete.
+  - Lists creations from `GET api/me/creations` (paged, schema.md §2.2.1), with open (`/c/:code`), share and delete.
   - Follows the write switch (§3.4): the nav entry is hidden when `session.canWrite()` is false, and a direct visit to `/mine` in that state shows a short "unavailable" notice (copy by Rosalina) without calling the endpoint, so the 403 never surfaces as an error toast.
   - Cards show palette swatches instead of live Pixi canvases.
 - Saves that show validation errors inline use the reference's `SUPPRESS_ERROR_TOAST` HttpContext token.
 
-**Done when:** the full round trip works:
-1. Design a shell and save it.
+**Done when:** the full round trip works (what each step can observe before Phase 8 is in schema.md §11.5):
+1. Design a shell and Save it: a POST and a new share code.
 2. Open the share link in a private window; it plays.
-3. Remix it.
-4. Edit the original as its owner; the change shows on the share link.
+3. Remix it: the player's Remix opens a dirty working copy; change it and choose **Save as new**. A new share code is created, its GET has `remixedFrom` set to the original, and the original's link plays unchanged.
+4. Edit the original as its owner: open it through `/c/:code` (or My creations), change it and choose **Update original**. The share code is unchanged and its link plays the change.
+5. With an unsaved change in the designer, opening a link asks first, and Cancel keeps the draft.
 
 Deep links also work on Railway. The Railway round trip runs with writes switched on for the test, and they're switched off afterward.
 
-**Known limit before Phase 8:** every visitor is the default user, so `isOwner` is always true in the running app, and the remix-on-save branch for non-owners can't be seen there. It's covered by the Phase 4 two-user service tests. Whether to add a dev-only second user is a question for Yoshi and Bowser in Phase 4.
+**Known limit before Phase 8:** every visitor is the default user, so `isOwner` is always true in the running app. The non-owner Save (straight to remix, no choice) and `remixedFrom: null` for non-owners can't be seen there. They're covered by the Phase 4 two-user service tests and a Phase 5 client spec with a stubbed `isOwner: false` response that asserts exactly one `POST …/remix` and no PUT. **No dev-only second user** (decided, Yoshi): revisit at the first non-owner bug that reaches the running app past those specs.
+
+**Phase 5 items carried from the Phase 3 review** (`acceptance/phase-3.md`): F10, copy for Save-time failures (400 from a stale tab, 403, 404 on Update original, 413, 429, the "newer than this app" upgrade error), Rosalina's design-review brief; F4, whether Save clears the dirty flags, Rosalina and Luigi; F11, `type` copy for integer fields, Luigi (by Phase 6 at the latest); F12, how bracket paths read in the Apply note, Rosalina and Luigi.
 
 ### Phase 6: Show Builder (outline)
 
-- Routes `/shows/new` and `/shows/:code/edit`.
+- The Show Builder has its own route and its own draft. There's no `/shows/:code/edit`: a show link opens through `/c/:code`, which dispatches on `kind` and loads a working copy with the same Save rules as a shell (schema.md §11; Peach F8). The exact builder route is Mario's and Rosalina's Phase 6 planning call.
 - Screen layout:
   - A shell library sidebar (presets, my shells, the current draft).
   - A timeline of draggable cues, with time on the x axis.
   - A cue inspector and transport controls (play, pause, scrub).
 - Scrubbing re-runs the simulation from t=0, in simulation time.
-- `TimelineDriver` fires each cue when `simTime >= cue.t`, using the cue's seed and `x * worldWidth`.
-- Shells are copied into the show when added. The show saves as `kind: "show"` through the same API.
+- **A show runs until the last particle fades** (Skyler, 2026-11-13). `duration` is the launch window only and never stops playback; a cue at `t == duration` is valid and its burst is seen. The timeline shows the tail, at most about 21 s past the last launch (schema.md §4.5, §13).
+- The "my shells" library calls `GET api/me/creations?kind=shell` and follows the write switch like `/mine` (Peach F9).
+- `TimelineDriver` launches each cue at its `t` (launch time, Skyler 2026-11-13): before step `k`, every unfired cue with `Math.round(t * 120) <= k` fires in `(fireStep, id)` order via `fireSeeded`, using the cue's seed and `x * worldWidth` (schema.md §4.4). The timeline can draw the burst at `t + rise`.
+- Shells are copied into the show, without their `sky`, when added. The show saves as `kind: "show"` through the same API. A show with no cues can't be saved (Skyler, 2026-11-13); how the builder presents that is Rosalina's call at the timeline design-review.
 
-**Done when:** a 60-second, 50-cue show saves, shares, and plays the same way in two browsers.
+**Done when:** a 60-second, 50-cue show saves, shares, and plays the same way in two browsers, through to the last particle of its tail.
 
 ### Phase 7: Polish and deploy hardening
 

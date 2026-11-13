@@ -1,0 +1,11 @@
+{
+  "description": "The body is not parseable JSON.",
+  "body": "{\"kind\":\"shell\",\"document\":{",
+  "status": 400,
+  "errors": [
+    {
+      "path": "",
+      "code": "not-json"
+    }
+  ]
+}

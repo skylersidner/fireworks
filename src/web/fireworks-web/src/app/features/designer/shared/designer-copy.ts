@@ -73,6 +73,10 @@ export function issueReason(issue: ShellIssue): string {
       return issue.path === ''
         ? 'the shell must be a JSON object'
         : `${fieldLabel(issue.path)} must be an object`;
+    default:
+      // Codes the lenient shell walk never raises as errors (strict-only and show codes).
+      // Placeholder until Rosalina writes their copy (schema.md §6.3, §15).
+      return `${fieldLabel(issue.path)} isn't valid`;
   }
 }
 

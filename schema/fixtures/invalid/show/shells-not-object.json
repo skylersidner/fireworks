@@ -1,0 +1,29 @@
+{
+  "description": "shells is an array: only not-object, because unknown-shell is not checked when shells was not walked.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "shells": [],
+    "cues": [
+      {
+        "id": "c1",
+        "t": 1,
+        "shell": "s1",
+        "x": 0.5,
+        "seed": 12345
+      }
+    ]
+  },
+  "errors": [
+    {
+      "path": "shells",
+      "code": "not-object"
+    }
+  ]
+}

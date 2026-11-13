@@ -1,0 +1,31 @@
+{
+  "description": "An embedded shell that is a number: not-object at its path (\u00a76.2 rule 5). s1 is still an own key of shells, so the cue raises no unknown-shell.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "shells": {
+      "s1": 5
+    },
+    "cues": [
+      {
+        "id": "c1",
+        "t": 1,
+        "shell": "s1",
+        "x": 0.5,
+        "seed": 12345
+      }
+    ]
+  },
+  "errors": [
+    {
+      "path": "shells.s1",
+      "code": "not-object"
+    }
+  ]
+}

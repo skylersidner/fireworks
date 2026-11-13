@@ -1,0 +1,68 @@
+{
+  "description": "A shell that no cue uses is allowed.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "shells": {
+      "s1": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s2": {
+        "version": 1,
+        "name": "Ring",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "ring",
+            "stars": 70,
+            "speed": 230,
+            "color1": "cyan",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1.4,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      }
+    },
+    "cues": [
+      {
+        "id": "c1",
+        "t": 1,
+        "shell": "s1",
+        "x": 0.5,
+        "seed": 12345
+      }
+    ]
+  }
+}

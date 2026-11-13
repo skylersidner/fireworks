@@ -2,7 +2,7 @@
 **By:** Luigi (Frontend), 2026-11-12. **Status:** proposed. Implements plan 2c, `docs/fireworks-app/design/designer-2c.md`, Skyler's 2026-11-12 rulings, and Yoshi's L1–L4, L6, L7 (`yoshi-phase2a-engine-boundaries.md`).
 
 ## What
-> **Superseded in part (2026-11-13):** points 1–2 (the stored `baseline` and the `stateJson` comparison) were replaced by a stored `dirty` flag, per Skyler's 2026-11-13 ruling. The draft is now `{ shell, activeBreak, display, dirty }`. See `luigi-2c-dirty-flag-and-notice-hold.md`. Points 3–7 stand.
+> **Superseded in part by luigi-2c-dirty-flag-and-notice-hold.md on 2026-11-13:** points 1–2 (the stored `baseline` and the `stateJson` comparison) were replaced by a stored `dirty` flag, and that flag was then split into `shellDirty` and `skyDirty` by the same day's ruling (the draft is `{ shell, activeBreak, display, shellDirty, skyDirty }`). Points 3–7 stand.
 
 1. **Draft layout (one key).** `fireworks.draft.v1` holds `{ shell, activeBreak, display: { mode, persistence, starBudget, reduceFlashing }, baseline: { shell, activeBreak, display } }`. `shell` is a ShellDocument with `sky` always present, keys in §3.3 order. `display.reduceFlashing` is `null` until the visitor chooses. `display.mode` is the visitor's mode, never the OS-forced Manual. There is no separate `fireworks.display.v1`. The flashing notice uses `fireworks.flashNotice.v1`. Code: `features/designer/shared/designer-draft.ts`.
 2. **"Unsaved edits"** is `stateJson(current) !== stateJson(baseline)` over shell, display (the stored choice, not the effective flag) and tab. The baseline is re-snapshotted on a preset load, a successful Apply, and a first visit. A corrupt current state drops the whole draft. A broken baseline alone becomes the restored state.

@@ -1,0 +1,26 @@
+{
+  "description": "The Rainbow preset, value for value from presets.ts, with no sky (absent sky is valid).",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Rainbow",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      {
+        "pattern": "peony",
+        "stars": 160,
+        "speed": 240,
+        "color1": "rainbow",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1.7,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "tail",
+        "effect": "none",
+        "delay": 0.6
+      }
+    ]
+  }
+}

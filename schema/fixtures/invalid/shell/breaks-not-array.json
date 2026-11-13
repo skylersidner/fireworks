@@ -1,0 +1,17 @@
+{
+  "description": "breaks is an object.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Peony",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": {}
+  },
+  "errors": [
+    {
+      "path": "breaks",
+      "code": "break-count"
+    }
+  ]
+}

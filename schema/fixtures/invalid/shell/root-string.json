@@ -1,0 +1,11 @@
+{
+  "description": "The document is a string.",
+  "kind": "shell",
+  "document": "peony",
+  "errors": [
+    {
+      "path": "",
+      "code": "not-object"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "description": "A break that is a number.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Peony",
+    "burstHeight": 0.65,
+    "angleJitter": 4,
+    "breaks": [
+      1
+    ]
+  },
+  "errors": [
+    {
+      "path": "breaks[0]",
+      "code": "not-object"
+    }
+  ]
+}

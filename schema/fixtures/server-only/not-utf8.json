@@ -1,0 +1,14 @@
+{
+  "description": "A valid shell body with one raw 0xFF byte inside the name. The harness builds the bytes from body by replacing @@byte:ff@@ with the byte 0xFF (byteMarkers). Without the byte the body is valid JSON, so not-json comes only from the UTF-8 gate.",
+  "body": "{\"kind\":\"shell\",\"document\":{\"version\":1,\"name\":\"Pe@@byte:ff@@ony\",\"burstHeight\":0.65,\"angleJitter\":4,\"breaks\":[{\"pattern\":\"peony\",\"stars\":120,\"speed\":220,\"color1\":\"red\",\"color2\":\"gold\",\"changeAt\":0.65,\"burn\":1.6,\"drag\":0.9,\"size\":1,\"trail\":\"none\",\"effect\":\"none\",\"delay\":0.6}]}}",
+  "byteMarkers": {
+    "@@byte:ff@@": "ff"
+  },
+  "status": 400,
+  "errors": [
+    {
+      "path": "",
+      "code": "not-json"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "No shells key: missing (a required field with no default), not shell-count. shells is not walked, so the cue raises no unknown-shell.",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Minimal show",
+    "sky": {
+      "gravity": 160,
+      "wind": 0
+    },
+    "duration": 10,
+    "cues": [
+      {
+        "id": "c1",
+        "t": 1,
+        "shell": "s1",
+        "x": 0.5,
+        "seed": 12345
+      }
+    ]
+  },
+  "errors": [
+    {
+      "path": "shells",
+      "code": "missing"
+    }
+  ]
+}

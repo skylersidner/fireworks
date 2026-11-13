@@ -56,3 +56,18 @@
 - Railway (1d) is deferred by Skyler. Boo's condition 4 (whether the edge appends to or overwrites a client-sent `X-Forwarded-For`) needs a real deploy, so it is open. Phase 4's IP-partitioned limiter must not ship until it is checked.
 - Luigi's rule "never ship a `--stats-json` build" is not enforced. Stage 1 of the Dockerfile copies all of `wwwroot` into stage 2, so a stray `browser-stats.json` would be served publicly. Consider a guard in the build (with Boo's Phase 7 CSP and headers review in mind).
 - `history.md` line 24 still names `IdentityOptions`. The file is `Services/Identity/DefaultUserOptions.cs` since the fix round.
+
+### 2026-11-13 — Phase 2 cross-agent update (Scribe)
+- Phase 3 validator rule (Yoshi, `decisions/records/yoshi-phase2a-engine-boundaries.md`): a shell is valid only when the normalize walk returns `ok` with zero `adjustments`. Each adjustment becomes an error at the same path. Mirror the walk, the paths (`breaks[1].color1`, `sky.wind`, `name`, `version`) and the kinds (`defaulted | clamped | rounded | truncated | dropped`) exactly.
+- The 80-character name limit counts code points, not UTF-16 units. In C#, count with `string.EnumerateRunes()`. `string.Length` is wrong for astral characters.
+- Luigi's `ShellIssue.code` is TypeScript-side and open for Yoshi's schema doc. Don't add it to the C# model until Yoshi rules.
+
+### 2026-11-13 — Phase 3 validator feasibility (scratch probes only)
+- Record: `.squad/decisions/records/bowser-phase3-validator-feasibility.md`. Skill updated: `.squad/skills/cross-language-validator-parity/SKILL.md` (C# traps).
+- **Measured on .NET 11.0.0:** `TryGetDouble` returns true with Infinity for `1e400` (check `double.IsFinite`); `AllowDuplicateProperties=false` throws with no path (detect dups in the walker instead, last value wins); `JsonDocument.Parse` accepts lone-surrogate escapes and invalid raw UTF-8; `GetString`, `JsonProperty.Name` and sometimes `ValueEquals` (`"\udc00\ud800"`) throw `InvalidOperationException`.
+- **.NET `$` matches before a trailing `\n`**: key pattern and the share-code route constraint must end in `\z`. Route probe: `abcdefgh%0A` reached the action with `$`.
+- **Body handling for creation writes:** read `Request.Body` in the action (`[Consumes("application/json")]`, `Utf8.IsValid`, then parse), not `[FromBody] JsonElement` (MVC ProblemDetails for bad JSON; invalid UTF-8 binds). `[RequestSizeLimit(262144)]` still gives 413 for Content-Length and chunked under `UseExceptionHandler` + `AddProblemDetails`.
+- **Postgres 18.6 jsonb:** rejects `\u0000` and lone surrogate escapes, silently dedupes keys (last wins), keeps `1.0` as written (so store re-serialized DTO output). `varchar(n)` counts characters, so `name varchar(80)` fits 80 emoji.
+- Compose Postgres user is `fireworks_app` (no `postgres` role): `docker exec -i fireworks-postgres psql -U fireworks_app -d postgres`.
+- The Write tool turned some `\uXXXX` escapes in C# source into literal characters (U+2028 inside a char literal broke the build). Keep probe source ASCII and build non-ASCII from code points.
+- Worst-case-ish show (1000 cues, 32×4 shells) is 78.9 KB and validates in about 5–8 ms.

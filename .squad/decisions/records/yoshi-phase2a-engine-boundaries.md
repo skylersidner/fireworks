@@ -37,3 +37,5 @@
 - Points 1 to 5 bind Phase 2 (Luigi implements; Toad records the mutants). Points 8 and 9 are design notes for Phase 6, not 2c work.
 - Steps in `limits.ts` are a UI concern. Stored values need not lie on a step, and neither normalize nor the validator snaps them.
 - Name length is counted in code points on both sides. The C# validator must count runes, not UTF-16 units.
+
+> **2026-11-13:** point 8's firing formula `Math.round(cue.t / STEP)` is superseded by `Math.round(t * 120)` with `(fireStep, id)` ordering (`yoshi-phase3-creation-schema.md` point 5). The rest of this record stands.

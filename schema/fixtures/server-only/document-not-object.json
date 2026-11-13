@@ -1,0 +1,11 @@
+{
+  "description": "document is a number.",
+  "body": "{\"kind\":\"shell\",\"document\":5}",
+  "status": 400,
+  "errors": [
+    {
+      "path": "document",
+      "code": "not-object"
+    }
+  ]
+}
