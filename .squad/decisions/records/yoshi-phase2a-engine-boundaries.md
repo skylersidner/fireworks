@@ -1,5 +1,7 @@
 # Phase 2a engine boundaries, normalize contract and the Phase 6 seams
 
+> **Superseded in part by yoshi-phase3-creation-schema.md on 2026-11-13:** point 8's firing formula (`Math.round(cue.t / STEP)`) is replaced by `Math.round(t * 120)` with `(fireStep, id)` ordering (that record's point 5). The rest of this record stands.
+
 **Author:** Yoshi · **Date:** 2026-11-12 · **Status:** proposed (for Skyler to promote, or not)
 **Reviewed code:** `src/web/fireworks-web/src/engine/**`, `src/app/features/designer/shared/fireworks-stage/fireworks-stage.ts`, Luigi's `luigi-phase2ab-engine-and-stage.md`.
 

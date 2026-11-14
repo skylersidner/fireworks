@@ -1,5 +1,7 @@
 # Phase 3 shared fixtures: generated, transcribed from the doc, shape-checked separately
 
+> **Superseded in part by toad-phase3-server-only-wire-fields.md on 2026-11-13:** item 3's `server-only/` shape (`status` 400 or 413 only) is replaced by `status` 400, 413 or 415, with optional `contentType` and `byteMarkers`. Items 1, 2, 4 and 5 stand.
+
 **Author:** Toad · **Date:** 2026-11-13 · **Status:** proposed
 
 ## What

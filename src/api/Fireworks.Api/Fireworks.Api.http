@@ -16,3 +16,60 @@ Accept: application/json
 
 ### Deep link. 200 text/html (index.html) once the Angular build is in wwwroot; 404 before that.
 GET {{Fireworks.Api_HostAddress}}/designer
+
+### ---------------------------------------------------------------------------------------------
+### Creations (Phase 4, docs/fireworks-app/schema.md §2). Development has canWrite: true. Run them in
+### order: the create request names its response, and later requests read its share code.
+### ---------------------------------------------------------------------------------------------
+
+### Create a shell. 201, Location: /api/creations/{shareCode}, body is a CreationResponse.
+# @name create
+POST {{Fireworks.Api_HostAddress}}/api/creations
+Content-Type: application/json
+
+{"kind":"shell","document":{"version":1,"name":"Peony","burstHeight":0.65,"angleJitter":4,"sky":{"gravity":160,"wind":0},"breaks":[{"pattern":"peony","stars":120,"speed":220,"color1":"red","color2":"gold","changeAt":0.65,"burn":1.6,"drag":0.9,"size":1,"trail":"none","effect":"none","delay":0.6}]}}
+
+### Read it back. Public: no identity needed. 200, isOwner true, remixedFrom null.
+GET {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}
+Accept: application/json
+
+### Update original (owner only). 200, same share code, newer updatedAt.
+PUT {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}
+Content-Type: application/json
+
+{"document":{"version":1,"name":"Big Peony","burstHeight":0.7,"angleJitter":4,"sky":{"gravity":160,"wind":0},"breaks":[{"pattern":"peony","stars":200,"speed":240,"color1":"blue","color2":"none","changeAt":0.65,"burn":1.6,"drag":0.9,"size":1,"trail":"tail","effect":"none","delay":0.6}]}}
+
+### Save as new (remix). 201, a new share code, remixedFrom = the source's code (you own the remix).
+# @name remix
+POST {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}/remix
+Content-Type: application/json
+
+{"document":{"version":1,"name":"Peony remix","burstHeight":0.6,"angleJitter":6,"sky":{"gravity":160,"wind":-20},"breaks":[{"pattern":"ring","stars":90,"speed":200,"color1":"rainbow","color2":"none","changeAt":0.6,"burn":1.4,"drag":0.9,"size":1,"trail":"glitter","effect":"crackle","delay":0.6}]}}
+
+### My creations. 200 { items, page, pageSize, totalCount }, newest first. page and pageSize are
+### clamped (pageSize 1..100); kind must be exactly shell or show.
+GET {{Fireworks.Api_HostAddress}}/api/me/creations?page=1&pageSize=24&kind=shell
+Accept: application/json
+
+### Invalid document. 400 { message, errors: [{ path, code, message }], truncated: false }:
+### (breaks[0].stars, out-of-range) and (foo, unknown-property).
+POST {{Fireworks.Api_HostAddress}}/api/creations
+Content-Type: application/json
+
+{"kind":"shell","document":{"version":1,"name":"Peony","burstHeight":0.65,"angleJitter":4,"foo":1,"breaks":[{"pattern":"peony","stars":401,"speed":220,"color1":"red","color2":"gold","changeAt":0.65,"burn":1.6,"drag":0.9,"size":1,"trail":"none","effect":"none","delay":0.6}]}}
+
+### Wrong content type. 415 (an explicit check, not [Consumes]; a missing Content-Type is 415 too).
+POST {{Fireworks.Api_HostAddress}}/api/creations
+Content-Type: text/plain
+
+{"kind":"shell","document":{}}
+
+### Malformed share code (l, I, O, 0 aren't in the alphabet). 404 from the route constraint, no query.
+GET {{Fireworks.Api_HostAddress}}/api/creations/abcdefgl
+
+### Delete (owner only). 204; a second DELETE is 404. The remix survives with remixedFrom: null.
+DELETE {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}
+
+### The remix after its source is gone. 200, remixedFrom null.
+GET {{Fireworks.Api_HostAddress}}/api/creations/{{remix.response.body.shareCode}}
+Accept: application/json

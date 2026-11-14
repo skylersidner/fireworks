@@ -1,6 +1,8 @@
 using Fireworks.Api.Contracts;
 using Fireworks.Api.Services;
+using Fireworks.Api.Services.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fireworks.Api.Controllers;
 
@@ -8,6 +10,7 @@ namespace Fireworks.Api.Controllers;
 public sealed class MeController(IMeService meService) : ControllerBase
 {
     [HttpGet("api/me")]
+    [EnableRateLimiting(FireworksRateLimiting.ReadPolicy)]
     public async Task<ActionResult<MeResponse>> Get(CancellationToken cancellationToken)
     {
         var result = await meService.GetCurrentUserAsync(cancellationToken);
@@ -22,6 +25,7 @@ public sealed class MeController(IMeService meService) : ControllerBase
         {
             ServiceErrorType.NotFound => NotFound(),
             ServiceErrorType.Validation => BadRequest(new { message = error.Message }),
+            ServiceErrorType.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = error.Message }),
             _ => BadRequest()
         };
 }

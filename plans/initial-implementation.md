@@ -133,7 +133,7 @@ The saved unit is an **envelope** with `kind: "shell" | "show"`. The full contra
 }
 ```
 
-The envelope the API returns is `{ shareCode, kind, name, schemaVersion, document, isOwner, remixedFrom, createdAt, updatedAt }`. `remixedFrom` is always present and is visible only to the remix's owner; everyone else gets `null`.
+The envelope the API returns is `{ shareCode, kind, name, schemaVersion, document, isOwner, remixedFrom, createdAt, updatedAt }`. `remixedFrom` is always present and is visible only to the remix's owner; everyone else gets `null`. Before Phase 8 every visitor is the owner, so every visitor sees it: an interim exposure Skyler accepted (schema.md §2.1).
 
 Each cue stores its own seed, and cues firing on the same step fire in `(fireStep, id)` order, so reordering or deleting cues never changes how the other cues play. Share links are not locked: improvements to the sim may change how a saved link plays, and version bumps are for document-shape changes only (schema.md §8.1).
 
@@ -153,7 +153,7 @@ Each cue stores its own seed, and cues firing on the same step fire in `(fireSte
   - `Identity:AllowAnonymousWrites` is **`false` in `appsettings.json`** (production) and **`true` in `appsettings.Development.json`**.
   - On Railway, saving is switched on only while testing, via the `Identity__AllowAnonymousWrites=true` env var, then switched off again.
   - `GET api/me` reports `canWrite`, so the client hides Save, Remix and Delete when writes are off rather than letting them fail with 403.
-  - Write endpoints are rate-limited, partitioned by client IP until Phase 8 (Phase 4, abuse controls).
+  - Write and read endpoints are rate-limited, partitioned by client IP (IPv6 by /64) until Phase 8 (Phase 4, abuse controls).
 
 ---
 
@@ -366,7 +366,7 @@ Config:
   - `palette` (the swatch color names for `CreationListItem`).
   - `name`, `schema_version` and `palette` are **computed from the validated document at write time** and stored as columns, so the server never re-reads a stored document and needs no upgraders (schema.md §2.2, §8.1).
   - `owner_user_id` (uuid, FK to `users`, required, cascade on delete).
-  - `remixed_from_id` (self-reference, set to null when the original is deleted). The response's `remixedFrom` is the source's share code only when the current user owns the remix; everyone else gets `null` (Skyler, 2026-11-13).
+  - `remixed_from_id` (self-reference, set to null when the original is deleted). The response's `remixedFrom` is the source's share code only when the current user owns the remix (`isOwner`, with no `CanWrite` term); everyone else gets `null` (Skyler, 2026-11-13). Before Phase 8 every visitor is the owner and sees it; Skyler kept the rule knowingly over Boo's S13 (schema.md §2.1).
   - Timestamps.
   - An index on `(owner_user_id, updated_at desc, share_code)` for the "my creations" list (the tiebreak makes page boundaries stable), and an `AddCreations` migration.
 - **Contracts** (`Contracts/CreationContracts.cs`):
@@ -377,11 +377,11 @@ Config:
   - **Walks a `JsonElement`** (parsed with the default `JsonDocumentOptions`) with the same walk order and skip rules as the TS validator, and builds the canonical DTO from the walk. The walker detects duplicate keys itself through `EnumerateObject()` and walks the last value, as `JSON.parse` does; `AllowDuplicateProperties = false` throws without a path (measured on .NET 11, `bowser-phase3-validator-feasibility.md`). Deserializing into DTOs with `UnmappedMemberHandling = Disallow` was rejected: it stops at the first unknown member, reports STJ's paths, and rejects a valid `120.0` for an `int` (schema.md §6.5).
   - Integers are tested by value (`TryGetDouble`, then `double.IsFinite`, because `TryGetDouble` returns true with `+Infinity` for `1e400`), never by format. The server never adjusts a document.
   - The body is gated with `Utf8.IsValid` (invalid is `not-json`); `ValueEquals` is wrapped in try/catch; names and property names have a raw-token fallback, because `GetString` and `JsonProperty.Name` throw on lone surrogates (schema.md §6.5).
-  - Every C# regex for share codes, shell keys and cue ids is anchored `^…\z`, never `$` (.NET `$` matches before a final `\n`), with no `IgnoreCase`.
-  - `Services/Creations/CreationEnvelopeReader.cs` runs the envelope walk (schema.md §2.6): body bytes, `Utf8.IsValid`, parse, then `kind` and `document`. The document is walked only when the envelope has no issues.
+  - Every C# regex for share codes, shell keys and cue ids is anchored `^…\z`, never `$` (.NET `$` matches before a final `\n`), with no `IgnoreCase`. The share-code route gate is not a regex at all (below).
+  - `Services/Creations/CreationEnvelopeReader.cs` runs the envelope walk (schema.md §2.6): content type (`Request.HasJsonContentType()`, 415 when missing or not JSON), body bytes, `Utf8.IsValid`, parse (a `JsonException`, including depth over 64, is `("", not-json)`, never a 500), then `kind` and `document`. The document is walked only when the envelope has no issues. The service's write gate (403) runs before any of it.
   - Ranges come from `CreationLimits.cs`, which is checked against `schema/limits.json`.
   - The re-serialized, canonical JSON is what gets stored.
-  - Failures return `ServiceResult.Validation` with the complete issue list, each with `path`, `code` and `message` (schema.md §2.4). `ServiceError` gains an optional issue list to carry it.
+  - Failures return `ServiceResult.Validation` with the complete issue list, each with `path`, `code` and `message` (schema.md §2.4). `ServiceError` gains an optional issue list to carry it. The 400 body carries at most 100 issues plus `truncated` (always present); the cap is applied where the body is built, never in the validator.
 - **Repository and service:**
   - `ICreationRepository` / `ICreationService`.
   - `ShareCodeGenerator` uses `RandomNumberGenerator.GetItems` and retries if the code is already taken.
@@ -397,23 +397,24 @@ Config:
   | `PUT api/creations/{shareCode}` | Owner only; returns 200, 400, 403 (writes off) or 404 (missing or not owned) |
   | `DELETE api/creations/{shareCode}` | Owner only; returns 204, 403 (writes off) or 404 (missing or not owned) |
   | `POST api/creations/{shareCode}/remix` | Body `{ document }`, the edited working copy. Creates a creation owned by the current user, with `remixedFrom` set; 201, 400, 403 (writes off) or 404 (unknown source). The client uses it for a non-owner's Save and for an owner's "Save as new" (schema.md §11.4) |
-  | `GET api/me/creations?page&pageSize&kind` | The current user's creations as a `CreationListPage`: offset paging (`page` from 1, `pageSize` default 24, clamped to 1..100), `updatedAt` desc then `shareCode`, optional `kind` filter (bad value is 400 `(kind, enum)`), past the end is an empty page (schema.md §2.2.1); 403 when `CanWrite` is false |
+  | `GET api/me/creations?page&pageSize&kind` | The current user's creations as a `CreationListPage`: offset paging (`page` from 1, `pageSize` default 24, clamped to 1..100), `updatedAt` desc then `shareCode`, optional `kind` filter, past the end is an empty page with no `OFFSET` query (schema.md §2.2.1); 403 when `CanWrite` is false. The three parameters are read from `Request.Query`, not model-bound: integer literals of any size clamp, the offset is a `long`, `kind` is compared ordinally (`Shell`, `0`, `kind=` are 400 `(kind, enum)`), and a non-integer `page`/`pageSize` is 400 `type` in the §2.4 body |
 
   - Map `ServiceErrorType.Forbidden` to 403 in `ToErrorResult`.
-  - Add `[RequestSizeLimit(262144)]` (256 KiB) on the write endpoints. This is Yoshi's measured recommendation (a worst-case show at every limit is 215 KB), pending Boo's Phase 4 security review.
-  - **Write actions read `Request.Body` themselves, with `[Consumes("application/json")]`; they don't bind `[FromBody] JsonElement`.** Binding returns MVC's ProblemDetails for bad JSON instead of `{ message, errors }`, and lets invalid UTF-8 through to throw later (measured). The 413 from `[RequestSizeLimit]` still applies to the manual read. Boo reviews the manual read and Kestrel's global `MaxRequestBodySize` (still the 30 MB default elsewhere) with the 256 KiB number.
-  - The share-code route constraint is `^[1-9A-HJ-NP-Za-km-z]{8}\z`: with `$`, `abcdefgh%0A` reached the action.
+  - `[RequestSizeLimit(262144)]` (256 KiB) on the three write endpoints, and Kestrel's global `MaxRequestBodySize` lowered to 65,536 (64 KiB) in `ConfigureKestrel`; the attribute raises it for those three (measured, Boo S1–S3). No middleware reads `Request.Body` before MVC, and no request decompression (S4). The size test runs on real Kestrel, because TestServer doesn't enforce `MaxRequestBodySize`. The 413 through Railway's edge is checked on the first deploy (S5).
+  - **Write actions read `Request.Body` themselves and check the content type with `Request.HasJsonContentType()` (415 when missing or not JSON); no `[Consumes]`, and no `[FromBody] JsonElement`.** Binding returns MVC's ProblemDetails for bad JSON instead of `{ message, errors }`, and lets invalid UTF-8 through to throw later (measured). `[Consumes]` answers a wrong type with the `/api/{**rest}` catch-all's 404 and runs the action when `Content-Type` is missing (Boo S6, measured). The 413 from `[RequestSizeLimit]` still applies to the manual read.
+  - The share-code route gate is a custom `ShareCodeRouteConstraint : IRouteConstraint` (`{shareCode:sharecode}`) that checks length 8 and each character ordinally against the Base58 alphabet. Not a `regex(...)` constraint: ASP.NET compiles those case-insensitively, so `l`, `I`, `O` and the Kelvin sign reached the action (Boo S14, measured). The service re-checks the code before querying.
   - **No `[Authorize(Policy)]` before Phase 8.** No authentication scheme is registered, so a failing policy has nothing to Forbid with and throws. The service-layer `CanWrite` check is the gate in the interim and stays after Phase 8, when `CanWrite` means "is authenticated" and Phase 8 adds the policy on top.
 - **Abuse controls:**
-  - A fixed-window rate limiter on writes (for example 20 per minute and 300 per day), **partitioned by client IP** before Phase 8. Every interim visitor resolves to the same default `UserId`, so a user-keyed partition would be one global bucket any single client could drain. Phase 8 partitions by user when `IsAuthenticated`, falling back to IP.
-  - `/health/live` is excluded from the limiter, so Railway's probe is never throttled.
-  - It depends on the forwarded-headers setup to see the real client IP. `ForwardedHeadersOptions.ForwardLimit` stays 1 (the default) while the known lists are cleared, so the rightmost, edge-appended `X-Forwarded-For` entry wins. Don't rely on the limiter until the 1d check has confirmed whether Railway's edge appends to or overwrites a client-sent `X-Forwarded-For`; if 1d hasn't run, run that check on Phase 4's first deploy.
+  - Fixed-window rate limiters, `RejectionStatusCode = 429` with `Retry-After`, limits read from `RateLimits:*` configuration: **writes 20 per minute and 300 per day, chained** (POST, PUT, DELETE, remix); **reads 120 per minute** (share-code GET, `api/me/creations`, `api/me`, and the `/api/{**rest}` catch-all). **Partitioned by client IP** before Phase 8: IPv4 as is, IPv4-mapped IPv6 as IPv4, other IPv6 by /64, no address as one `"unknown"` bucket. Every interim visitor resolves to the same default `UserId`, so a user-keyed partition would be one global bucket any single client could drain. Phase 8 partitions by user when `IsAuthenticated`, falling back to IP (schema.md §2.7, Boo S17–S19).
+  - `UseRateLimiter()` after `UseRouting()`; `/health/live` uses `DisableRateLimiting()` and there's no `GlobalLimiter`, so Railway's probe is never throttled (S20).
+  - It depends on the forwarded-headers setup to see the real client IP. `ForwardedHeadersOptions.ForwardLimit` stays 1 (the default) while the known lists are cleared, so the rightmost, edge-appended `X-Forwarded-For` entry wins. Don't rely on the limiter until Railway's edge behavior is confirmed: on Phase 4's first deploy, run Boo's black-box S21 check (121 share-code GETs with forged `X-Forwarded-For` values must hit 429; one GET from a second network straight after must not). If either fails, stop and raise it to Skyler.
 - **Docker context:** `schema/` is test input only (the `Dockerfile` copies only `src/web/fireworks-web/` and `src/api/`), but `.dockerignore` doesn't list it. Bowser decides whether to add it; if the API reads `limits.json` at runtime, it stays in the context and is copied (schema.md §6.6).
 - **Tests:**
-  - A gate test that enumerates every non-GET endpoint from `EndpointDataSource` (the router, not a hand-written list) plus `GET api/me/creations`, and asserts each returns 403 when `CanWrite` is false.
+  - A gate test that enumerates every non-GET endpoint from `EndpointDataSource` (the router, not a hand-written list) plus `GET api/me/creations`, and asserts each returns 403 with a valid body and an empty repository call ledger when `CanWrite` is false. The catch-all has no `HttpMethodMetadata` and is excluded by its pattern; the test fails if the set is empty (Boo S8).
+  - The full test list for these controls is in `boo-phase4-security-requirements.md` (S1–S26), each with its negative control.
   - A reflection or grep test that only the identity module and tests reference the default-user options type (§3.4).
   - Service tests with a fake repository and a fake `ICurrentUser`. Owner vs. non-owner paths are tested with two user IDs, so ownership is proven before real auth exists.
-  - A `CreationApiHarness` (Kestrel and SQLite) covering the body read, 400 responses with the exact `errors` multiset, 413 for oversized requests, 415 for a non-JSON content type, and every fixture: valid ones return 201, invalid ones return 400. It posts each document's raw text, and translates the two root-not-object fixtures to `(document, not-object)` (schema.md §12.1).
+  - A `CreationApiHarness` (Kestrel and SQLite) covering the body read, 400 responses with the exact `errors` multiset, the 100-issue cap and `truncated`, 413 for oversized requests, 415 for a non-JSON or missing content type, and every fixture: valid ones return 201, invalid ones return 400. It posts each document's raw text, and translates the two root-not-object fixtures to `(document, not-object)` (schema.md §12.1).
   - A `[PostgresFact]` test that proves the `jsonb` column and the unique index.
 
 **Done when:**
@@ -431,7 +432,7 @@ Config:
 - **Links and Save (Skyler, 2026-11-13; schema.md §11):**
   - **A link never opens the saved record for editing.** `/c/:shareCode` is the only editing link, for both kinds: it loads a **working copy** with exactly the saved settings, as a new, unsaved (dirty) form, then redirects to the editor (`/` for a shell) so a reload restores the edited copy from the draft. There's no edit-in-place route. The draft remembers the copy's `source` (`shareCode`, `kind`, `isOwner`, `updatedAt`) as client state.
   - **Opening a link over unsaved changes asks first,** only when the shell or sky is dirty (the same rule as Apply with `sky`). Cancel keeps the current draft.
-  - **Save:** fresh work (no `source`) is `POST api/creations`. A working copy of a creation the current user owns offers **"Update original"** (PUT, which changes what its share link plays) or **"Save as new"** (`POST …/remix`, so `remixedFrom` is set). Any other working copy saves with `POST …/remix` and the copy as the body. After any save, `source` is the record just written.
+  - **Save:** fresh work (no `source`) is `POST api/creations`. A working copy of a creation the current user owns offers **"Update original"** (PUT, which changes what its share link plays) or **"Save as new"** (`POST …/remix`, so `remixedFrom` is set). Any other working copy saves with `POST …/remix` and the copy as the body. A 404 from PUT or from `…/remix` means the source is gone, so its fallback is a plain `POST api/creations`, never another remix (schema.md §11.2). "Update original" is last-write-wins until a server precondition is added (schema.md §11.4 names the trigger). After any save, `source` is the record just written.
 - **Designer:**
   - Share copies `/s/:code` to the clipboard and shows a toast.
   - A dirty indicator. Whether a successful Save clears the dirty flags is Rosalina's and Luigi's call at the Phase 5 design-review (Peach F4).

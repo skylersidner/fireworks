@@ -33,4 +33,9 @@
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- JsonWalk (path building, the surrogate-safe reads) is internal; its parity specs live in the tests. -->
+    <InternalsVisibleTo Include="Fireworks.Api.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -57,3 +57,12 @@
 - The replace-only ruling overtakes your record's item 5 (display settings count as edits) and item 9 (display and tab set dirty; one flag). The record carries a partial-supersession marker. Items 10 to 12 stand.
 - Stale in your spec `docs/fireworks-app/design/designer-2c.md`: §6.4 (around l.403 to 427) describes one `dirty` boolean, and l.464 says a display or tab change "sets dirty". The code and Peach's criteria (2c.9, 2c.16) follow the shell and sky split (Luigi's addendum). Please update §6.4 and l.464 in place before Phase 5.
 - Your panel-first DOM correction is what shipped. No action.
+
+### 2026-11-13 — Phase 3 cross-agent update (Scribe)
+- **Copy for Phase 5 that is yours** (Peach's acceptance `docs/fireworks-app/acceptance/phase-3.md`; schema.md §8, §11, §15):
+  - **F10, Save-time outcomes (no owner until now):** a 400 on Save (a stale tab can send a document the server rejects, §8.1), 403 (writes switched off mid-session), 404 on PUT (the original was deleted), 413, 429 (rate limited), and "newer than this app; reload" from the upgrade step (§8.2, §8.3). Put these in the Phase 5 design-review brief. A save that fails is an error, not a partial success, so the caveat rule does not apply.
+  - **F4, dirty flags at Save (you and Luigi):** a link load sets `shellDirty` and `skyDirty` (Yoshi addendum 1, point 4). Whether Save clears them is still open. Copy for the Save choice ("Update original" or "Save as new") must say what each replaces.
+  - **F12, bracket paths in the Apply note:** `designer-copy.ts` `unknownKeyName` matches only `breaks[n].name`, so rule-11 paths show raw (`["a.b"]`, `breaks[0]["a\"b"]`). Decide how an unprintable key reads; Luigi implements.
+  - **L3, link over unsaved edits:** the confirm asks only when the shell or the sky is dirty, the same rule as Apply with `sky`. The copy must name what gets replaced, as in §6.4.
+- **Still open from Phase 3:** the placeholder copy for codes beyond `enum`, `type` and `break-count` (§15). Lenient `cleaned` names apply silently today (Mario's note). Your call.
+- **Still open from Phase 2:** `docs/fireworks-app/design/designer-2c.md` §6.4 (around l.403–427) and l.464 still describe one `dirty` flag. Update them before Phase 5 builds on the spec.

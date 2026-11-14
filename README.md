@@ -50,6 +50,29 @@ There is no login yet (plan §3.4). Every request acts as one configured default
 
 `canWrite` is `Identity:AllowAnonymousWrites`: **`true` in Development and `false` in production** (decided, plan §5 OQ20). The client hides write controls when it is false. The API refuses to start if `DefaultUserId` is missing, blank, not a GUID, or the empty GUID.
 
+> **Until sign-in exists (Phase 8), the deployed site has no accounts. Saving is normally off. When it is switched on for testing, anyone who can reach the site can see, change and delete every saved creation, and a share link can be changed to play something else. Don't save anything there you'd mind losing or having changed.**
+>
+> Now that `PUT` and `DELETE` exist, "writes on" means more than "people can save". With `Identity__AllowAnonymousWrites=true`, anyone who reaches the site (not only people you give the URL to; new `*.up.railway.app` hostnames show up in certificate-transparency logs within minutes) can list every creation saved in any test window, overwrite what any existing share link plays (including links already sent to people), rename it to any 80-character text, delete everything, and create up to 300 rows a day per IP, each up to 256 KiB. There are no backups until Phase 7. Follow [Test windows](#test-windows-switching-writes-on) every time.
+
+### Creations API (Phase 4)
+
+The contract is `docs/fireworks-app/schema.md` (§2 envelope and status codes, §6 validation, §9 share codes); `src/api/Fireworks.Api/Fireworks.Api.http` exercises every endpoint.
+
+| Endpoint | Does | Status codes |
+|---|---|---|
+| `POST api/creations` | body `{ kind, document }`; creates a creation owned by the current user | 201, 400, 403, 413, 415, 429 |
+| `GET api/creations/{shareCode}` | public; no identity needed | 200, 404, 429 |
+| `PUT api/creations/{shareCode}` | body `{ document }`; owner only, validated against the stored kind | 200, 400, 403, 404, 413, 415, 429 |
+| `DELETE api/creations/{shareCode}` | owner only | 204, 403, 404, 429 |
+| `POST api/creations/{shareCode}/remix` | body `{ document }` (the edited working copy); a new creation with `remixedFrom` set; any source | 201, 400, 403, 404, 413, 415, 429 |
+| `GET api/me/creations?page&pageSize&kind` | the current user's creations, `updatedAt` desc then `shareCode` | 200, 400, 403, 429 |
+
+- **Order of checks on a write:** rate limit (429), the `CanWrite` gate (403, before the body is touched), `Content-Type` (415, missing or non-JSON), size (413, over 256 KiB), the envelope and parse (400), the lookup (404), the document walk (400). A creation you don't own is a 404, byte-identical to an unknown code.
+- **400 body:** exactly `{ message, errors: [{ path, code, message }], truncated }`, at most 100 issues.
+- **Rate limits** (per client IP, IPv6 per /64, in memory per replica, reset on deploy): writes 20 a minute and 300 a day; reads (`api/creations/{code}`, `api/me/creations`, `api/me`, unknown `/api` paths) 120 a minute. `/health/live`, static files and the SPA are never limited. Override with `RateLimits__Writes__PerMinute`, `RateLimits__Writes__PerDay` and `RateLimits__Reads__PerMinute`; production needs none of them. **The limiter is only as good as the client IP behind Railway's edge, which is unverified until the first deploy** (checklist step 5).
+- **Body limits:** Kestrel's global limit is 64 KiB; the three write actions raise it to 256 KiB. Clients send compact JSON (a pretty-printed worst-case show is 290 KB). A body sent with `Transfer-Encoding: chunked` has its chunk framing counted toward the limit too, so a chunked body somewhat under 256 KiB of JSON can still get 413 (Boo F2). Browsers' `fetch` sends a `Content-Length` for these bodies, so this is information only.
+- **No form binding:** MVC's form value providers are removed for the whole API (`AddFireworksControllers`). With them, a `multipart/form-data` or large urlencoded body was parsed during model binding, before the write gate, and got MVC's 400 instead of 403 or 415 (Boo F1).
+
 ### Migrations
 
 Migrations live in `src/api/Fireworks.Api/Data/Migrations` and are applied automatically on startup, so there is no separate migration step. To add one, run from the API project directory, because the design-time factory reads `appsettings*.json` from the current directory:
@@ -121,6 +144,11 @@ Every command above is a verification step, and a check that has never been seen
 | `dotnet test` with `FIREWORKS_TEST_POSTGRES` | delete `app.Map("/api/{**rest}", …)` from `Program.cs` | 1 failed (`ProgramOnPostgresTests`: expected NotFound, got OK), 28 passed. **A plain `dotnet test` passes this mutant.** (2026-11-12, Bowser). **Re-run on net11.0 (Bowser 2026-11-12):** same, both runs |
 | `dotnet test` with `FIREWORKS_TEST_POSTGRES` | delete `app.MapHealthChecks("/health/live")` from `Program.cs` | 1 failed (expected `text/plain`, got `text/html`), 28 passed (2026-11-12, Bowser). **Re-run by Toad 2026-11-12:** same; and the same mutant under a plain `dotnet test` passes 26, skips 3. **Re-run on net11.0 (Bowser 2026-11-12):** same, both runs |
 | `dotnet test` with `FIREWORKS_TEST_POSTGRES` | skip `EnsureDefaultUserExistsAsync` in `FireworksDbInitializer.InitializeAsync` | 3 failed, 26 passed (2026-11-12, Bowser). **Re-run on net11.0 (Bowser 2026-11-12):** same |
+| `dotnet test Fireworks.slnx` | Phase 4 creation mutants, each in a scratch copy (2026-11-13, Bowser). Failed counts out of 530 run, 10 skipped | key pattern `\z`→`$`: 1 · drop `double.IsFinite`: 4 · no gate in `UpdateOwnedAsync`: 3 · DELETE without the owner predicate: 2 · PUT load without the owner predicate: 1 · duplicate keys never reported: 7 · envelope duplicates unreported: 1 · no `COLLATE "C"`: 1 (pending model changes) · `stars` max 401: 11 · `remixedFrom` for everyone: 2 · `string.Trim()`: 3 · no 100-issue cap: 2 · `regex(...)` route constraint back: 2 · body check always "is JSON" (the `[Consumes]` gap): 4 · list offset in `int`: 5 · a `GlobalLimiter`: 175 |
+| `dotnet test Fireworks.slnx` | Phase 4 QA re-run and new mutants, each in a scratch copy (2026-11-13, Toad). Failed counts out of 530 (533 after Toad's 3 tests), 10 skipped | Bowser's re-run, same counts: DELETE without the owner predicate: 2 · no gate in `UpdateOwnedAsync`: 3 · `remixedFrom` for everyone: 2 · list offset in `int`: 5. New: `updatedAt` not stamped on Modified: 3 · remix owned by the source owner: 2 · retry returns false on a non-unique failure: 1 · remix without `RemixedFromId`: 1. **Survived the original suite, plain and Postgres:** palette not recomputed on PUT, list without `.ThenBy(ShareCode)` (the index already yields ordinal ties), no `DbUpdateConcurrencyException` catch on PUT, service ignoring a null update. Each now fails 1 (`CreationUpdateEdgeTests`, `CreationListOrderSqlTests`) |
+| `dotnet test` (fixture harness) | in a scratch copy, edit one `server-only/` expectation: drop one of two errors, repeat one error, change a path, remove `byteMarkers`, remove `contentType`, 413 to 400 | each fails its fixture's theory row (the last also fails the status-coverage fact) (2026-11-13, Toad) |
+| `dotnet test` with `FIREWORKS_TEST_POSTGRES` | delete `app.UseRateLimiter()` from `Program.cs` | 1 failed (`Real_program_rate_limits_writes…`), 539 passed. **A plain `dotnet test` passes this mutant**, because the harness has its own pipeline (2026-11-13, Bowser) |
+| `dotnet test` with `FIREWORKS_TEST_POSTGRES` | drop the `Connection: close` on the reader's 413 | 4 failed (3 harness 413 tests, plus the real-Program fixture run, where the next request after `oversize` got "response ended prematurely"), 536 passed (2026-11-13, Bowser) |
 | `npm test` | delete the `if (this.destroyed) { handle.destroy(); return; }` guard in `PixiCanaryComponent.start()` | 1 failed (`destroyed while init is pending…`), 26 passed (2026-11-12, Luigi). **Re-run by Toad 2026-11-12:** same |
 | `npm test` | `SessionService.canWrite` true for any loaded user (`this.user() !== null`) | 3 failed (2 `session.spec`, 1 `home.spec`), 24 passed (2026-11-12, Luigi). **Re-run by Toad 2026-11-12:** same |
 | `npm test` | `app.config.ts` initializer stops calling `SessionService.load()` | 1 failed (`App cold start (real appConfig)` ledger), 27 passed (2026-11-12, Toad). Before `app.startup.spec.ts` existed, every spec passed this mutant |
@@ -171,16 +199,30 @@ Phase 1d is deferred: nothing has been created on Railway yet. When it happens, 
    |---|---|
    | `ASPNETCORE_ENVIRONMENT` | `Production` |
    | `ConnectionStrings__Postgres` | `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}` |
-   | `Identity__AllowAnonymousWrites` | **Leave unset** (it means `false`). Set it to `true` only while testing saves, then delete it again (decided, plan §5 OQ20). While true, anyone who reaches the URL can edit or delete every creation — don't share the URL during that window. |
+   | `Identity__AllowAnonymousWrites` | **Leave unset** (it means `false`). Set it to `true` only during a [test window](#test-windows-switching-writes-on), then delete it again (decided, plan §5 OQ20). While true, anyone who reaches the URL can list, overwrite and delete every creation. |
 
    Compose the connection string from the Postgres service's individual variables as shown. **Do not use `${{Postgres.DATABASE_URL}}`**: it is a `postgresql://` URI, and Npgsql can't parse that form. `ConnectionStrings__Postgres` is deliberately absent from `appsettings.json`, so a deploy that forgets it fails at startup with `ConnectionStrings:Postgres must be configured.` instead of half-starting.
-4. Push to the connected branch. Migrations apply themselves on startup, so a bad migration is a failed deploy rather than a manual recovery.
+4. Push to the connected branch. Migrations apply themselves on startup, so a bad migration is a failed deploy rather than a manual recovery. **Run one replica.** Every replica migrates on start, with no lock between them, so two replicas starting against an empty (or behind) database can race the same migration and one crashes with Postgres `42P07` (relation already exists) (Boo F5). The rate limiter is per replica as well. Scaling out needs a migration lock or a separate migrate step first.
 5. Verify on the Railway URL (Phase 1 "Done when"):
    - `/health/live` returns `200`, `text/plain`, `Healthy`.
    - A deep link such as `/designer` returns `index.html`.
    - `/api/nope` returns `404`.
    - `/api/me` returns `canWrite: false`.
    - The Pixi canary renders.
-   - The deploy log shows `Applying migration '…_InitialCreate'` on the first boot.
+   - The deploy log shows `Applying migration '…_InitialCreate'` and `'…_AddCreations'` on the first boot.
+   - **Client IP behind the edge** (Boo S21, closes Phase 1 condition 4). (a) From one machine, send 121 `GET /api/creations/abcdefgh`, each with a different forged `X-Forwarded-For: 203.0.113.N`; the 121st must be `429` (the forged header doesn't change the partition). (b) Right after, from a second network (a phone hotspot), one GET must be `404`, not `429` (the partition isn't one global bucket). If either fails, stop and raise it: the limiter is spoofable or a global kill switch.
+   - **The edge's own body limit** (Boo S5) with writes off: a 200 KiB JSON body to `POST /api/creations` must reach the app and get `403`, not an edge `413`. The 413 itself is checked in the first test window (below).
+
+### Test windows (switching writes on)
+
+Production writes stay off until Phase 8 (plan §5 OQ20). To test saving on Railway:
+
+1. **Back up first:** `pg_dump` the Railway database (Railway's Postgres service shows the connection details).
+2. Set `Identity__AllowAnonymousWrites=true` on the app service. The deploy log then shows `Anonymous writes are ON`, so every window is visible in the logs.
+3. Test. In the first window, also check the 413 through the edge (Boo S5): `curl -sv -H 'Content-Type: application/json' --data-binary @300k.json https://<host>/api/creations`, with and without `-H 'Transfer-Encoding: chunked'`. Record what the client sees (413 ProblemDetails, an edge-generated error, or a reset) and confirm a compact `schema/fixtures/valid/show/at-maximums.json` body (about 190 KB) gets 201.
+4. **Delete the variable** (don't set it to `false` and forget it) and let Railway redeploy.
+5. Confirm `GET /api/me` reports `canWrite: false` and `GET /api/me/creations` returns `403`.
+6. Compare the creations row count and `max(updated_at)` with what the window should have produced. If they differ, restore from the dump.
+7. Never post the URL publicly during a window.
 
 If `AllowedHosts` is ever tightened from `*`, keep `healthcheck.railway.app` in the list: Railway's deploy probe sends that Host header, and a 400 means the deploy never goes live.

@@ -63,7 +63,7 @@
 | **Forms: Angular Signal Forms on Angular 22.** Stable there and the direction Angular is heading. This is a deliberate departure from the reference's reactive forms. | plan §5 OQ17 |
 | **A cue's `t` is its launch time.** | `docs/fireworks-app/schema.md` §4.3 · `records/yoshi-phase3-creation-schema.md` |
 | **Share links are not locked.** Improvements may change how existing links play; prototype goldens are regression guards updated by reviewed change; version bumps are for document-shape changes only. | schema.md §8.1 |
-| **`remixedFrom` is visible only to the remix's owner;** everyone else gets `null`. | schema.md §2.1 |
+| **`remixedFrom` is visible only to the remix's owner;** everyone else gets `null`. The condition is `isOwner` alone, with no `CanWrite` term. **Accepted interim exposure (Skyler, 2026-11-13):** before Phase 8 every visitor is the default user and so the owner, so every visitor of a remix's link sees the original's share code. It closes in Phase 8 with no code change. | schema.md §2.1, §14 · `records/yoshi-phase3-creation-schema.md` (addendum 3) |
 | **An empty show can't be saved** (1..1000 cues); caps are 32 shells, 1000 cues, 600 s. | schema.md §4, §5.1 |
 | **A blank name saves as "Custom".** | schema.md §6.4 |
 | **A link never opens the saved record for editing.** `/c/:code` is the only editing link, for shells and shows; it loads a dirty working copy with exactly the saved settings. No edit-in-place route; the player's Remix just opens the working copy. | schema.md §11.1–11.2 · `records/yoshi-phase3-creation-schema.md` |

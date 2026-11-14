@@ -33,8 +33,9 @@ public sealed class InitialCreatePostgresTests
 
         await using var check = NewContext();
         Assert.Empty(await check.Database.GetPendingMigrationsAsync());
-        Assert.Contains(await check.Database.GetAppliedMigrationsAsync(),
-            name => name.EndsWith("_InitialCreate", StringComparison.Ordinal));
+        var applied = await check.Database.GetAppliedMigrationsAsync();
+        Assert.Contains(applied, name => name.EndsWith("_InitialCreate", StringComparison.Ordinal));
+        Assert.Contains(applied, name => name.EndsWith("_AddCreations", StringComparison.Ordinal));
 
         // Through the model, not a raw count: catches a column the model names differently from
         // the migration, or a type the provider maps differently than the model expects.

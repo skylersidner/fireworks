@@ -1,7 +1,9 @@
 using Fireworks.Api.Data;
 using Fireworks.Api.Repositories;
 using Fireworks.Api.Services;
+using Fireworks.Api.Services.Creations;
 using Fireworks.Api.Services.Identity;
+using Fireworks.Api.Services.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -20,10 +22,17 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 // AddFireworksIdentity for why this is not ValidateOnStart().
 builder.Services.AddFireworksIdentity(builder.Configuration);
 
+// 1a. Kestrel's global body limit is 64 KiB; the creation writes raise it per action to 256 KiB.
+// Never add request decompression (UseRequestDecompression): today a gzip body is read raw and fails
+// as not-json, so there is no zip-bomb path (Boo S2, S4).
+builder.WebHost.ConfigureKestrel(KestrelLimits.Apply);
+
 // 2. Health checks, ProblemDetails, controllers, Swagger.
 builder.Services.AddHealthChecks();
 builder.Services.AddProblemDetails();
-builder.Services.AddControllers();
+// No form value providers: they read form-typed bodies before the write gate (Boo F1). Shared with
+// the test harness.
+builder.Services.AddFireworksControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -31,6 +40,11 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<FireworksDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IMeService, MeService>();
+builder.Services.AddFireworksCreations();
+
+// Per-endpoint, IP-partitioned fixed windows on the creation endpoints only (no global limiter),
+// so /health/live is never throttled. See FireworksRateLimiting.
+builder.Services.AddFireworksRateLimiting(builder.Configuration);
 
 // 4. CORS is Development-only: production is single-origin and needs no cross-origin policy at all.
 // Note this half uses builder.Environment (before Build()); the UseCors half below uses
@@ -89,6 +103,10 @@ if (!app.Environment.IsDevelopment())
     app.UseForwardedHeaders(forwardedHeadersOptions);
 }
 
+// 6a. Cache-Control: no-store and nosniff on every /api response, error responses included (the
+// headers are set in OnStarting, after the exception handler has cleared the response).
+app.UseFireworksApiResponseHeaders();
+
 // 7. Exception handler (ProblemDetails body, no stack trace).
 app.UseExceptionHandler();
 
@@ -124,6 +142,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// 11a. Rate limiting. After UseRouting, because the policies are endpoint metadata
+// ([EnableRateLimiting]) and the limiter can only see them once an endpoint is selected; after
+// forwarded headers (step 6), because it partitions on the client address. Phase 8's
+// UseAuthentication/UseAuthorization go between UseRouting and this, so it can partition by user.
+app.UseRateLimiter();
+
 // 12. Migrate on start, then make sure the default user exists. This runs before the app listens,
 // so a failed migration is a failed deploy (Railway's healthcheck never goes green), not a
 // half-working app.
@@ -132,12 +156,20 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<FireworksDbContext>();
     var defaultUserOptions = scope.ServiceProvider.GetRequiredService<IOptions<DefaultUserOptions>>().Value;
     await FireworksDbInitializer.InitializeAsync(dbContext, defaultUserOptions);
+
+    // Every test window shows up in the Railway logs (Boo S28): while this is on, anyone who can
+    // reach the site can list, change and delete every creation.
+    if (defaultUserOptions.AllowAnonymousWrites && !app.Environment.IsDevelopment())
+    {
+        app.Logger.LogWarning("Anonymous writes are ON (Identity:AllowAnonymousWrites=true). Anyone who can reach this site can create, change and delete every creation.");
+    }
 }
 
 // 13. Liveness. Answered by the health check as text/plain "Healthy" — never by the SPA fallback.
 // railway.toml's healthcheckPath must be exactly this path; any near-miss would be answered by the
 // fallback below with 200 text/html and pass forever.
-app.MapHealthChecks("/health/live");
+// Explicitly exempt from rate limiting, so the probe can never be throttled (Boo S20).
+app.MapHealthChecks("/health/live").DisableRateLimiting();
 
 // 14. Controllers (attribute-routed).
 app.MapControllers();
@@ -150,7 +182,8 @@ app.MapControllers();
 //
 // Side effect worth knowing rather than filing as a bug later: app.Map maps every HTTP method, so
 // an unsupported method on a real route (DELETE /api/me) lands here as 404 rather than 405.
-app.Map("/api/{**rest}", () => Results.NotFound());
+// Read-limited like every other /api read, so a scanner walking 404s is throttled too (Boo S19).
+app.Map("/api/{**rest}", () => Results.NotFound()).RequireRateLimiting(FireworksRateLimiting.ReadPolicy);
 
 // 16. SPA fallback, last. Deep links (/designer, /s/{code}) get index.html and Angular routes them.
 // When Phase 8 adds a fallback authorization policy, this endpoint needs AllowAnonymous or every

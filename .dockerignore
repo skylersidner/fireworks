@@ -24,3 +24,6 @@ docs/
 prototypes/
 # Local measuring kits (tools/fps-compare): run on a developer machine, never shipped.
 tools/
+# Shared schema fixtures and limits.json: test input only. CreationLimits.cs compiles the limits in
+# and nothing at runtime reads schema/ (schema.md §6.6, Boo S29), so it stays out of the context.
+schema/

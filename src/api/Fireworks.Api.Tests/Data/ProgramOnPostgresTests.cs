@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Fireworks.Api.Data;
 using Fireworks.Api.Tests.Support;
+using Fireworks.Api.Tests.Creations;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fireworks.Api.Tests.Data;
@@ -71,6 +72,165 @@ public sealed class ProgramOnPostgresTests
             Assert.Equal(TestIdentity.UserId, json.RootElement.GetProperty("userId").GetGuid());
             Assert.False(json.RootElement.GetProperty("isAuthenticated").GetBoolean());
             Assert.True(json.RootElement.GetProperty("canWrite").GetBoolean());
+        }
+    }
+
+    private static async Task<HttpResponseMessage> Named(string fixture, Func<Task<HttpResponseMessage>> send)
+    {
+        try
+        {
+            return await send();
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new InvalidOperationException($"{fixture}: {exception.Message}", exception);
+        }
+    }
+
+    private static async Task ResetAsync()
+    {
+        await using var reset = new FireworksDbContext(new DbContextOptionsBuilder<FireworksDbContext>()
+            .UseNpgsql(PostgresFactAttribute.ConnectionString).Options);
+        await reset.Database.EnsureDeletedAsync();
+    }
+
+    private static Dictionary<string, string> Environment(string baseUrl, bool writes, int writesPerMinute = 100000) => new()
+    {
+        ["ASPNETCORE_ENVIRONMENT"] = "Production",
+        ["ASPNETCORE_URLS"] = baseUrl,
+        ["ConnectionStrings__Postgres"] = PostgresFactAttribute.ConnectionString,
+        ["Identity__DefaultUserId"] = TestIdentity.UserId.ToString(),
+        ["Identity__AllowAnonymousWrites"] = writes ? "true" : "false",
+        ["RateLimits__Writes__PerMinute"] = writesPerMinute.ToString(),
+        ["RateLimits__Writes__PerDay"] = "100000",
+        ["RateLimits__Reads__PerMinute"] = "100000"
+    };
+
+    /// <summary>
+    /// The real Program, real Postgres, every shared fixture over HTTP (Boo S22, S23): valid ones 201
+    /// and readable back, invalid ones 400 with their multiset, server-only ones their status. Then a
+    /// full update/remix/list/delete round trip. Catches Program.cs drifting from the harness (a
+    /// missing registration, constraint, limit or header).
+    /// </summary>
+    [PostgresFact]
+    [Trait("Category", "Postgres")]
+    public async Task Real_program_serves_every_fixture_and_the_creation_round_trip_on_Postgres()
+    {
+        await ResetAsync();
+        using var webRoot = new TempWebRoot();
+        var baseUrl = $"http://127.0.0.1:{ApiProcess.FreeLoopbackPort()}";
+        await using var api = ApiProcess.Start(Environment(baseUrl, writes: true), "--webroot", webRoot.Path);
+        await api.WaitForOutputAsync("Now listening on", StartTimeout);
+        Assert.Contains("_AddCreations", api.Output);
+        Assert.Contains("Anonymous writes are ON", api.Output);
+
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        string? firstValid = null;
+        foreach (var name in SchemaFixtures.DocumentFixtureNames())
+        {
+            var fixture = SchemaFixtures.LoadDocument(name);
+            var body = $"{{\"kind\":{JsonSerializer.Serialize(fixture.Kind)},\"document\":{fixture.DocumentRawText}}}";
+            using var response = await Named(name, () => Creations.CreationApiHarness.SendJsonAsync(client, HttpMethod.Post, "/api/creations", body));
+            if (fixture.Group == "valid")
+            {
+                Assert.True(response.StatusCode == HttpStatusCode.Created, $"{name}: {(int)response.StatusCode}");
+                using var created = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var code = created.RootElement.GetProperty("shareCode").GetString()!;
+                firstValid ??= code;
+                using var read = JsonDocument.Parse(await client.GetStringAsync($"/api/creations/{code}"));
+                Assert.True(JsonSemantics.Equal(read.RootElement.GetProperty("document"), fixture.Document), name);
+            }
+            else
+            {
+                Assert.True(response.StatusCode == HttpStatusCode.BadRequest, $"{name}: {(int)response.StatusCode}");
+                var expected = fixture.Document.ValueKind == JsonValueKind.Object ? fixture.Errors : [new PathCode("document", "not-object")];
+                Assert.Equal(SchemaFixtures.Ledger(expected), SchemaFixtures.Ledger(await Creations.CreationApiHarness.ReadErrorsAsync(response)));
+            }
+        }
+
+        foreach (var name in SchemaFixtures.ServerOnlyFixtureNames())
+        {
+            var fixture = SchemaFixtures.LoadServerOnly(name);
+            using var response = await Named(name, () => Creations.CreationApiHarness.SendRawAsync(client, HttpMethod.Post, "/api/creations", fixture.Body, fixture.ContentType));
+            Assert.True(fixture.Status == (int)response.StatusCode, $"{name}: {(int)response.StatusCode}");
+        }
+
+        var peony = SchemaFixtures.LoadDocument("valid/shell/preset-peony").DocumentRawText;
+        using (var put = await Creations.CreationApiHarness.SendJsonAsync(client, HttpMethod.Put, $"/api/creations/{firstValid}", $"{{\"document\":{peony}}}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+            Assert.Equal("no-store", put.Headers.CacheControl?.ToString());
+        }
+
+        using (var remix = await Creations.CreationApiHarness.SendJsonAsync(client, HttpMethod.Post, $"/api/creations/{firstValid}/remix", $"{{\"document\":{peony}}}"))
+        {
+            Assert.Equal(HttpStatusCode.Created, remix.StatusCode);
+            using var json = JsonDocument.Parse(await remix.Content.ReadAsStringAsync());
+            Assert.Equal(firstValid, json.RootElement.GetProperty("remixedFrom").GetString());
+
+            // Read back from the database, not the insert's in-memory entity: catches a remix that
+            // never stores remixed_from_id (Toad).
+            var remixCode = json.RootElement.GetProperty("shareCode").GetString();
+            using var readBack = JsonDocument.Parse(await client.GetStringAsync($"/api/creations/{remixCode}"));
+            Assert.Equal(firstValid, readBack.RootElement.GetProperty("remixedFrom").GetString());
+        }
+
+        using (var list = JsonDocument.Parse(await client.GetStringAsync("/api/me/creations?page=2147483647&pageSize=100")))
+        {
+            Assert.Empty(list.RootElement.GetProperty("items").EnumerateArray());
+            Assert.True(list.RootElement.GetProperty("totalCount").GetInt32() > 30);
+        }
+
+        using (var bad = await client.GetAsync("/api/creations/abcdefgl"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, bad.StatusCode);
+        }
+
+        using (var delete = await client.DeleteAsync($"/api/creations/{firstValid}"))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        }
+
+        Assert.DoesNotContain("Unhandled exception", api.Output);
+    }
+
+    /// <summary>The real Program's limiter and gate: UseRateLimiter, the policies and DisableRateLimiting are wired.</summary>
+    [PostgresFact]
+    [Trait("Category", "Postgres")]
+    public async Task Real_program_rate_limits_writes_with_429_spares_health_and_gates_writes_off()
+    {
+        await ResetAsync();
+        using var webRoot = new TempWebRoot();
+        var baseUrl = $"http://127.0.0.1:{ApiProcess.FreeLoopbackPort()}";
+        await using (var api = ApiProcess.Start(Environment(baseUrl, writes: false, writesPerMinute: 2), "--webroot", webRoot.Path))
+        {
+            await api.WaitForOutputAsync("Now listening on", StartTimeout);
+            Assert.DoesNotContain("Anonymous writes are ON", api.Output);
+            using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+            var body = $"{{\"kind\":\"shell\",\"document\":{SchemaFixtures.LoadDocument("valid/shell/preset-peony").DocumentRawText}}}";
+
+            for (var i = 0; i < 2; i++)
+            {
+                using var forbidden = await Creations.CreationApiHarness.SendJsonAsync(client, HttpMethod.Post, "/api/creations", body);
+                Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+            }
+
+            using (var limited = await Creations.CreationApiHarness.SendJsonAsync(client, HttpMethod.Post, "/api/creations", body))
+            {
+                Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+                Assert.True(limited.Headers.Contains("Retry-After"));
+            }
+
+            using (var list = await client.GetAsync("/api/me/creations"))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, list.StatusCode);
+            }
+
+            for (var i = 0; i < 20; i++)
+            {
+                using var health = await client.GetAsync("/health/live");
+                Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+            }
         }
     }
 }

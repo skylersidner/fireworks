@@ -8,7 +8,8 @@
 - **Plan:** `plans/initial-implementation.md`. Phases 0–8. Identity model in §3.4: anonymous play, persistence owned by a user ID, and a configured default user until the Phase 8 auth pass.
 - **Architecture reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular`. Mirror its structure and conventions; never its domain.
 - **Prototype:** `prototypes/fireworks-prototype.html` is the visual and behavioral parity oracle. Background is in `docs/fireworks-app/context.md`.
-- **Your focus here:** Phase 1a, 1c and 1d (API skeleton, identity foundation, Docker, compose, Railway), Phase 4 (creation persistence), and Phase 7 operations (caching, backups, runbook).
+- **Your focus here:** Phases 1 and 3 are done. Next: Phase 4 (creation persistence and the C# validator), and Phase 7 operations (caching, backups, runbook).
+- **Validator traps (Phase 3, summarized):** name length counts code points (`string.EnumerateRunes()`), never `Length`. The C# walker must mirror normalize's paths, kinds and codes exactly. Schema §6.3 now defines `code` on issues.
 - Carried over from the previous project: the role only. No history was copied. General lessons from that project are seeded as standing decisions in `.squad/decisions/README.md`.
 
 ## Learnings
@@ -57,17 +58,32 @@
 - Luigi's rule "never ship a `--stats-json` build" is not enforced. Stage 1 of the Dockerfile copies all of `wwwroot` into stage 2, so a stray `browser-stats.json` would be served publicly. Consider a guard in the build (with Boo's Phase 7 CSP and headers review in mind).
 - `history.md` line 24 still names `IdentityOptions`. The file is `Services/Identity/DefaultUserOptions.cs` since the fix round.
 
-### 2026-11-13 — Phase 2 cross-agent update (Scribe)
-- Phase 3 validator rule (Yoshi, `decisions/records/yoshi-phase2a-engine-boundaries.md`): a shell is valid only when the normalize walk returns `ok` with zero `adjustments`. Each adjustment becomes an error at the same path. Mirror the walk, the paths (`breaks[1].color1`, `sky.wind`, `name`, `version`) and the kinds (`defaulted | clamped | rounded | truncated | dropped`) exactly.
-- The 80-character name limit counts code points, not UTF-16 units. In C#, count with `string.EnumerateRunes()`. `string.Length` is wrong for astral characters.
-- Luigi's `ShellIssue.code` is TypeScript-side and open for Yoshi's schema doc. Don't add it to the C# model until Yoshi rules.
-
 ### 2026-11-13 — Phase 3 validator feasibility (scratch probes only)
-- Record: `.squad/decisions/records/bowser-phase3-validator-feasibility.md`. Skill updated: `.squad/skills/cross-language-validator-parity/SKILL.md` (C# traps).
-- **Measured on .NET 11.0.0:** `TryGetDouble` returns true with Infinity for `1e400` (check `double.IsFinite`); `AllowDuplicateProperties=false` throws with no path (detect dups in the walker instead, last value wins); `JsonDocument.Parse` accepts lone-surrogate escapes and invalid raw UTF-8; `GetString`, `JsonProperty.Name` and sometimes `ValueEquals` (`"\udc00\ud800"`) throw `InvalidOperationException`.
-- **.NET `$` matches before a trailing `\n`**: key pattern and the share-code route constraint must end in `\z`. Route probe: `abcdefgh%0A` reached the action with `$`.
-- **Body handling for creation writes:** read `Request.Body` in the action (`[Consumes("application/json")]`, `Utf8.IsValid`, then parse), not `[FromBody] JsonElement` (MVC ProblemDetails for bad JSON; invalid UTF-8 binds). `[RequestSizeLimit(262144)]` still gives 413 for Content-Length and chunked under `UseExceptionHandler` + `AddProblemDetails`.
-- **Postgres 18.6 jsonb:** rejects `\u0000` and lone surrogate escapes, silently dedupes keys (last wins), keeps `1.0` as written (so store re-serialized DTO output). `varchar(n)` counts characters, so `name varchar(80)` fits 80 emoji.
-- Compose Postgres user is `fireworks_app` (no `postgres` role): `docker exec -i fireworks-postgres psql -U fireworks_app -d postgres`.
-- The Write tool turned some `\uXXXX` escapes in C# source into literal characters (U+2028 inside a char literal broke the build). Keep probe source ASCII and build non-ASCII from code points.
-- Worst-case-ish show (1000 cues, 32×4 shells) is 78.9 KB and validates in about 5–8 ms.
+- Record: `.squad/decisions/records/bowser-phase3-validator-feasibility.md`. The C# traps are in `.squad/skills/cross-language-validator-parity/SKILL.md`.
+- **Measured on .NET 11.0.0:** `TryGetDouble` returns true with Infinity for `1e400` (check `double.IsFinite`). `AllowDuplicateProperties=false` throws with no path, so detect duplicates in the walker (last value wins). `GetString`, `JsonProperty.Name` and `ValueEquals` can throw on lone surrogates, so gate the body with `Utf8.IsValid` first.
+- **.NET `$` matches before a trailing `\n`:** anchor key patterns and the share-code route constraint with `\z`.
+- **Body:** read `Request.Body` in the action with `[Consumes("application/json")]`, not `[FromBody] JsonElement`.
+- **Postgres 18.6 `jsonb`:** rejects `\u0000` and lone surrogate escapes; keeps the last value on duplicate keys; `varchar(80)` counts characters. The compose Postgres user is `fireworks_app` (no `postgres` role).
+- Keep probe source ASCII. Worst-case show (1000 cues, 32×4 shells) is 78.9 KB and validates in 5–8 ms.
+
+### 2026-11-13 — Phase 3 cross-agent update (Scribe)
+- **Property-name paths overrule the raw-escape wording** (Yoshi addendum 1, point 6; schema.md §6.2 rule 11): plain names stay bare; others are `parent["name"]`, escaping only `\` and `"`, with unpaired surrogates as U+FFFD. Match `childPath` in `normalize.ts` and the rule-11 list in `src/web/fireworks-web/src/engine/model/normalize.spec.ts` (`describe('property names in paths (schema.md §6.2 rule 11)')`, around l.316).
+- **Server-only wire format (Toad):** `schema/fixtures/server-only/*.json` is `{ description, body, status, errors?, contentType?, byteMarkers? }`; `status` is 400, 413 or 415. Send `contentType` when present, else `application/json`. Replace each `byteMarkers` key in `body` (UTF-8 encoded) with its hex bytes. Send the body bytes as read, never re-serialized, so duplicate keys survive. `schema/README.md` has the harness rules.
+- **Phase 4 open for you:** the `.dockerignore` decision for `schema/` (Mario's gate note; Yoshi's boundary), and the paging contract (Yoshi addendum 2, point 7: `page` and `pageSize`, default 24, clamped 1..100; optional `kind`; order `updatedAt` desc then `shareCode`; index `(owner_user_id, updated_at desc, share_code)`). The 256 KiB limit, the manual body read and Kestrel's global limit are Boo's review.
+
+### 2026-11-13 — Phase 4 (creations persistence)
+- **Layout:** `Controllers/CreationsController.cs`; `Services/Creations/{CreationService,CreationDocumentValidator,CreationEnvelopeReader,JsonWalk,CreationDocuments,CreationLimits,CreationListQuery,ShareCodeGenerator,ShareCodes,ICreationRequestBody,CreationsRegistration}.cs`; `Services/RateLimiting/FireworksRateLimiting.cs`; `Services/{KestrelLimits,ApiResponseHeaders}.cs`; `Repositories/CreationRepository.cs`; `Data/Entities/Creation.cs`; migration `20261113202016_AddCreations`. Contracts: `Contracts/CreationContracts.cs`, plus `ValidationIssue`/`ValidationErrorResponse` in `ApiContracts.cs`. Record: `decisions/records/bowser-phase4-creations-persistence.md`. Skill: `skills/aspnet-write-endpoint-traps/SKILL.md`.
+- **Tests:** `Validation/` (validator vs every fixture, rule-11 parity list, limits mirror), `Creations/` (fixture harness over HTTP, endpoint tests, enumerated write gate, rate limits), `Services/CreationServiceTests.cs` (fake repo + fake user, two users), `Repositories/CreationRepositoryTests.cs` (real predicates on SQLite), `Data/CreationsPostgresTests.cs` + `ProgramOnPostgresTests` (real Program, every fixture, limiter), `Startup/SourceGuardTests.cs`. Support: `Support/{SchemaFixtures,JsonSemantics,RepoPaths,SqliteTestDatabase,CreationRepositoryDoubles}.cs`. Harness gained `configuration`, `configureServices`, `clientIpOverride` (`X-Test-Client-Ip`, set on the connection, never XFF).
+- **Measured traps (all would have passed SQLite and curl):** Postgres default collation `en_US.utf8` sorts `'a' < 'B'` (share_code needs `COLLATE "C"`); EF SQLite can't ORDER BY DateTimeOffset (model-only UTC-ticks converter on SQLite); after a 413 with an unread body, HttpClient's next pooled request got "response ended prematurely" until the 413 sent `Connection: close`; `cond ? null : bytes` into `ReadOnlyMemory<byte>?` is an EMPTY memory, not null.
+- **Boo's findings I'd have shipped without him:** `[Consumes]` + the `/api/{**rest}` catch-all = 404 not 415 (and no Content-Type passes); the `regex()` route constraint is case-insensitive (`l`, `I`, `O`, Kelvin reach the action). The very first fixture run failed `wrong-content-type` exactly as S6 predicted.
+- **Order on a write:** 429, gate 403, 415, 413, envelope 400, owner-filtered lookup 404, document 400. The body is passed unread to the service (`ICreationRequestBody`).
+- **Skyler's S13 ruling:** `remixedFrom = isOwner ? source : null`, no CanWrite term (Boo's record still says `&& CanWrite`; overruled).
+- **List query is read raw from `Request.Query`** (Yoshi): MVC turns `kind=` into null and `kind=shell&kind=show` into `shell`. `page` clamps to 1..int.MaxValue, literal past long clamps to its side's bound, non-integer is `type`.
+- Mutants need the scratch copy of `Fireworks.slnx`, `dotnet-tools.json`, `schema/` and `src/api` (RepoPaths walks up to the slnx). Script kept at the session scratchpad `mutants.py` (replace must occur exactly once; restore and touch).
+
+### 2026-11-13 — Phase 4 fix round (Boo F1/F2/F4/F5, Yoshi D1-D3, Toad)
+- **`Services/ControllersRegistration.cs` `AddFireworksControllers()`** is the only `AddControllers()`; Program.cs and `FireworksApiHarness` both call it. It removes the three form value provider factories and adds the API assembly part (dedup-checked).
+- **`ApiResponseHeaders` now sends `Connection: close`** on `/api` responses whose `Content-Length` exceeds the current `MaxRequestBodySize`. Found because the extended gate test failed 6/6 in isolation (passed in full suite by timing). Flagged for Boo.
+- **`UpdateOwnedAsync` marks four properties** (not `State = Modified`); **`TryInsertAsync` returns `InsertOutcome`** with `RemixSourceGone` mapped to the fixed 404. Race tests: `Creations/CreationSourceDeletedMidWriteTests.cs` (SaveChangesInterceptor deleting the source). Form tests: `Creations/FormBodyGateTests.cs` (`FormBodies.All` shared with `CreationWriteGateTests`).
+- Mutant script for this round: session scratchpad `mutants-p4fix.py` (copy at `p4fix/`). Counts: plain 555 + 10 skipped, gated 565.
+- Lesson: run a newly extended test in isolation a few times, not only in the full suite; pooled-connection bugs hide behind timing.

@@ -43,7 +43,7 @@ Inputs: `bowser-phase3-validator-feasibility.md` (C# probes on .NET 11), `luigi-
 4. **Cross-references:** the cue key set is the keys that passed `key-format`, whatever their embedded value; a cue naming a rejected key is `unknown-shell`. Cue `id`/`shell` of the wrong type is `type` only. An id that failed type or key-format never takes part in `duplicate-id`.
 5. **Duplicate keys:** one `duplicate-key` per repeated name per object, at that name's path, checked only on objects the walk reads (not inside unknown values or skipped arrays). Last value wins for the rest of the walk.
 6. **Paths for arbitrary names (§6.2 rule 11):** plain if `^[A-Za-z_][A-Za-z0-9_-]*$`, else `parent["name"]` with only `\` and `"` escaped and unpaired surrogates as U+FFFD. Overrules Bowser's "raw escaped name as the path", which wouldn't match the TS side (`JSON.parse` yields the surrogate itself, not the escape text) and isn't well-formed Unicode.
-7. **Confirmed from Luigi:** show `sky` fields have no defaults; lenient clamps `duration` and cue `t`/`x`/`burstHeight`; `seed` is never adjusted. A lenient show can end up with `t` past a clamped `duration`; the Phase 6 driver doesn't fire such a cue.
+7. **Confirmed from Luigi:** show `sky` fields have no defaults; lenient clamps `duration` and cue `t`/`x`/`burstHeight`; `seed` is never adjusted. A lenient show can end up with `t` past a clamped `duration`; the Phase 6 driver doesn't fire such a cue. **Superseded in part by addendum 2, point 6, on 2026-11-13:** playback doesn't stop at `duration`, so a lenient cue past a clamped `duration` fires at its `t`; strict validation still flags it. The rest of this point stands.
 8. **Confirmed:** embedded `version: 2` is `(shells.<key>.version, version)` and the walk continues; an embedded `sky` is `unknown-property` only and its value isn't walked; `sky: null` is strict `missing` (one null rule; stored documents never hold `null`).
 9. **Harness:** posts each document's raw text; translates `root-array`/`root-string` to `(document, not-object)`; no other translation.
 
@@ -72,3 +72,21 @@ One editing link keeps two link models from diverging in Phase 6. Redirecting of
 
 ### Boundary
 Binds Luigi (Phase 5 link, draft `source`, Save table, upgrade wiring; Phase 6 builder through `/c/:code`), Bowser (Phase 4 paging contract and index, `.dockerignore` call on `schema/`), Rosalina (how the Save choice is presented, F4, F10, F12), and Toad (the non-owner call-ledger spec, `cue-at-duration` burst seen). Not decided here: the Show Builder's exact route (Mario and Rosalina, Phase 6), and whether Save clears the dirty flags (F4).
+
+## Addendum (2026-11-13): Phase 4 security requirements folded in
+
+Inputs: `boo-phase4-security-requirements.md` (S1–S29), Skyler's ruling on S13, Bowser's in-progress `CreationsController.cs`/`CreationService.cs` (read only, to match the request order he already built), and a scratch .NET 11 probe of query binding (not kept). Edited in place: schema.md header, §2.1, §2.2.1, §2.4, §2.5 (rewritten), §2.6, §2.7 (new), §6.3 `not-json`, §6.5, §9, §10, §14, §15; plan §3.3, §3.4 and Phase 4; README §5 `remixedFrom` row (coordinator-instructed, Skyler's ruling).
+
+### What
+1. **S13 overruled by Skyler: `remixedFrom` stays `isOwner`-only, no `CanWrite` term.** Before Phase 8 every visitor is the owner and sees the source code; accepted interim exposure. Closes in Phase 8 with no code change. Boo's S13 test changes: an owner with `CanWrite` false gets the source code, a non-owner gets `null`.
+2. **S6: 415 from `Request.HasJsonContentType()` in the reader, no `[Consumes]`.** Missing type is 415 too.
+3. **S14: `ShareCodeRouteConstraint : IRouteConstraint`** (`{shareCode:sharecode}`), ordinal per-character alphabet check; no `regex(...)` route constraint. Service re-checks.
+4. **Limits (S1–S5, S17–S20, S23):** 256 KiB per write, 64 KiB global Kestrel limit, body read only in the action, no decompression; 429 limits by IP (IPv6 /64): writes 20/min + 300/day, reads 120/min; depth over 64 is `("", not-json)`. Request order: 429, 403 gate, 415, 413, `not-json`/envelope 400, lookup 404 (PUT, remix), document 400.
+5. **S26, list query, my contract call:** read `page`, `pageSize`, `kind` from `Request.Query`, not model binding. Measured on .NET 11: `string? kind` binds `kind=` and `kind=%20` as `null` (would silently drop the filter, so Boo's `kind=` → 400 test fails with binding), `kind=shell&kind=show` binds as `shell`, and `long? page` turns `abc` or `99999999999999999999` into a ModelState ProblemDetails. Rule: integer literals of any size clamp (`page` 1..int.MaxValue, `pageSize` 1..100), offset in `long`, no `OFFSET` query past the end; non-integer `page`/`pageSize` is 400 `type`; `kind` must be exactly one ordinal `shell`/`show`, else `(kind, enum)`; all in the §2.4 body.
+6. **S25 adopted: 400 `errors` capped at 100, with `truncated` always present** (`false` normally). Applied where the 400 body is built, after a full walk; the validators always return the complete multiset, so validator parity and every fixture are unchanged. Which 100 is unspecified (in practice walk order).
+
+### Why
+S6 and S14 are measured gaps between what an attribute appears to do and what it does with this app's catch-all and case folding. Query binding has the same class of gap (point 5), found by the same kind of probe. `truncated` is always present for the same reason `remixedFrom` is: a field the client branches on shouldn't have an "absent" state. The cap belongs at the HTTP edge so the parity contract between validators stays "complete multiset".
+
+### Boundary
+Binds Bowser (points 2–6 in Phase 4 code), Toad (the S13 test inverted per point 1; a code-built harness test for the cap, not a fixture; any exact-key-set check of the 400 body includes `truncated`; S26 tests read through point 5), Luigi (Phase 5: compact JSON on save, read `truncated`), Rosalina (F10 copy for `truncated` and a possible status-0 413). Not decided here: S16 `no-store`, S24 echo truncation, S27 logging and S28 runbook (Bowser and Boo; no schema change).
