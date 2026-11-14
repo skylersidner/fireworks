@@ -5,12 +5,48 @@
     class="w-[340px] flex-none overflow-y-auto border-r border-default bg-surface px-[14px] pt-[14px] pb-10 max-[761px]:h-[45dvh] max-[761px]:w-full max-[761px]:border-t max-[761px]:border-r-0"
     data-testid="designer-panel"
   >
-    <h1 class="m-0 mb-0.5 text-heading tracking-[0.02em]">Fireworks Sandbox</h1>
+    <div class="flex items-baseline justify-between gap-2">
+      <h1
+        class="m-0 mb-0.5 text-heading tracking-[0.02em]"
+        tabindex="-1"
+        data-testid="panel-heading"
+      >
+        Fireworks Sandbox
+      </h1>
+      @if (saveFlow.canWrite()) {
+        <a
+          routerLink="/mine"
+          class="text-small text-muted no-underline hover:text-primary"
+          data-testid="nav-mine"
+          >My creations</a
+        >
+      }
+    </div>
     <p class="m-0 mb-3 text-small text-muted">Shell designer</p>
 
+    <app-test-mode-banner />
     @if (showApiBanner()) {
       <app-api-banner [checking]="apiChecking()" (retry)="retryApi()" />
     }
+    @if (saveFlow.status(); as status) {
+      <app-save-status
+        [status]="status"
+        (act)="onStatusAction($event)"
+        (dismiss)="saveFlow.dismissStatus()"
+      />
+    }
+    <app-save-bar
+      [canWrite]="saveFlow.canWrite()"
+      [source]="store.source()"
+      [choices]="saveFlow.choices()"
+      [saving]="saveFlow.saving()"
+      [saved]="store.saved()"
+      [dirty]="store.dirty()"
+      [blockedLink]="saveFlow.blockedLink()"
+      [blockedNote]="blockedNote"
+      (save)="save($event)"
+      (share)="share()"
+    />
 
     <section class="section">
       <app-playback-controls

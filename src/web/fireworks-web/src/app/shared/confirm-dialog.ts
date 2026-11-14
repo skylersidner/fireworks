@@ -50,7 +50,9 @@ import {
         </button>
         <button
           type="button"
-          class="btn btn-primary"
+          class="btn"
+          [class.btn-primary]="tone() === 'primary'"
+          [class.btn-danger]="tone() === 'danger'"
           data-testid="confirm-accept"
           (click)="settle('confirm')"
         >
@@ -65,6 +67,8 @@ export class ConfirmDialogComponent {
   readonly body = input.required<string>();
   readonly confirmLabel = input.required<string>();
   readonly cancelLabel = input.required<string>();
+  /** `danger` for a destructive answer (Delete, phase-5.md §10.4); the gradient means "go". */
+  readonly tone = input<'primary' | 'danger'>('primary');
 
   readonly confirmed = output<void>();
   readonly cancelled = output<void>();

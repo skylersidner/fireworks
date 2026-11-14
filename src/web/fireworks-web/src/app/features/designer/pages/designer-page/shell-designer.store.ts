@@ -11,16 +11,13 @@ import {
 import { applyEach, disabled, form, maxLength, schema } from '@angular/forms/signals';
 import type { PlaybackMode } from '../../../../../engine/model/enums';
 import { MAX_BREAKS, MIN_BREAKS, NAME_MAX_LENGTH } from '../../../../../engine/model/limits';
-import { normalizeQuality, normalizeShell } from '../../../../../engine/model/normalize';
+import { normalizeQuality } from '../../../../../engine/model/normalize';
+import { openShell } from '../../../../../engine/model/open';
 import { PRESETS } from '../../../../../engine/model/presets';
 import type { QualitySettings, SkySettings } from '../../../../../engine/model/shell';
-import {
-  BROWSER_STORAGE,
-  REDUCED_MOTION_QUERY,
-  mediaQuery,
-  readStorage,
-  writeStorage,
-} from '../../../../core/browser';
+import { BROWSER_STORAGE, REDUCED_MOTION_QUERY, mediaQuery } from '../../../../core/browser';
+import type { CreationSource } from '../../../../core/creation-save';
+import { DevicePreferencesService } from '../../../../core/device-preferences';
 import {
   JSON_NOTE_DEFAULT,
   JSON_NOTE_EDITED,
@@ -43,8 +40,8 @@ import {
 
 /** Draft writes wait this long after the last change (acceptance: "within 1 s", never per frame). */
 export const DRAFT_DEBOUNCE_MS = 300;
-/** Set once the visitor dismisses the flashing notice (designer-2c.md §7.2). */
-export const FLASH_NOTICE_KEY = 'fireworks.flashNotice.v1';
+/** Set once the visitor dismisses a flashing notice; device-wide (core/device-preferences.ts). */
+export { FLASH_NOTICE_KEY } from '../../../../core/device-preferences';
 
 /** A replace waiting for the visitor's answer (Skyler 2026-11-12: confirm over unsaved edits). */
 export type PendingReplace =
@@ -55,7 +52,27 @@ export type PendingReplace =
       readonly note: string;
       /** The JSON has `sky`, so Apply replaces the sky (picks the §6.4 body). */
       readonly hasSky: boolean;
-    };
+    }
+  | { readonly kind: 'link'; readonly copy: WorkingCopy };
+
+/**
+ * A saved record opened through `/c/:code` (schema.md §11.2): exactly its saved settings, with
+ * `DEFAULT_SKY` when it has none, and the `source` it came from.
+ */
+export interface WorkingCopy {
+  readonly shell: EditableShell;
+  readonly source: CreationSource;
+}
+
+/**
+ * What a save sent, captured when the button was pressed (phase-5.md §3.3): the document, and the
+ * model parts the flags watch, by reference, so a completed save can tell whether the visitor
+ * edited while it was in flight.
+ */
+export interface SaveSnapshot {
+  readonly shell: EditableShell;
+  readonly parts: readonly unknown[];
+}
 
 /** What a load did. `loaded` carries the shell the page must fire now (prototype `loadShell(s, true)`). */
 export type LoadOutcome =
@@ -93,6 +110,7 @@ const SHELL_FORM_SCHEMA = schema<EditableShell>((p) => {
 @Injectable()
 export class ShellDesignerStore {
   private readonly storage = inject(BROWSER_STORAGE);
+  private readonly prefs = inject(DevicePreferencesService);
   private readonly reducedMotion = mediaQuery(REDUCED_MOTION_QUERY);
   private readonly restored = readDraft(this.storage);
   /** Under the OS reduced-motion setting the designer opens in Manual, every load (Skyler). */
@@ -100,6 +118,7 @@ export class ShellDesignerStore {
   private readonly restoredMode: PlaybackMode = this.restored?.display.mode ?? DEFAULT_DISPLAY.mode;
   private readonly restoredShellDirty = this.restored?.shellDirty ?? false;
   private readonly restoredSkyDirty = this.restored?.skyDirty ?? false;
+  private readonly restoredSaved = this.restored?.saved ?? false;
 
   readonly model = signal<EditableShell>(this.restored?.shell ?? editableFrom(PRESETS[0]));
   readonly form = form(this.model, SHELL_FORM_SCHEMA);
@@ -122,10 +141,11 @@ export class ShellDesignerStore {
   readonly displayForm = form(this.displayModel);
   readonly mode = computed(() => this.displayModel().mode);
 
-  /** The visitor's explicit choice, or null to follow the OS (stored only once chosen). */
-  readonly reduceFlashingChoice = signal<boolean | null>(
-    this.restored?.display.reduceFlashing ?? null,
-  );
+  /**
+   * The visitor's explicit choice, or null to follow the OS (stored only once chosen). Device-wide
+   * since Phase 5, shared with the player (Skyler, 2026-11-14).
+   */
+  readonly reduceFlashingChoice = this.prefs.reduceFlashingChoice;
   readonly reduceFlashing = computed(() => this.reduceFlashingChoice() ?? this.reducedMotion());
   /** True when Reduce flashing is on only because the device asks for reduced motion. */
   readonly reduceFlashingFromDevice = computed(
@@ -170,6 +190,28 @@ export class ShellDesignerStore {
   /** Anything a load could replace has been changed by the visitor. */
   readonly dirty = computed(() => this.shellDirty() || this.skyDirty());
 
+  /**
+   * The shell and sky are exactly what was last saved (phase-5.md §4, F4). Any change to either
+   * part clears it, the visitor's or a load's (preset, Apply, link); only a completed save sets it,
+   * and only if the parts are still the ones it sent. Restored from the draft.
+   */
+  readonly saved = linkedSignal<unknown, boolean>({
+    source: computed(() => [this.shellPart(), this.skyPart()], {
+      equal: (a, b) => Object.is(a[0], b[0]) && Object.is(a[1], b[1]),
+    }),
+    computation: (_source, previous) => (previous === undefined ? this.restoredSaved : false),
+  });
+
+  /**
+   * The saved record this shell is a working copy of (schema.md §11.2), or null for fresh work.
+   * Restored from the draft and written back with it, so a reload keeps the link. Only a link load
+   * or a successful save sets it, and a 404 from Update original or a remix clears it (schema.md
+   * §11.2); a preset or an Apply is an edit to the copy and leaves it alone. Never part of the
+   * shell or its dirty flags.
+   */
+  private readonly sourceState = signal<CreationSource | null>(this.restored?.source ?? null);
+  readonly source = this.sourceState.asReadonly();
+
   /** Current state as the draft stores it. */
   readonly draft = computed<DesignerDraft>(() => ({
     shell: this.shell(),
@@ -177,6 +219,8 @@ export class ShellDesignerStore {
     display: this.displayForDraft(),
     shellDirty: this.shellDirty(),
     skyDirty: this.skyDirty(),
+    saved: this.saved(),
+    source: this.source(),
   }));
 
   readonly pendingReplace = signal<PendingReplace | null>(null);
@@ -205,13 +249,15 @@ export class ShellDesignerStore {
    * fires, not the preview loop, a click, Space, Launch or a preset load (Skyler 2026-11-13).
    * When storage can't be read it shows (and pauses) on every load.
    */
-  readonly flashNoticeVisible = signal(readStorage(this.storage, FLASH_NOTICE_KEY) === null);
+  readonly flashNoticeVisible = signal(!this.prefs.flashNoticeDismissed());
   readonly playbackPaused = computed(() => this.flashNoticeVisible());
 
   private lastWritten: string;
   private pendingDraft: string | null = null;
 
   constructor() {
+    // A draft from before Phase 5 holds the Reduce flashing choice; it becomes the device's.
+    this.prefs.adoptLegacyReduceFlashing(this.restored?.display.reduceFlashing);
     this.lastWritten = this.serialize();
 
     effect((onCleanup) => {
@@ -264,7 +310,7 @@ export class ShellDesignerStore {
    * notice: the panel stays usable while the notice holds playback (designer-2c.md §7.2).
    */
   setReduceFlashing(on: boolean): void {
-    this.reduceFlashingChoice.set(on);
+    this.prefs.setReduceFlashing(on);
   }
 
   /**
@@ -283,7 +329,9 @@ export class ShellDesignerStore {
   }
 
   /**
-   * Parses and normalizes `text`. Invalid input changes nothing and sets the note. A valid shell
+   * Parses, upgrades and normalizes `text` (`openShell`, schema.md §8.3; Peach F6), so JSON from an
+   * older version is upgraded and one newer than this bundle is rejected with a `version` note.
+   * Invalid input changes nothing and sets the note. A valid shell
    * waits for confirmation when the visitor changed the shell, or the JSON has `sky` and the
    * visitor changed the sky; otherwise it loads. A document without `sky` keeps the current sky,
    * as a preset does.
@@ -296,7 +344,7 @@ export class ShellDesignerStore {
       this.setNote(notJsonNote(error instanceof Error ? error.message : String(error)));
       return { status: 'rejected' };
     }
-    const result = normalizeShell(parsed);
+    const result = openShell(parsed);
     if (!result.ok) {
       this.setNote(invalidShellNote(result.errors));
       return { status: 'rejected' };
@@ -316,6 +364,7 @@ export class ShellDesignerStore {
     const pending = this.pendingReplace();
     this.pendingReplace.set(null);
     if (!pending) return { status: 'rejected' };
+    if (pending.kind === 'link') return { status: 'loaded', shell: this.loadCopy(pending.copy) };
     if (pending.kind === 'preset') {
       return {
         status: 'loaded',
@@ -352,9 +401,45 @@ export class ShellDesignerStore {
    * the first burst is already reduced.
    */
   dismissFlashNotice(turnOnReduceFlashing: boolean): void {
-    if (turnOnReduceFlashing) this.reduceFlashingChoice.set(true);
+    if (turnOnReduceFlashing) this.prefs.setReduceFlashing(true);
     this.flashNoticeVisible.set(false);
-    writeStorage(this.storage, FLASH_NOTICE_KEY, '1');
+    this.prefs.dismissFlashNotice();
+  }
+
+  /**
+   * A working copy from `/c/:code` (schema.md §11.1–11.3). Asks first only when the shell or sky
+   * is dirty; display settings and the tab never count. Otherwise loads it.
+   */
+  openWorkingCopy(copy: WorkingCopy): LoadOutcome {
+    if (this.dirty()) {
+      this.pendingReplace.set({ kind: 'link', copy });
+      return { status: 'needs-confirm' };
+    }
+    return { status: 'loaded', shell: this.loadCopy(copy) };
+  }
+
+  /** What a save sends, captured now (phase-5.md §3.3). */
+  snapshotForSave(): SaveSnapshot {
+    return { shell: this.shell(), parts: [this.shellPart(), this.skyPart()] };
+  }
+
+  /**
+   * A save succeeded (F4, phase-5.md §4.3). `source` is the record just written, whatever happened
+   * meanwhile. The flags clear, and `saved` is set, only when the shell and sky are still the
+   * objects that were sent: an edit during the request keeps `Not saved` and both flags.
+   */
+  completeSave(source: CreationSource, sent: SaveSnapshot): void {
+    this.sourceState.set(source);
+    const [shell, sky] = sent.parts;
+    if (!Object.is(shell, this.shellPart()) || !Object.is(sky, this.skyPart())) return;
+    this.shellDirty.set(false);
+    this.skyDirty.set(false);
+    this.saved.set(true);
+  }
+
+  /** The source is gone to this visitor: a 404 from Update original or a remix (§11.2, Y2). */
+  forgetSource(): void {
+    this.sourceState.set(null);
   }
 
   /** Writes any pending draft now (debounce end, pagehide, page destroy). */
@@ -371,6 +456,24 @@ export class ShellDesignerStore {
     const loaded = this.load(shell, replacesSky);
     this.setNote(note);
     return loaded;
+  }
+
+  /**
+   * A link load (schema.md §11.2): the copy replaces shell and sky, selects Break 1, loads dirty
+   * (both flags set, the one load that does), is not saved, and takes the copy's `source`. Display
+   * settings stay (Skyler, 2026-11-14). Any pending JSON edits are dropped: they were for the
+   * shell being replaced.
+   */
+  private loadCopy(copy: WorkingCopy): EditableShell {
+    this.jsonEdits.set(null);
+    this.note.set(null);
+    this.model.set(structuredClone(copy.shell));
+    this.activeBreak.set(0);
+    this.shellDirty.set(true);
+    this.skyDirty.set(true);
+    this.saved.set(false);
+    this.sourceState.set(copy.source);
+    return this.shell();
   }
 
   /**

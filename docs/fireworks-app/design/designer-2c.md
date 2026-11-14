@@ -1,7 +1,7 @@
 # Shell Designer (Phase 2c): design-review notes
 
 **Ceremony:** design-review before 2c. Facilitator: Rosalina. Participants: Luigi (implements), Peach (acceptance criteria).
-**Date:** 2026-11-12; updated 2026-11-13 for Skyler's draft, dirty-flag and notice-hold rulings.
+**Date:** 2026-11-12; updated 2026-11-13 for Skyler's draft, dirty-flag and notice-hold rulings, and 2026-11-14 for the shell/sky flag split (§6.4) at the Phase 5 design-review.
 **Oracle:** `prototypes/fireworks-prototype.html`. Line numbers below refer to it.
 **Scope:** the `/` route (`designer-page`) and the app-wide pieces it sits on (tokens, toasts, API-down state). No save, share, player or My creations copy here; that is Phase 5.
 
@@ -17,7 +17,7 @@ Everything below is parity with the prototype unless it appears in **§9 Deliber
 | R2 | Placeholder toast/success colors | **Values confirmed** (contrast measured, §8.4). Only the names change. |
 | R3 | API down shows the modal *and* a toast | **Neither as it stands.** The blocking modal goes; it becomes a non-blocking banner in the panel, because anonymous play never needs the server (plan §3.4). The `api/me` failure stops toasting (it's self-handled by `SessionService`). One outage, one message. §6.3. |
 | R4 | Photosensitivity: move forward from Phase 7? | **Yes, into 2c** for the designer: a first-visit flashing notice that **holds playback until it's dismissed** (Skyler, 2026-11-13), a **Reduce flashing** display setting (on automatically under `prefers-reduced-motion`), and Manual as the starting mode under reduced motion. The player notice and its Reduce flashing control ship in Phase 5, when the player exists. `/` auto-plays once the notice is gone (Skyler, 2026-11-12). §7. |
-| R7 | Replacing the shell when the visitor has changed something (Skyler's rulings, plan 2c) | **An in-page confirmation dialog** before a preset load or a JSON Apply, only when the designer is **dirty**. Dirty is a flag the visitor's own changes set; there's no baseline snapshot. Rules, copy, focus and keys in §6.4. |
+| R7 | Replacing the shell when the visitor has changed something (Skyler's rulings, plan 2c) | **An in-page confirmation dialog** before a preset load or a JSON Apply, only when it would replace a shell or sky change the visitor made. Two flags (`shellDirty`, `skyDirty`) that the visitor's own changes set; there's no baseline snapshot. Rules, copy, focus and keys in §6.4. |
 | R8 | Renderer fallback (Luigi's Phase 1 finding 4) | **A stage note for Canvas only.** No notice for WebGPU. §3.8. |
 | R5 | `range-row` / `select-row` as Signal Forms custom controls | Specified in §5. Both wrap **native** inputs (native range, native select), so keyboard, screen-reader and mobile-picker behavior come for free. |
 | R6 | Landing route (OQ8) | **Confirmed:** the designer at `/`. |
@@ -182,7 +182,7 @@ Notes:
 - Under the section: `These stay on this device and aren't saved with the shell.`
 - Under Reduce flashing: `Turns off strobe and dims burst flashes.` When the OS setting turned it on, append: ` On because your device asks for reduced motion.`
 
-The draft exists so the current state is never lost when the visitor leaves the sandbox for any reason: a reload, `/status`, closing the tab (Skyler, 2026-11-13). Display settings, the Mode, the active break tab and the dirty flag (§6.4) are kept in it (`fireworks.draft.v1`, one key; there is no separate display key), next to the shell but never inside the shell document, so Copy and Apply never see them. Two exceptions, both so the OS keeps control until the visitor takes it: Reduce flashing is stored only once the visitor has chosen (§7.1), and the OS-forced Manual mode is never written back (§7.1). Wrap every storage read and write in try/catch; the page must work when storage throws.
+The draft exists so the current state is never lost when the visitor leaves the sandbox for any reason: a reload, `/status`, closing the tab (Skyler, 2026-11-13). Display settings, the Mode, the active break tab and the two dirty flags (§6.4) are kept in it (`fireworks.draft.v1`, one key; there is no separate display key), next to the shell but never inside the shell document, so Copy and Apply never see them. Two exceptions, both so the OS keeps control until the visitor takes it: Reduce flashing is stored only once the visitor has chosen (§7.1), and the OS-forced Manual mode is never written back (§7.1). Wrap every storage read and write in try/catch; the page must work when storage throws.
 
 ### 3.6 `json-panel` (lines 104–108, 670–704)
 
@@ -400,31 +400,33 @@ Today: when `/health/live` fails, `App` shows a blocking `role="dialog"` modal; 
 
 ### 6.4 Replace confirmation (D16)
 
-Skyler's rulings (plan 2c, 2026-11-12 and 2026-11-13): loading a preset or applying JSON asks first **only when the designer is dirty**.
+Skyler's rulings (plan 2c, 2026-11-12 and 2026-11-13): a preset or a JSON Apply asks first **only when it would replace something the visitor changed in the shell or the sky**. Display settings and the active tab never count.
 
-**When it asks.** The designer keeps one boolean, **dirty**. There's no baseline snapshot and no comparison of values.
+**When it asks.** The designer keeps two booleans, **`shellDirty`** and **`skyDirty`**. There's no baseline snapshot and no comparison of values.
 
-- **Set** by any change the visitor makes since the last load:
-  - a shell field (Name, Burst height, Angle jitter), a break field, `+ Add` or `− Remove`;
-  - a Sky field (Gravity, Wind);
-  - a display setting (Mode, Motion blur, Star budget, the Reduce flashing switch);
-  - selecting a different break tab.
-- **Never set** by changes the app makes itself:
+- **`shellDirty` is set** by any visitor change to the shell, meaning everything but the sky: a shell field (Name, Burst height, Angle jitter), a break field, `+ Add` or `− Remove`.
+- **`skyDirty` is set** by any visitor change to a Sky field (Gravity, Wind).
+- **Never counted, by either flag:**
+  - display settings (Mode, Motion blur, Star budget, the Reduce flashing switch) and selecting a break tab. They're autosaved in the draft but never make a load ask, because no load replaces them;
   - the Manual mode forced at load under reduced motion (§7.1);
   - Reduce flashing following the OS while the visitor hasn't chosen (§7.1), including an OS change mid-visit;
   - restoring the draft on load;
-  - the flashing notice's `Turn on Reduce flashing` button. It records the choice (§7.1) but answers the notice rather than editing the designer; otherwise a first-time visitor's first preset click would ask about replacing a Peony they never touched;
+  - the flashing notice's `Turn on Reduce flashing` button (it's a display setting);
   - the JSON panel's text. Typing there sets nothing, because pending text isn't lost by a preset or an Apply (it stays pending after `Keep editing`, and Apply is what consumes it). Revert sets nothing either.
-- **Cleared** when a load replaces the shell: a preset load, a successful Apply (with or without adjustments), and the first-visit default (Peony) being put in place.
-- **It's a flag, not a diff.** Change a field and set it back, and the designer is still dirty. The cost is one extra question; the alternative was a snapshot to compare against, which Skyler ruled out.
-- **It's kept in the draft**, so a reload keeps it: edit, reload, click a preset, and it still asks. A corrupt draft is dropped whole and the designer opens clean on the first-visit default (one key, one lifecycle; `toad-a-baseline-and-its-draft-share-one-lifecycle.md`).
+- **Cleared** only by what replaces the part they guard:
+  - a preset load clears `shellDirty` and leaves `skyDirty` as it was, because a preset keeps the sky;
+  - a successful Apply (with or without adjustments) clears `shellDirty`, and clears `skyDirty` only when the JSON has a `sky` object (otherwise the kept sky is still the visitor's);
+  - the first-visit default (Peony) starts with both clear.
+- **Phase 5 additions** (`phase-5.md` §4): opening a link through `/c/:code` loads a working copy with **both set** (schema.md §11.2, Skyler's L1), and a **successful Save clears both**, because saved work can't be lost by a replace.
+- **They're flags, not a diff.** Change a field and set it back, and it still counts. The cost is one extra question; the alternative was a snapshot to compare against, which Skyler ruled out.
+- **They're kept in the draft**, so a reload keeps them: edit, reload, click a preset, and it still asks. Reading them **fails safe**: only an explicit `false` reads as clean, so a missing, `null` or malformed flag reads as set. A draft written before the split, with one `dirty` flag, reads it for both. A corrupt draft is dropped whole and the designer opens clean on the first-visit default (one key, one lifecycle; `toad-a-baseline-and-its-draft-share-one-lifecycle.md`).
 
 **Order of checks.**
-- **Preset click:** dirty? Then ask. Otherwise load and fire.
+- **Preset click:** `shellDirty`? Then ask. Otherwise load and fire. A sky change alone never makes a preset ask, because the preset keeps the sky.
 - **Apply:**
   1. Parse and `normalize` first. Invalid JSON or an invalid shell shows its `Couldn't apply` note (§3.6) **without asking**. There's nothing to confirm, and a dialog that ends in an error is worse than the error.
-  2. Valid and clean: apply.
-  3. Valid and dirty: ask.
+  2. Ask when `shellDirty`, or when the JSON has a `sky` object and `skyDirty`.
+  3. Otherwise apply.
 
   The adjusted or ignored note appears only after the visitor confirms.
 
@@ -461,7 +463,7 @@ JSON Apply, when the JSON has no `sky` key:
 >
 > `Keep editing` · `Apply JSON`
 
-The body says what's replaced and what isn't, because a sky, display or tab change sets dirty but a preset doesn't touch the sky or display, and Apply touches the sky only when the JSON has one. Copy that says "your changes will be lost" would be wrong whenever only those changed. The Apply variant is picked from the parsed JSON (does it have a `sky` key), the same check that decides whether the sky is replaced (§3.6), so the dialog and the result can't disagree.
+The body says what's replaced and what isn't. A preset never touches the sky or display, and Apply touches the sky only when the JSON has one, so the visitor's sky edits and display settings can survive a replace that asks. Copy that says "your changes will be lost" would be wrong whenever some of their changes are kept. The Apply variant is picked from the parsed JSON (does it have a `sky` key), the same check that decides whether the sky is replaced (§3.6), so the dialog and the result can't disagree.
 
 **Focus and keys.**
 - On open, focus goes to **`Keep editing`**. The replace is the action you can't take back, so the default is the one you can.
@@ -473,7 +475,7 @@ The body says what's replaced and what isn't, because a sky, display or tab chan
 
 **Outcomes.**
 - **Keep editing:** nothing changes: fields, tab, JSON text (pending edits stay pending, with their note), draft, dirty flag (still set), loop timer. Nothing fires.
-- **Load Willow / Apply JSON:** exactly what happens when the designer is clean. The shell loads, the tab goes to Break 1, it fires once, the loop timer resets, and dirty is cleared. Apply then shows its §3.6 note.
+- **Load Willow / Apply JSON:** exactly what happens when nothing needed asking. The shell loads, the tab goes to Break 1, it fires once, the loop timer resets, and the flags clear as listed above. Apply then shows its §3.6 note.
 - While the dialog is open, the stage keeps playing (Preview loop and Auto show continue behind the scrim), and Space doesn't launch (§6.2).
 
 ---
@@ -558,7 +560,7 @@ The notice, the hold, Manual under reduced motion, and the Peony-only arrival lo
 
 ### 7.3 Later phases
 
-- **Phase 5:** the player's own photosensitivity notice and a Reduce flashing control on the player, since `/s/:code` drops visitors straight into autoplay (Skyler accepted, 2026-11-12). Specified at the Phase 5 design-review.
+- **Phase 5:** the player's own photosensitivity notice and a Reduce flashing control on the player, since `/s/:code` drops visitors straight into autoplay (Skyler accepted, 2026-11-12). Specified in `phase-5.md` §8.
 - **Phase 7:** full keyboard audit across every page, automatic star budget, and the mobile DPR cap.
 
 ---
@@ -636,7 +638,7 @@ Not departures (kept on purpose): when the designer is clean, a preset click loa
 ## 10. Notes for implementers and owners
 
 - **N1 (Luigi: `normalize`).** Built (`luigi-designer-2c.md` item 6): Yoshi's `{ ok, shell, adjustments }` / `{ ok: false, errors }` shape, with `ShellIssue.code`, `value` and `options` so the designer phrases reasons from `engine/model/labels.ts` rather than from developer `message` text. §3.6 says which adjustment kinds the note counts and how paths map to row labels.
-- **N2 (Luigi now, Phase 5 later).** 2c's dirty flag (§6.4) means "the visitor changed something since the last load", nothing more. It replaces the baseline snapshot in `luigi-designer-2c.md` items 1–2: the draft keeps `dirty` instead of `baseline`. Phase 5's "unsaved changes" indicator against the last *saved* creation is a different question and is settled at the Phase 5 design-review; until then nothing in 2c should call dirty "unsaved" or "saved" in copy. `confirm-dialog` is shared so Phase 5's prompts reuse it.
+- **N2 (Luigi).** `shellDirty` and `skyDirty` (§6.4) mean "the visitor changed this part since it was last replaced or saved", nothing more. They guard replaces; they don't drive the Phase 5 "Not saved" indicator, which reads a third flag, `saved` (`phase-5.md` §4). Nothing should call the dirty flags "unsaved" in copy. `confirm-dialog` is shared so Phase 5's prompts reuse it.
 - **N3 (plan text).** Plan 2c lists "Shared form controls (ControlValueAccessors): `range-row`…" one bullet after saying they're Signal Forms custom controls, not ControlValueAccessors. OQ17 governs; the plan line needs correcting by whoever owns the plan text.
 - **N4 (Peach).** Observable acceptance points from this note: the Space exclusions in §6.2 (each one testable by focusing that element), Reduce flashing defaults under an emulated `prefers-reduced-motion` (Chrome DevTools rendering panel, or Playwright `reducedMotion: 'reduce'`), Manual as the starting mode in that state, the notice dismissal surviving a reload, exactly one API-down surface with the API stopped, and no toast quoting a URL. From §6.4: a clean designer never asks; a change set back to its old value still asks (flag, not diff); dirty survives a reload; the forced Manual, an OS-driven Reduce flashing flip and the notice's `Turn on Reduce flashing` never make it ask; the preset dialog says the sky stays, and the Apply dialog's wording follows whether the JSON has `sky`; initial focus on `Keep editing`; Enter straight after opening keeps editing; Escape keeps editing (with or without a `cancel` event); a backdrop click does nothing; focus returns to the opener. From §7.2: with fresh storage, nothing fires for 10 s while the notice shows, in any mode (HUD at 0 particles), stage clicks and Space do nothing, `Launch` is disabled; `Continue` in Preview loop fires within about 1 s; `Turn on Reduce flashing` leaves the switch On and the first burst reduced; focus starts on the notice's first button and lands on `Launch` after. From §3.6: `{"breaks":[{"stars":9999}]}` reads `Applied, with 1 value adjusted: Stars (Break 1).` (defaults filled for the other fields aren't counted). From §7.1: with the switch never touched, flipping the emulated OS setting flips the effective value, and the stored draft has no Reduce flashing value. From §3.8: forcing Canvas shows the note, and forcing WebGPU doesn't.
 - **N5 (Toad).** The reduce-flashing rules live in the renderer, so they need a renderer-level check (the alpha a strobe star gets at a given age with the flag on and off), not a sim golden. The sim goldens must not change when the flag flips; that's a cheap negative control.

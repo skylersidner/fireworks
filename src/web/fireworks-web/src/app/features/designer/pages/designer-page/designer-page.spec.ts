@@ -14,7 +14,7 @@ import { MemoryStorage } from '../../../../testing/memory-storage';
 import {
   FireworksStageComponent,
   STAGE_RENDERER_FACTORY,
-} from '../../shared/fireworks-stage/fireworks-stage';
+} from '../../../../shared/fireworks-stage/fireworks-stage';
 import { DesignerPageComponent } from './designer-page';
 import { FLASH_NOTICE_KEY } from './shell-designer.store';
 
@@ -89,7 +89,7 @@ describe('DesignerPageComponent', () => {
   describe('layout and copy', () => {
     it('renders the panel sections in order with the 2c copy, and one live stage', async () => {
       const { el } = await mount();
-      expect(el.querySelector('h1')?.textContent).toBe('Fireworks Sandbox');
+      expect(el.querySelector('h1')?.textContent?.trim()).toBe('Fireworks Sandbox');
       expect(el.textContent).toContain('Shell designer');
       expect(
         [...el.querySelectorAll('h2.section-heading')].map(
@@ -106,7 +106,7 @@ describe('DesignerPageComponent', () => {
       expect([...row.children].map((c) => c.tagName)).toEqual(['ASIDE', 'MAIN']);
       expect(row.classList).not.toContain('flex-row-reverse');
       expect(row.classList).toContain('max-[761px]:flex-col-reverse');
-      expect(el.querySelector('aside h1')?.textContent).toBe('Fireworks Sandbox');
+      expect(el.querySelector('aside h1')?.textContent?.trim()).toBe('Fireworks Sandbox');
       const notice = byTest('flash-notice')!;
       expect(notice.parentElement?.tagName).toBe('MAIN');
       expect(notice.previousElementSibling?.tagName).toBe('APP-FIREWORKS-STAGE');
@@ -251,7 +251,7 @@ describe('DesignerPageComponent', () => {
       expect(byTest('confirm-dialog')?.getAttribute('role')).toBe('alertdialog');
       expect(q('#confirm-title')?.textContent).toBe('Load Ring?');
       expect(q('#confirm-body')?.textContent).toBe(
-        'This replaces your current shell, \u201cMine\u201d, and its breaks, and goes back to Break 1. Sky and display settings stay as they are.',
+        'This replaces your current shell, \u201c\u2068Mine\u2069\u201d, and its breaks, and goes back to Break 1. Sky and display settings stay as they are.',
       );
       expect(byTest('confirm-accept')?.textContent?.trim()).toBe('Load Ring');
       expect(stage.loop.launchCount).toBe(0);
@@ -314,12 +314,12 @@ describe('DesignerPageComponent', () => {
       [
         'with sky',
         '{"sky":{"gravity":90},"breaks":[{}]}',
-        'This replaces your current shell, \u201cMine\u201d, including its breaks and sky, with the shell in the JSON panel. Display settings stay as they are.',
+        'This replaces your current shell, \u201c\u2068Mine\u2069\u201d, including its breaks and sky, with the shell in the JSON panel. Display settings stay as they are.',
       ],
       [
         'without sky',
         '{"breaks":[{}]}',
-        'This replaces your current shell, \u201cMine\u201d, and its breaks with the shell in the JSON panel. Sky and display settings stay as they are.',
+        'This replaces your current shell, \u201c\u2068Mine\u2069\u201d, and its breaks with the shell in the JSON panel. Sky and display settings stay as they are.',
       ],
     ])('Apply while dirty asks with the body for JSON %s', async (_n, json, body) => {
       media.set(REDUCED_MOTION_QUERY, true);

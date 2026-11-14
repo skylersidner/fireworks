@@ -421,9 +421,7 @@ describe('normalizeShow, lenient-only rules (schema.md §12.5)', () => {
 
     const r = normalizeShow(withCue({ burstHeight: null }));
     if (!r.ok) throw new Error('expected ok');
-    expect(r.adjustments).toEqual([
-      { path: 'cues[0].burstHeight', kind: 'defaulted', from: null },
-    ]);
+    expect(r.adjustments).toEqual([{ path: 'cues[0].burstHeight', kind: 'defaulted', from: null }]);
     expect('burstHeight' in r.show.cues[0]).toBe(false);
   });
 });

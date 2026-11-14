@@ -200,7 +200,7 @@ describe('engine import boundary', () => {
     });
     expect(
       files.find((f) => f.path.endsWith('fireworks-stage/fireworks-stage.ts'))?.imports,
-    ).toContainEqual({ spec: '../../../../../engine/render/pixi-renderer', kind: 'dynamic' });
+    ).toContainEqual({ spec: '../../../engine/render/pixi-renderer', kind: 'dynamic' });
   });
 
   // Scoped to shipped source: a spec may read a fixture from another layer (model's preset spec

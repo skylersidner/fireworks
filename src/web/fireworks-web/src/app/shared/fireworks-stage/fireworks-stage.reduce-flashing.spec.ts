@@ -1,8 +1,8 @@
 import { Component, signal, viewChild } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { PRESETS } from '../../../../../engine/model/presets';
-import type { QualitySettings, ShellDocument } from '../../../../../engine/model/shell';
-import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+import { PRESETS } from '../../../engine/model/presets';
+import type { QualitySettings, ShellDocument } from '../../../engine/model/shell';
+import { FakeStageRenderers } from '../../testing/fake-stage-renderer';
 import { FireworksStageComponent, STAGE_RENDERER_FACTORY } from './fireworks-stage';
 
 /**

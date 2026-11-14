@@ -90,3 +90,20 @@ S6 and S14 are measured gaps between what an attribute appears to do and what it
 
 ### Boundary
 Binds Bowser (points 2–6 in Phase 4 code), Toad (the S13 test inverted per point 1; a code-built harness test for the cap, not a fixture; any exact-key-set check of the 400 body includes `truncated`; S26 tests read through point 5), Luigi (Phase 5: compact JSON on save, read `truncated`), Rosalina (F10 copy for `truncated` and a possible status-0 413). Not decided here: S16 `no-store`, S24 echo truncation, S27 logging and S28 runbook (Bowser and Boo; no schema change).
+
+## Addendum (2026-11-14): Phase 5 review points folded in
+
+Inputs: Rosalina's `docs/fireworks-app/design/phase-5.md` §6 and §13 (Y1, Y2), Boo's `boo-phase5-security-requirements.md` (info finding on §9), Scribe's flag on §2.7, Skyler's Phase 5 rulings of 2026-11-14 (README rows 73–75), and the shipped code (`Services/ApiResponseHeaders.cs`, `Services/Creations/ICreationRequestBody.cs`, `Repositories/CreationRepository.cs` `DeleteOwnedAsync`, `luigi-phase5-client-foundation.md`). Edited in place in schema.md: §2.7, §7, §9, §10, §11.1–§11.5, §14, §15.
+
+### What
+1. **Y1: draft `source` is `{ shareCode, kind, isOwner, updatedAt, name } | null`.** `name` is the server's name, copied from the response wherever `source` is set; Update original refreshes it with `updatedAt`. `readSource` stays all-or-nothing, so a source without `name` reads as `null`. That's safe because no deployed draft carries the four-field form.
+2. **Y2 adopted: a 404 from PUT or from `…/remix` sets `source` to `null`.** That is a third writer of `source`, after a link load and a successful save. Asymmetry (Rosalina §6): a 404 on Update original asks, and its "Save as new" is a plain POST. A 404 on Save as new or on a non-owner Save falls back to one plain POST by itself; on success `source` is the new record, and on failure it stays `null`. The `null` on the remix-404 path, when the fallback POST fails, is my extension: Rosalina's §6 names only the PUT case, but the reason is the same.
+3. **§9: share-code reuse after a delete is "improbable, not prevented". No deleted-codes table.** Probability `D / 58⁸` per new creation; a reuse grants no write access. Trigger for a `deleted_share_codes` table (Bowser's work): total deletes pass 10⁷, or before any change that shortens codes or narrows the alphabet.
+4. **§2.7: `Connection: close` follows the shipped rule.** It goes on any `/api` response whose declared `Content-Length` is over the request's `MaxRequestBodySize` at response start (`ApiResponseHeaders`), plus the service's own 413 (`HttpCreationRequestBody`). Chunked bodies on unread paths aren't covered (Phase 7, Boo).
+5. **Skyler's 2026-11-14 rulings applied.** A link load keeps `display` and replaces shell, sky, tab, dirty flags and `source` (§11.3). The player's Remix always shows, and only Save follows `canWrite` (§10, §11.1). "Remixed from" is not rendered before Phase 8, and the API field is unchanged (§11.5).
+
+### Why
+For point 2: a `source` that points at a record the user can't reach offers two buttons, Update original and Share, that can't work. Nulling it reuses the existing `source: null` state, so no "gone" marker type is needed. For point 3: a tombstone table costs a growing table, a second uniqueness check on every write and a takedown that leaves a residue, all against a risk below 10⁻⁸ per creation. A numeric trigger replaces "revisit later". For point 4: the doc described the first fix (413 only), and Boo F2 widened it.
+
+### Boundary
+Binds Luigi (points 1, 2, 5: `readSource` with `name`; `source = null` on either 404; no "Remixed from" UI; Remix with writes off). Binds Bowser only if the point 3 trigger fires. Rosalina's `phase-5.md` §8.1 still shows "Remix of the original" and gates Remix on `canWrite`; both are superseded by Skyler's rulings, and that file is hers to correct. Not decided here: F4 (Luigi confirms Rosalina's `saved` flag), and the chunked-body `Connection: close` gap (Phase 7, Boo).

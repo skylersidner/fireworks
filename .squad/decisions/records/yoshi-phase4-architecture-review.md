@@ -1,5 +1,8 @@
 # Phase 4 architecture review: backend against schema.md
 
+> **Superseded in part by rosalina-phase-5-design-review.md (item 5) and luigi-phase5-save-share-player.md (point 3) on 2026-11-14:** the PUT half of item 2 no longer holds. A 404 from Update original now asks: `source` becomes null and "Save as new" sends a plain `POST api/creations`. A 404 from `…/remix` still falls back to a plain POST by itself, which is item 2's remix half. The rest of the record stands.
+
+
 **Author:** Yoshi · **Date:** 2026-11-13 · **Status:** proposed (for Skyler to promote, or not)
 **Reviewed:** Bowser's uncommitted `src/api/Fireworks.Api/**` (`CreationsController.cs`, `Services/Creations/*`, `Repositories/CreationRepository.cs`, `Data/FireworksDbContext.cs`, `Data/Entities/Creation.cs`, `Data/Migrations/20261113202016_AddCreations.cs`, `Program.cs`), against `docs/fireworks-app/schema.md` and plan Phase 4. Record under review: `bowser-phase4-creations-persistence.md`.
 **Probe:** a scratch copy of `src/api` plus one throwaway xunit test on `FireworksApiHarness` (Kestrel + SQLite), outside the repo. It measured the 415 and 413 bodies, the 201 and list payloads, both 404 bodies, and the next pooled request after a 403/415 on an unread 200 KB and 2 MB body (that request succeeded both times).

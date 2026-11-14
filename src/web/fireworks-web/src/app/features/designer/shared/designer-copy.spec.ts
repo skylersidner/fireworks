@@ -104,23 +104,23 @@ describe('JSON Apply notes', () => {
     expect(confirmPresetTitle('Willow')).toBe('Load Willow?');
     expect(confirmPresetAction('Willow')).toBe('Load Willow');
     expect(confirmPresetBody('Mine')).toBe(
-      'This replaces your current shell, \u201cMine\u201d, and its breaks, and goes back to Break 1. Sky and display settings stay as they are.',
+      'This replaces your current shell, \u201c\u2068Mine\u2069\u201d, and its breaks, and goes back to Break 1. Sky and display settings stay as they are.',
     );
     expect(confirmPresetBody('  ')).toBe(
       'This replaces your current shell and its breaks, and goes back to Break 1. Sky and display settings stay as they are.',
     );
     expect(confirmApplyBody('Mine', true)).toBe(
-      'This replaces your current shell, \u201cMine\u201d, including its breaks and sky, with the shell in the JSON panel. Display settings stay as they are.',
+      'This replaces your current shell, \u201c\u2068Mine\u2069\u201d, including its breaks and sky, with the shell in the JSON panel. Display settings stay as they are.',
     );
     expect(confirmApplyBody('', true)).toBe(
       'This replaces your current shell, including its breaks and sky, with the shell in the JSON panel. Display settings stay as they are.',
     );
     expect(confirmApplyBody('Mine', false)).toBe(
-      'This replaces your current shell, \u201cMine\u201d, and its breaks with the shell in the JSON panel. Sky and display settings stay as they are.',
+      'This replaces your current shell, \u201c\u2068Mine\u2069\u201d, and its breaks with the shell in the JSON panel. Sky and display settings stay as they are.',
     );
     expect(confirmApplyBody('', false)).toBe(
       'This replaces your current shell and its breaks with the shell in the JSON panel. Sky and display settings stay as they are.',
     );
-    expect(confirmApplyBody('<b>x</b>', true)).toContain('\u201c<b>x</b>\u201d');
+    expect(confirmApplyBody('<b>x</b>', true)).toContain('\u201c\u2068<b>x</b>\u2069\u201d');
   });
 });

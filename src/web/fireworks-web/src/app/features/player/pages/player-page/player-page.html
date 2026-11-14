@@ -1,0 +1,128 @@
+@if (message(); as m) {
+  <app-message-page [heading]="m.heading" [body]="m.body">
+    @for (a of m.actions; track a.action; let first = $first) {
+      <button
+        type="button"
+        class="btn"
+        [class.btn-primary]="first"
+        [attr.data-testid]="'message-' + a.action"
+        (click)="act(a.action)"
+      >
+        {{ a.label }}
+      </button>
+    }
+  </app-message-page>
+} @else {
+  <main class="relative h-full overflow-hidden bg-surface-sunken" data-testid="player">
+    @if (playing(); as p) {
+      <app-fireworks-stage
+        class="h-full w-full"
+        [shell]="p.shell"
+        mode="loop"
+        [quality]="quality()"
+        [paused]="paused()"
+        [clickToFire]="false"
+      />
+
+      <div
+        class="absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 bg-[linear-gradient(to_bottom,rgba(4,6,12,0.75),transparent)] px-3 pt-2.5 pb-6"
+      >
+        <div class="min-w-0 max-w-full">
+          <h1
+            class="m-0 line-clamp-2 text-heading break-words [text-shadow:0_1px_2px_#000]"
+            data-testid="player-name"
+          >
+            <bdi>{{ p.name }}</bdi>
+          </h1>
+          <p class="m-0 text-small text-muted">
+            <a routerLink="/" class="text-muted">Fireworks Sandbox</a>
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-1.5">
+          <button
+            type="button"
+            class="btn border-accent text-accent"
+            title="Open a copy in the designer to change and play"
+            data-testid="player-remix"
+            (click)="remix()"
+          >
+            Remix
+          </button>
+          <button
+            type="button"
+            class="btn"
+            data-testid="player-pause"
+            [disabled]="noticeVisible()"
+            (click)="togglePause()"
+          >
+            {{ paused() ? 'Play' : 'Pause' }}
+          </button>
+          <button
+            type="button"
+            class="btn"
+            data-testid="player-replay"
+            [disabled]="paused()"
+            (click)="replay()"
+          >
+            Replay
+          </button>
+          <label class="inline-flex items-center gap-1.5 text-small text-muted">
+            Reduce flashing
+            <input
+              type="checkbox"
+              role="switch"
+              class="switch"
+              data-testid="player-reduce-flashing"
+              [checked]="reduceFlashing()"
+              (change)="setReduceFlashing($any($event.target).checked)"
+            />
+            <span class="text-primary" data-testid="player-reduce-flashing-value">{{
+              reduceFlashing() ? 'On' : 'Off'
+            }}</span>
+          </label>
+        </div>
+        <div class="w-full max-w-[640px]"><app-test-mode-banner /></div>
+      </div>
+
+      @if (noticeVisible()) {
+        <app-player-notice
+          [name]="p.name"
+          [strobe]="p.strobe"
+          [reduceFlashing]="reduceFlashing()"
+          (turnOn)="answerNotice(true)"
+          (play)="answerNotice(false)"
+        />
+      } @else if (showCenterPlay()) {
+        <div
+          class="absolute inset-x-3 top-1/2 mx-auto grid -translate-y-1/2 justify-items-center gap-2"
+        >
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-testid="player-center-play"
+            (click)="startFromCenter()"
+          >
+            Play
+          </button>
+          <p
+            class="m-0 text-small text-muted [text-shadow:0_1px_2px_#000]"
+            data-testid="player-center-line"
+          >
+            {{ centerLine() }}
+          </p>
+        </div>
+      }
+    } @else {
+      <app-static-skyline />
+      @if (showLoading()) {
+        <p
+          class="pointer-events-none absolute bottom-12 left-3 m-0 text-small text-muted"
+          role="status"
+          data-testid="player-loading"
+        >
+          Loading…
+        </p>
+      }
+    }
+  </main>
+}

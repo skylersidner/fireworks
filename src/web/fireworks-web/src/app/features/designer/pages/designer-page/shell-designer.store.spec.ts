@@ -475,6 +475,8 @@ describe('ShellDesignerStore', () => {
           display: { mode: 'loop', persistence: 0.78, starBudget: 1, reduceFlashing: null },
           shellDirty: false,
           skyDirty: false,
+          saved: false,
+          source: null,
         }),
       );
       storage.setItem(DRAFT_KEY, JSON.stringify({ ...rest, dirty: true }));
@@ -572,6 +574,8 @@ describe('ShellDesignerStore', () => {
           display: { mode: 'loop', persistence: 0.78, starBudget: 1, reduceFlashing: null },
           shellDirty: false,
           skyDirty: false,
+          saved: false,
+          source: null,
         }),
       );
       expect(create().store.shell().breaks[0].stars).toBe(400);
@@ -588,6 +592,85 @@ describe('ShellDesignerStore', () => {
       store.dismissFlashNotice(false);
       expect(store.shell().name).toBe('works');
       expect(() => destroy()).not.toThrow();
+    });
+  });
+
+  describe('working copy source (Phase 5; schema.md §11.2)', () => {
+    const SOURCE = {
+      shareCode: 'Ab3dEf7h',
+      kind: 'shell' as const,
+      isOwner: true,
+      updatedAt: '2026-11-13T21:20:26.65593+00:00',
+      name: 'Willow 2',
+    };
+
+    function storeSourceDraft() {
+      storage.setItem(
+        DRAFT_KEY,
+        serializeDraft({
+          shell: editableFrom(PRESETS[2]),
+          activeBreak: 0,
+          display: { mode: 'loop', persistence: 0.78, starBudget: 1, reduceFlashing: null },
+          shellDirty: true,
+          skyDirty: true,
+          saved: false,
+          source: SOURCE,
+        }),
+      );
+    }
+
+    it('fresh work has no source, and the draft stores source: null', () => {
+      const { store } = create();
+      expect(store.source()).toBeNull();
+      store.form.angleJitter().value.set(7);
+      settle();
+      expect(savedDraft().source).toBeNull();
+    });
+
+    it('restores the source and writes it back with the next edit (a reload keeps the link)', () => {
+      storeSourceDraft();
+      const { store } = create();
+      expect(store.source()).toEqual(SOURCE);
+      store.form.angleJitter().value.set(7);
+      settle();
+      expect(savedDraft().source).toEqual(SOURCE);
+    });
+
+    it('a preset or an Apply is an edit to the copy: the source stays', () => {
+      storeSourceDraft();
+      const { store } = create();
+      store.loadPreset(4);
+      store.confirmReplace();
+      store.editJson(JSON.stringify(PRESETS[3]));
+      store.applyJson();
+      store.confirmReplace();
+      expect(store.shell().name).toBe('Palm');
+      settle();
+      expect(store.source()).toEqual(SOURCE);
+      expect(savedDraft().source).toEqual(SOURCE);
+    });
+  });
+
+  describe('Apply goes through upgrade before normalize (schema.md §8.3; Peach F6)', () => {
+    it.each([2, 1.5, '1'])('rejects version %j with the version note and changes nothing', (v) => {
+      const { store } = create();
+      const before = store.shell();
+      store.editJson(JSON.stringify({ ...PRESETS[3], version: v }));
+      expect(store.applyJson().status).toBe('rejected');
+      expect(store.jsonNote()).toBe(
+        `Couldn't apply: version ${JSON.stringify(v)} isn't supported (expected 1). Nothing changed.`,
+      );
+      expect(store.shell()).toBe(before);
+    });
+
+    it('a current-version and a version-less document both apply', () => {
+      const { store } = create();
+      store.editJson(JSON.stringify(PRESETS[3]));
+      expect(store.applyJson().status).toBe('loaded');
+      const { version: _v, ...noVersion } = PRESETS[5];
+      store.editJson(JSON.stringify(noVersion));
+      expect(store.applyJson().status).toBe('loaded');
+      expect(store.shell().version).toBe(1);
     });
   });
 

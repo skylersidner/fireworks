@@ -11,58 +11,41 @@
 - **Your focus here:** The dark token set taken from the prototype's CSS variables, designer layout and controls (Phase 2c), save, share and player UX (Phase 5), the timeline UX (Phase 6), and accessibility and photosensitivity (Phase 7).
 - Carried over from the previous project: the role only. No history was copied. General lessons from that project are seeded as standing decisions in `.squad/decisions/README.md`.
 
+### Folded from Phase 0 to Phase 4 (summarized 2026-11-14)
+
+- **Accepted rulings:** `/` auto-plays bursts (the prototype default is `loop`, so strobe comes from presets, Auto show, restored drafts and links). The photosensitivity notice and Reduce flashing ship with the designer (2c) and the player (Phase 5). The draft keeps display and the active tab. Dirty is a flag, and only shell and sky changes count (replace-only). The notice holds playback. Reduced motion opens in Manual on every load.
+- **2c spec:** `docs/fireworks-app/design/designer-2c.md` (layout, copy, tokens, 15 departures). Record `rosalina-designer-2c-design-review.md` is partly superseded by `luigi-2c-dirty-flag-and-notice-hold.md`. Re-read every confirmation body when a ruling changes what an action touches.
+- **Tokens:** semantic names are shipped in `src/web/fireworks-web/src/styles.css`: `success-surface`, `danger-surface` (+ on-), `border-control` #56627f (3.1:1), `text-heading`, `text-body`, `text-small`, `text-caption`. Don't hard-code colors.
+- **DOM order:** stays panel-first. Reach the visitor with `aria-describedby` and focus, never a CSS reorder (WCAG 1.3.2 and 2.4.3). Check the oracle's DOM order before writing "read before X". The prototype's Space handler excludes only INPUT, TEXTAREA and SELECT. Tailwind `max-[761px]` gives the inclusive 760 breakpoint.
+- **Dialog and hold patterns:** an alertdialog's initial focus goes on the safe button. Native `<dialog>` with `showModal()` gives the focus trap and Escape. OS-derived values are never edits and never persisted. A hold notice needs every launch path listed, frozen timers, and mode-aware "starts when" copy.
+- **Save-time copy (F10):** 400 (`truncated` means there are more), 403 (writes switched off mid-session), 404 on Update original (offer Save as new), 413 (may be status 0 through Railway), 429 and the upgrade error. Clients key on status plus `code`. Save as new after a deleted original is a plain create, with no promise of a link to the original.
+- **Last-write-wins** on Update original until `If-Match` → 412 (at Phase 8, or the first reported lost update).
+
 ## Learnings
 
 
-### 2026-11-12 — Phase 0 rulings (cross-agent update)
-- The landing route `/` auto-plays bursts, including strobe (prototype default mode is `loop`). At the 2c design-review, decide whether the photosensitivity notice and reduced-motion handling move earlier than Phase 7.
+### 2026-11-14: Phase 5 design-review (facilitated)
+- Wrote `docs/fireworks-app/design/phase-5.md` and `phase-5-mockup.html`. Record: `.squad/decisions/records/rosalina-phase-5-design-review.md`. Updated `designer-2c.md` §6.4 in place for the shell/sky split; also touched R7, §3.5, the l.464 sentence and N2.
+- F4 ruling: Save clears both dirty flags. The indicator reads a separate `saved` flag, which any load clears. The trap to remember: Save, then a preset, gives no ask and a cleared `shellDirty`, but the designer holds an unsaved Peony under a `source`. When one flag gets two meanings, walk each action through each meaning.
+- `session.canWrite()` is false while `api/me` is in flight. Any "unavailable" UI must wait for `status() === 'ready'`.
+- A `disabled` button drops focus. For in-flight states use `aria-disabled` and ignore clicks.
+- 404 asymmetry: a PUT 404 asks (the visitor wanted the old link changed); a remix 404 falls back to POST by itself (a success with a caveat).
+- The brief asked me to add a README index line. I didn't (my charter and the README forbid it) and proposed the line in my report instead.
+- Open for Skyler: Q1, whether the player notice and Reduce flashing are device-wide and shared with the designer (recommended yes).
 
-### 2026-11-12 — Phase 1 cross-agent update (Scribe)
-- Luigi's Phase 1 skeleton has placeholder colors that are not in the prototype, in `src/web/fireworks-web/src/styles.css`: `--color-success` (#7ddc9f), `--color-toast-success` (#12301f), `--color-on-toast-success` (#c9f2d7), `--color-toast-error` (#3a1414), `--color-on-toast-error` (#ffd2ca). Review them before 2c components depend on them. `--color-danger` (#ff9a8a) maps to the prototype's `#err`.
-- The semantic token names (`surface-*`, `border*`, `text-*`, `accent*`, `scrim`) are shipped. Renaming is cheap now and costlier after 2c.
+### 2026-11-14: Phase 5 spec correction (player Remix, remixedFrom, flashing)
+- Skyler ruled: player Remix shows regardless of `canWrite` (writes off = editable, playable, unsaveable copy); "Remixed from" renders nowhere before Phase 8 (schema.md §11.5); Q1 answered yes: one notice dismissal and one Reduce flashing choice per device, shared designer/player; a link load keeps `display`.
+- Edited phase-5.md §8.1, §8.3, P9, §7 Open copy, §13 L4/B1, §15 Q1, and the mockup player meta line. Kept edits minimal because Luigi was mid-implementation.
+- `saved` lives in the draft (`fireworks.draft.v1`), never in a document; schema.md §7's "never persisted" means "never in a document", so there is no real conflict.
 
-### 2026-11-12 — Phase 2c design-review (facilitated)
-- Wrote `docs/fireworks-app/design/designer-2c.md`: layout, component inventory + copy, final tokens, range-row/select-row specs, accessibility, 15 numbered departures. Record: `.squad/decisions/records/rosalina-designer-2c-design-review.md`. Skill: `.squad/skills/flashing-content-safety/SKILL.md`.
-- Check the premise against the oracle: the brief said `/` auto-plays strobe on arrival, but the default shell is Peony (no effect) and loop fires only the current shell, one flash per ~4.65 s. Strobe comes from presets, Auto show, restored drafts, links.
-- Tokens: kept Luigi's names; renamed toast-* to success-surface/danger-surface (+ on-); added border-control #56627f (3.1:1; --line is 1.34:1 on panel); added text-heading/body/small/caption. Contrast script approach: quick Python WCAG luminance calc in scratchpad.
-- API-down: blocking modal replaced by a non-blocking panel banner; `api/me` self-handled. Reason: plan §3.4 anonymous play never needs the server.
-- Prototype bug worth remembering: Space handler excludes only INPUT/TEXTAREA/SELECT, so Space on a focused button fires Launch. Tailwind 4 `max-[X]` is `width < X`; the prototype's 760 breakpoint is inclusive, so use `max-[761px]`.
-- Plan 2c has a contradictory "Shared form controls (ControlValueAccessors)" line vs OQ17 Signal Forms.
-- Open for Skyler: whether `/` auto-plays at all (recommended yes, with notice + reduced-motion -> Manual); player notice in Phase 5 instead of 7.
+### 2026-11-14: Phase 5 post-implementation review + test-mode banner copy
+- Final C17 banner copy is in `phase-5.md` §2.4 and `shared/test-mode-banner.ts` `TEST_MODE_TEXT`: "Test mode: anyone who can reach this site can change or delete any saved creation, including yours. A share link may later play something else or stop working." `designer-save.spec.ts` asserts it only by `/change or delete any saved/`, so keep that phrase if the copy changes.
+- Ruled on the `/c/` blank-name body: Luigi's code was right. The blank-name example keeps "Display settings stay as they are." My spec example had dropped it by mistake. Lesson: when I write a blank-name variant, derive it mechanically from the full template (drop only the name and its commas) and check it against the matching 2c Apply variant.
+- Gaps the review found: `/mine` doesn't focus its h1 on load; the `/mine` blocked-share field calls `select()` without `focus()`; `.btn[aria-disabled]` has no styling (my §2.2 named the state but gave it no class set, so name a style whenever I spec an ARIA state); and the §8.2 centered line "Reduce flashing is on." is false when someone under OS reduced motion has switched Reduce flashing off.
+- C3 isolation: use `<bdi>` around the name only, with the quotes outside it (as `player-notice.ts` does). For strings built in TS (toasts, status block, dialog, `<title>`), the equivalent is FSI U+2068 / PDI U+2069 inside the `quoted()` helpers. `dir=auto` on a sentence container does nothing useful.
+- Tooling: `ng test` needs Node ≥22 (`~/.nvm/versions/node/v26.5.0/bin`). Other members mutate files during their negative controls, so a red run in a shared tree may be transient. Re-run before reporting it.
 
-### 2026-11-12 — 2c follow-up after Skyler's rulings
-- Skyler accepted: `/` auto-plays; the player notice and Reduce flashing ship in Phase 5; the draft keeps display settings and the active tab; a preset or Apply over unsaved edits asks first. "Unsaved" means any change to the shell, display or tab against a baseline snapshot (last preset, Apply or first-visit default), and the baseline survives reload. Reduced motion opens in Manual on every load.
-- Spec edited in place (Skyler wants no superseded footnotes): §6.4 replace confirmation, §3.6 adjustment note, §3.8 Canvas-only renderer note, §7.1 tri-state Reduce flashing. Record addendum is in `rosalina-designer-2c-design-review.md`.
-- Patterns:
-  - Confirmation copy must say what *isn't* replaced when the "dirty" definition is wider than what the action destroys.
-  - An alertdialog's initial focus goes on the safe button, with no dialog-wide Enter.
-  - Native `<dialog>` + `showModal()` gives the focus trap, Escape and an inert page.
-  - OS-derived values are never edits and never persisted.
-- Normalize kinds: count clamped, rounded and truncated (one per distinct path); dropped gets its own "ignored" sentence; defaulted stays silent.
-- Peach's acceptance doc is `docs/fireworks-app/acceptance/phase-2.md`. 2c.16 still says display and tab don't count, which conflicts with Skyler's ruling.
-
-### 2026-11-13 — 2c update: dirty flag, notice holds playback
-- Skyler replaced the baseline snapshot with a dirty flag (the draft exists so state is never lost), and chose to have the first-visit notice hold playback, against my recommendation. Spec edited in place; record addendum items 9–12.
-- Presets keep the sky, which is parity: the prototype's gravity and wind are globals. So the old preset confirm ("including its breaks and sky") was false. When a ruling changes what an action touches, re-read every confirmation body.
-- With a flag (not a diff), think through the first-time path: the notice's "Turn on Reduce flashing" must not set dirty, or a first preset click asks about an untouched Peony.
-- A hold notice needs: a list of every launch path, frozen timers (no burst backlog), mode-aware "starts when" copy, no × or Escape, and focus to the first button and then to Launch.
-- Accepted Luigi's `cancel` + `close` Escape handling (Chrome's close-watcher skips `cancel`). Peach's acceptance 2c.9, 2c.16 and 2c.18 still describe the baseline and the non-pausing notice.
-
-### 2026-11-13 — 2c check: notice DOM order
-- My §7.2 line "notice read before the panel" was wrong against the oracle (prototype is panel, then stage) and led Luigi to reorder the DOM with `flex-row-reverse`. Ruled: keep panel-first DOM (h1 first, Tab order = visual order); reach the visitor through the initial focus move, `aria-describedby` on the notice buttons, and a swapped playback note ("Close the flashing notice on the stage to start.").
-- Lesson: never ask for "read before X" in a spec without checking the oracle's DOM order; a CSS-order fix for reading order breaks WCAG 1.3.2/2.4.3. A focused button in a region doesn't read the region's body text; use aria-describedby.
-- Confirmed Luigi: the Display switch swaps the notice copy but doesn't dismiss; notice focus only from body; Launch focused after render on dismiss.
-
-### 2026-11-13 — Phase 2 cross-agent update (Scribe)
-- The replace-only ruling overtakes your record's item 5 (display settings count as edits) and item 9 (display and tab set dirty; one flag). The record carries a partial-supersession marker. Items 10 to 12 stand.
-- Stale in your spec `docs/fireworks-app/design/designer-2c.md`: §6.4 (around l.403 to 427) describes one `dirty` boolean, and l.464 says a display or tab change "sets dirty". The code and Peach's criteria (2c.9, 2c.16) follow the shell and sky split (Luigi's addendum). Please update §6.4 and l.464 in place before Phase 5.
-- Your panel-first DOM correction is what shipped. No action.
-
-### 2026-11-13 — Phase 3 cross-agent update (Scribe)
-- **Copy for Phase 5 that is yours** (Peach's acceptance `docs/fireworks-app/acceptance/phase-3.md`; schema.md §8, §11, §15):
-  - **F10, Save-time outcomes (no owner until now):** a 400 on Save (a stale tab can send a document the server rejects, §8.1), 403 (writes switched off mid-session), 404 on PUT (the original was deleted), 413, 429 (rate limited), and "newer than this app; reload" from the upgrade step (§8.2, §8.3). Put these in the Phase 5 design-review brief. A save that fails is an error, not a partial success, so the caveat rule does not apply.
-  - **F4, dirty flags at Save (you and Luigi):** a link load sets `shellDirty` and `skyDirty` (Yoshi addendum 1, point 4). Whether Save clears them is still open. Copy for the Save choice ("Update original" or "Save as new") must say what each replaces.
-  - **F12, bracket paths in the Apply note:** `designer-copy.ts` `unknownKeyName` matches only `breaks[n].name`, so rule-11 paths show raw (`["a.b"]`, `breaks[0]["a\"b"]`). Decide how an unprintable key reads; Luigi implements.
-  - **L3, link over unsaved edits:** the confirm asks only when the shell or the sky is dirty, the same rule as Apply with `sky`. The copy must name what gets replaced, as in §6.4.
-- **Still open from Phase 3:** the placeholder copy for codes beyond `enum`, `type` and `break-count` (§15). Lenient `cleaned` names apply silently today (Mario's note). Your call.
-- **Still open from Phase 2:** `docs/fireworks-app/design/designer-2c.md` §6.4 (around l.403–427) and l.464 still describe one `dirty` flag. Update them before Phase 5 builds on the spec.
+### 2026-11-14 — Phase 5 cross-agent update (Scribe)
+- **Your record's item 7 is partly superseded:** Skyler's 2026-11-14 ruling makes Remix show regardless of `canWrite`. Marked in the record.
+- **Banner copy final:** `phase-5.md` §2.4 and `TEST_MODE_TEXT`. Boo has not recorded the C17 re-check. Keep the phrase "change or delete any saved" (the spec matches it).
+- **Index tension for you:** README §5 says "/mine is hidden" when writes are off. The nav entry is hidden (5g.1), but a direct visit shows your unavailable notice. Confirm the intended behavior; Skyler decides the index wording.

@@ -137,16 +137,25 @@
 
   .btn {
     @apply cursor-pointer rounded-md border border-default bg-surface-raised px-2.5 py-1.5 text-body text-primary;
-    &:hover:not(:disabled) {
+    &:hover:not(:disabled):not([aria-disabled='true']) {
       @apply border-hover;
     }
     &:disabled {
       @apply cursor-not-allowed opacity-45;
     }
+    /* Inert while a save is in flight (phase-5.md §2.2): it keeps focus and its look; only the cursor says so. */
+    &[aria-disabled='true'] {
+      @apply cursor-progress;
+    }
   }
 
   .btn-primary {
     @apply border-0 bg-accent-gradient font-semibold text-on-accent;
+  }
+
+  /* Destructive confirm (phase-5.md §10.4): text 11.9:1, the danger edge 8.5:1 on surface-raised. */
+  .btn-danger {
+    @apply border border-danger bg-danger-surface font-semibold text-on-danger-surface;
   }
 
   .btn-sm {

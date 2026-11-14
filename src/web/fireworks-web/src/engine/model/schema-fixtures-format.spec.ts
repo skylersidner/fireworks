@@ -94,7 +94,8 @@ function docCodes(): { all: Set<string>; serverOnly: Set<string> } {
 
 /** schema.md §6.2 rule 11. */
 const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
-const SEGMENT = /\.([A-Za-z_][A-Za-z0-9_-]*)|\[(\d+)\]|\["((?:[^"\\]|\\["\\])*)"\]|^([A-Za-z_][A-Za-z0-9_-]*)/y;
+const SEGMENT =
+  /\.([A-Za-z_][A-Za-z0-9_-]*)|\[(\d+)\]|\["((?:[^"\\]|\\["\\])*)"\]|^([A-Za-z_][A-Za-z0-9_-]*)/y;
 type Segment = { name: string } | { index: number };
 
 /**
@@ -198,7 +199,7 @@ function bodyBytes(body: string, markers: Record<string, string>): Uint8Array {
     out.push(...new TextEncoder().encode(text));
     text = '';
   };
-  for (let i = 0; i < body.length; ) {
+  for (let i = 0; i < body.length;) {
     const hit = entries.find(([marker]) => body.startsWith(marker, i));
     if (hit) {
       flush();
@@ -259,19 +260,27 @@ describe('schema fixtures are well-formed', () => {
     }
   });
 
-  it.each(jsonFiles.map((f) => [f.rel, f] as const))('%s parses and is named in kebab case', (_rel, f) => {
-    expect(() => JSON.parse(f.text)).not.toThrow();
-    expect(f.name).toMatch(FILE_NAME);
-  });
+  it.each(jsonFiles.map((f) => [f.rel, f] as const))(
+    '%s parses and is named in kebab case',
+    (_rel, f) => {
+      expect(() => JSON.parse(f.text)).not.toThrow();
+      expect(f.name).toMatch(FILE_NAME);
+    },
+  );
 
   it.each(jsonFiles.filter((f) => FIXTURE_DIRS.has(f.dir)).map((f) => [f.rel, f] as const))(
     '%s has a description, the folder kind, and errors exactly when invalid',
     (_rel, f) => {
       const fx = parsed.get(f.rel)!;
       const [group, kind] = f.dir.split('/');
-      const keys = group === 'invalid' ? ['description', 'document', 'errors', 'kind'] : ['description', 'document', 'kind'];
+      const keys =
+        group === 'invalid'
+          ? ['description', 'document', 'errors', 'kind']
+          : ['description', 'document', 'kind'];
       expect(Object.keys(fx).sort()).toEqual(keys);
-      expect(typeof fx['description'] === 'string' && fx['description'].trim().length > 0).toBe(true);
+      expect(typeof fx['description'] === 'string' && fx['description'].trim().length > 0).toBe(
+        true,
+      );
       expect(fx['kind']).toBe(kind);
       if (group === 'invalid') {
         const errors = errorsOf(fx);
@@ -302,7 +311,9 @@ describe('schema fixtures are well-formed', () => {
       if (status === 415) keys.push('contentType');
       if (Object.hasOwn(fx, 'byteMarkers')) keys.push('byteMarkers');
       expect(Object.keys(fx).sort()).toEqual(keys.sort());
-      expect(typeof fx['description'] === 'string' && fx['description'].trim().length > 0).toBe(true);
+      expect(typeof fx['description'] === 'string' && fx['description'].trim().length > 0).toBe(
+        true,
+      );
       expect(typeof fx['body']).toBe('string');
       const body = fx['body'] as string;
       // The C# harness reads body with GetString, which throws on an unpaired surrogate.
@@ -338,16 +349,19 @@ describe('schema fixtures are well-formed', () => {
     },
   );
 
-  it.each(inDir('server-only').filter((f) => f.name !== 'duplicate-key-inside-unknown.json').map((f) => [f.rel, f] as const))(
-    '%s repeats exactly the names its duplicate-key errors name',
-    (_rel, f) => {
-      const fx = parsed.get(f.rel)!;
-      if (!Object.hasOwn(fx, 'errors') || errorsOf(fx).some((e) => e.code === 'not-json')) return;
-      const expected = errorsOf(fx).filter((e) => e.code === 'duplicate-key').map((e) => lastName(e.path));
-      const found = repeatedNames(fx['body'] as string).map((r) => r.name);
-      expect(found.sort()).toEqual(expected.sort());
-    },
-  );
+  it.each(
+    inDir('server-only')
+      .filter((f) => f.name !== 'duplicate-key-inside-unknown.json')
+      .map((f) => [f.rel, f] as const),
+  )('%s repeats exactly the names its duplicate-key errors name', (_rel, f) => {
+    const fx = parsed.get(f.rel)!;
+    if (!Object.hasOwn(fx, 'errors') || errorsOf(fx).some((e) => e.code === 'not-json')) return;
+    const expected = errorsOf(fx)
+      .filter((e) => e.code === 'duplicate-key')
+      .map((e) => lastName(e.path));
+    const found = repeatedNames(fx['body'] as string).map((r) => r.name);
+    expect(found.sort()).toEqual(expected.sort());
+  });
 
   it('duplicate-key-inside-unknown repeats a name only inside the unknown value', () => {
     const fx = parsed.get('server-only/duplicate-key-inside-unknown.json')!;

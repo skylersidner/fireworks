@@ -460,6 +460,8 @@ Deep links also work on Railway. The Railway round trip runs with writes switche
 
 **Known limit before Phase 8:** every visitor is the default user, so `isOwner` is always true in the running app. The non-owner Save (straight to remix, no choice) and `remixedFrom: null` for non-owners can't be seen there. They're covered by the Phase 4 two-user service tests and a Phase 5 client spec with a stubbed `isOwner: false` response that asserts exactly one `POST …/remix` and no PUT. **No dev-only second user** (decided, Yoshi): revisit at the first non-owner bug that reaches the running app past those specs.
 
+**Phase 5 rulings (Skyler, 2026-11-14):** the player's Remix always shows (only Save follows `canWrite`); display and flashing preferences are device-wide and a link load keeps `display`; "Remixed from" is not rendered before Phase 8; the test-mode banner (Boo C17) ships in Phase 5. Coordinator defaults: `/mine` lists `kind=shell` and a show link at `/s/` or `/c/` shows a "not supported yet" notice until Phase 6; Share on a dirty working copy is presented per Rosalina's spec.
+
 **Phase 5 items carried from the Phase 3 review** (`acceptance/phase-3.md`): F10, copy for Save-time failures (400 from a stale tab, 403, 404 on Update original, 413, 429, the "newer than this app" upgrade error), Rosalina's design-review brief; F4, whether Save clears the dirty flags, Rosalina and Luigi; F11, `type` copy for integer fields, Luigi (by Phase 6 at the latest); F12, how bracket paths read in the Apply note, Rosalina and Luigi.
 
 ### Phase 6: Show Builder (outline)

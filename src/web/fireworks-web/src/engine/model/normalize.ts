@@ -231,7 +231,12 @@ export function normalizeShow(input: unknown): ShowNormalizeResult {
           continue;
         }
         shellKeys.add(key);
-        const shell = walkShell(rawShells[key], childPath('shells', key), report, EMBEDDED_SHELL_KEYS);
+        const shell = walkShell(
+          rawShells[key],
+          childPath('shells', key),
+          report,
+          EMBEDDED_SHELL_KEYS,
+        );
         if (shell) shells[key] = shell;
       }
     }

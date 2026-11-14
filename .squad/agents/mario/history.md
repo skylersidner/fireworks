@@ -52,3 +52,16 @@
 - Two identities via a second container with a different `Identity__DefaultUserId`: non-owner PUT/DELETE 404, `isOwner` false, `remixedFrom` hidden from non-owner but shown to owner. Swapcase share code 404. 270 KB body 413 + `Connection: close` (with Content-Length and chunked). Writes off: JSON and form POST, PUT, DELETE, remix, `api/me/creations` all 403; public GET 200; `/health/live` text/plain "Healthy".
 - GET returns the document with jsonb key order (length then bytes), and POST/PUT echo the canonical C# order. schema.md line 18 makes key order meaningless; Phase 5 client must compare parsed values, never strings.
 - 413 body is `application/problem+json` (accepted §2.7 departure). A 70 KB PUT on an unknown code got 400 (validation runs before the lookup); that's consistent with gate → envelope → walk → query.
+
+### 2026-11-14 — Phase 5 phase-gate
+- Verdict PASS WITH NOTES; Railway 5i.2–5i.5 DEFERRED. Record: `.squad/decisions/records/mario-phase5-gate.md`.
+- Ran image `fireworks:phase5-gate` on 127.0.0.1:5180 (container port 8080) against fresh `fireworks_gate5` with `Identity__AllowAnonymousWrites=true`. Putting it on 5180 means the 4200 dev proxy and Luigi's script (hardcoded `API=localhost:5180`) both hit the image, so one container gives a prod-mode run and a dev-mode run.
+- Prod builds have no `window.ng`, so launch-count checks only work on `ng serve`. In prod, use canvas element screenshots: they stay identical while the notice holds and differ after Play. My script is `scratchpad/smoke/mario-gate5.mjs` (also strips FSI/PDI from title and dialog text). The spot checks are `mario-gate5-spot.mjs` (banner verbatim on 3 surfaces, S1 reduced-motion line).
+- `abcdefgl` isn't base58 (`l`), so it hits the catch-all's empty 404, not the JSON body. Use a well-formed unknown code such as `abcdefgh` to see `{"message":…}`.
+- `MapFallbackToFile` `nonfile` gives a bare 404 for dotted last segments (`/c/..%2Fme`); dev server shows the app page. Minor; Bowser to decide.
+- Prettier: check with the `format` script's glob, not `.`; root configs and the golden `.mjs` were never formatted.
+- Counts: npm 1246/41 files, gated dotnet 565/565, `src/api` unchanged since facf980.
+
+### 2026-11-14 — Phase 5 cross-agent update (Scribe)
+- **F11 reconcile:** your gate lists F11 as carried. Peach's acceptance (5h) closes it, and the code has the integer wording. Please check and correct one of the two.
+- **Owners of your carried items:** Bowser (5i.2–5i.5; the dotted-link 404 in Phase 7), Boo (C17 re-check, C18), Luigi (the stale smoke script), Toad (round-trip rerun in the window).

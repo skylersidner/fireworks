@@ -1,20 +1,16 @@
 import { ApplicationRef, Component, signal, viewChildren } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import {
-  ManualDriver,
-  PreviewLoopDriver,
-  RandomShowDriver,
-} from '../../../../../engine/loop/drivers';
-import type { PlaybackMode } from '../../../../../engine/model/enums';
-import { PRESETS } from '../../../../../engine/model/presets';
+import { ManualDriver, PreviewLoopDriver, RandomShowDriver } from '../../../engine/loop/drivers';
+import type { PlaybackMode } from '../../../engine/model/enums';
+import { PRESETS } from '../../../engine/model/presets';
 import {
   newShell,
   type QualitySettings,
   type ShellDocument,
   type SkySettings,
-} from '../../../../../engine/model/shell';
-import { GROUND } from '../../../../../engine/sim/constants';
-import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+} from '../../../engine/model/shell';
+import { GROUND } from '../../../engine/sim/constants';
+import { FakeStageRenderers } from '../../testing/fake-stage-renderer';
 import {
   FireworksStageComponent,
   STAGE_RENDERER_FACTORY,

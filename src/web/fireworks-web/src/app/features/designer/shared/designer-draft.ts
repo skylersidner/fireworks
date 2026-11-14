@@ -1,8 +1,12 @@
 import { PLAYBACK_MODES, type PlaybackMode } from '../../../../engine/model/enums';
 import { MAX_BREAKS } from '../../../../engine/model/limits';
 import { normalizeQuality, normalizeShell, normalizeSky } from '../../../../engine/model/normalize';
+import { openShell } from '../../../../engine/model/open';
 import type { ShellDocument, SkySettings } from '../../../../engine/model/shell';
 import { readStorage, writeStorage } from '../../../core/browser';
+import { isShareCode } from '../../../core/share-code';
+import type { CreationSource } from '../../../core/creation-save';
+import type { CreationKind } from '../../../core/models';
 
 /** localStorage key of the designer's working draft (plan 2c). Owned by the designer. */
 export const DRAFT_KEY = 'fireworks.draft.v1';
@@ -40,6 +44,11 @@ export interface DisplayModel {
  *
  * `display.mode` is the visitor's mode, never the Manual the OS reduced-motion setting forces at
  * load, and `display.reduceFlashing` is null until the visitor chooses (designer-2c.md §3.5).
+ *
+ * `source` (Phase 5; schema.md §11.2) is the saved record this shell is a working copy of, or null
+ * for fresh work. Only a link load or a successful save sets it. A draft from before Phase 5 has
+ * no `source` and reads as fresh work; a malformed one reads as null too, without discarding the
+ * shell (the worst case is a Save that creates a new record instead of offering Update original).
  */
 export interface DesignerDraft {
   shell: EditableShell;
@@ -47,6 +56,14 @@ export interface DesignerDraft {
   display: DisplaySettings;
   shellDirty: boolean;
   skyDirty: boolean;
+  /**
+   * The shell and sky are exactly what was last saved (phase-5.md §4, F4). Set by a successful
+   * save; cleared by any shell or sky change, a load's included. Fails safe the other way from the
+   * dirty flags: only an explicit `true` reads as saved, so a broken flag never claims the work is
+   * on the server.
+   */
+  saved: boolean;
+  source: CreationSource | null;
 }
 
 export const DEFAULT_DISPLAY: Readonly<DisplaySettings> = {
@@ -57,8 +74,11 @@ export const DEFAULT_DISPLAY: Readonly<DisplaySettings> = {
 };
 
 /**
- * Validates untrusted input into an EditableShell, ordered as plan §3.3 shows a ShellDocument
- * (sky before breaks). A shell without `sky` takes `skyFallback`. Null when normalize rejects it.
+ * Normalizes the designer's own form model into an EditableShell, ordered as plan §3.3 shows a
+ * ShellDocument (sky before breaks). A shell without `sky` takes `skyFallback`. Null when
+ * normalize rejects it. No upgrade: the model is always the current version. Anything from
+ * outside the designer (storage, pasted JSON, the API) goes through `openShell` instead
+ * (schema.md §8.3; designer-structure.spec.ts pins it).
  */
 export function toEditable(input: unknown, skyFallback?: SkySettings): EditableShell | null {
   const result = normalizeShell(input);
@@ -82,8 +102,10 @@ export function editableFrom(shell: ShellDocument, skyFallback?: SkySettings): E
 /**
  * Reads the draft. Anything unreadable falls back silently to null: no key, storage that throws,
  * non-JSON, a non-object, a missing or invalid `shell` (an unknown enum, a future version, 0 or 5
- * breaks). Out-of-range values are clamped by normalize, and a bad display field or tab falls
- * back on its own without discarding the shell.
+ * breaks). The shell goes upgrade → normalize (`openShell`, schema.md §8.3), so a draft written by
+ * an older bundle is upgraded and one from a newer bundle is dropped. Out-of-range values are
+ * clamped by normalize, and a bad display field, tab or `source` falls back on its own without
+ * discarding the shell.
  */
 export function readDraft(storage: Storage | null): DesignerDraft | null {
   const text = readStorage(storage, DRAFT_KEY);
@@ -96,8 +118,38 @@ export function readDraft(storage: Storage | null): DesignerDraft | null {
   }
   const state = readState(raw);
   if (!state || !isRecord(raw)) return null;
-  return { ...state, shellDirty: readFlag(raw, 'shellDirty'), skyDirty: readFlag(raw, 'skyDirty') };
+  return {
+    ...state,
+    shellDirty: readFlag(raw, 'shellDirty'),
+    skyDirty: readFlag(raw, 'skyDirty'),
+    saved: raw['saved'] === true,
+    source: readSource(raw['source'], 'shell'),
+  };
 }
+
+/**
+ * A well-formed `source` of the draft's own `kind`, or null. Every field must be right: a half-valid
+ * source isn't trusted. A shell draft whose source says `show` (only a hand-edited draft) reads as
+ * null, so Save offers a plain create instead of a plan that can't be made (Boo, Phase 5 info).
+ */
+export function readSource(value: unknown, expected: CreationKind): CreationSource | null {
+  if (!isRecord(value)) return null;
+  const { shareCode, kind, isOwner, updatedAt, name } = value;
+  if (!isShareCode(shareCode)) return null;
+  if (kind !== expected) return null;
+  if (typeof isOwner !== 'boolean') return null;
+  if (typeof updatedAt !== 'string' || updatedAt === '') return null;
+  if (updatedAt.length > MAX_UPDATED_AT_LENGTH) return null;
+  // `name` is copy only (Y1), but all-or-nothing like the rest (schema.md §11.2): no deployed
+  // draft ever carried the four-field form.
+  if (typeof name !== 'string' || name.length > MAX_SOURCE_NAME_LENGTH) return null;
+  return { shareCode, kind: expected, isOwner, updatedAt, name };
+}
+
+/** Boo C6: an `updatedAt` token is an ISO timestamp; anything longer than this isn't one. */
+const MAX_UPDATED_AT_LENGTH = 64;
+/** 80 code points (schema.md §6.4) are at most 160 UTF-16 units; more isn't a saved name. */
+const MAX_SOURCE_NAME_LENGTH = 160;
 
 /**
  * Fail safe (acceptance 2c.11): only an explicit `false` is clean; a broken flag reads as dirty, so
@@ -109,10 +161,13 @@ function readFlag(raw: Record<string, unknown>, key: 'shellDirty' | 'skyDirty'):
   return flag !== false;
 }
 
-function readState(raw: unknown): Omit<DesignerDraft, 'shellDirty' | 'skyDirty'> | null {
+function readState(
+  raw: unknown,
+): Omit<DesignerDraft, 'shellDirty' | 'skyDirty' | 'saved' | 'source'> | null {
   if (!isRecord(raw)) return null;
-  const shell = toEditable(raw['shell']);
-  if (!shell) return null;
+  const opened = openShell(raw['shell']);
+  if (!opened.ok) return null;
+  const shell = editableFrom(opened.shell);
 
   const tab = raw['activeBreak'];
   const activeBreak =
@@ -151,6 +206,14 @@ export function serializeDraft(draft: DesignerDraft): string {
     display: { mode, persistence, starBudget, reduceFlashing },
     shellDirty: draft.shellDirty,
     skyDirty: draft.skyDirty,
+    saved: draft.saved,
+    source: draft.source && {
+      shareCode: draft.source.shareCode,
+      kind: draft.source.kind,
+      isOwner: draft.source.isOwner,
+      updatedAt: draft.source.updatedAt,
+      name: draft.source.name,
+    },
   });
 }
 

@@ -13,24 +13,24 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { createDriver, RandomShowDriver } from '../../../../../engine/loop/drivers';
-import { EngineLoop } from '../../../../../engine/loop/engine-loop';
-import type { PlaybackMode } from '../../../../../engine/model/enums';
-import { normalizeQuality, normalizeSky } from '../../../../../engine/model/normalize';
+import { createDriver, RandomShowDriver } from '../../../engine/loop/drivers';
+import { EngineLoop } from '../../../engine/loop/engine-loop';
+import type { PlaybackMode } from '../../../engine/model/enums';
+import { normalizeQuality, normalizeSky } from '../../../engine/model/normalize';
 import {
   DEFAULT_QUALITY,
   type QualitySettings,
   type ShellDocument,
   type SkySettings,
-} from '../../../../../engine/model/shell';
+} from '../../../engine/model/shell';
 import type {
   RendererName,
   StageRenderer,
   StageRendererFactory,
   TrailFormat,
-} from '../../../../../engine/render/stage-renderer';
-import { GROUND, MIN_CLICK_HEIGHT } from '../../../../../engine/sim/constants';
-import { FireworksSim } from '../../../../../engine/sim/simulation';
+} from '../../../engine/render/stage-renderer';
+import { GROUND, MIN_CLICK_HEIGHT } from '../../../engine/sim/constants';
+import { FireworksSim } from '../../../engine/sim/simulation';
 
 export type StageStatus = 'starting' | 'running' | 'failed';
 
@@ -56,7 +56,7 @@ export const STAGE_RENDERER_FACTORY = new InjectionToken<StageRendererFactory>(
   'STAGE_RENDERER_FACTORY',
   {
     factory: () => (host, options) =>
-      import('../../../../../engine/render/pixi-renderer').then((m) =>
+      import('../../../engine/render/pixi-renderer').then((m) =>
         m.createPixiRenderer(host, options),
       ),
   },
@@ -100,6 +100,11 @@ export class FireworksStageComponent {
    * stage keeps rendering. The designer pauses while the flashing notice shows (Skyler 2026-11-13).
    */
   readonly paused = input(false);
+  /**
+   * Whether a click or tap in the sky fires the shell. The player turns it off: it's a viewer, not
+   * a sandbox, and a stray tap on touch shouldn't burst (phase-5.md §8.2).
+   */
+  readonly clickToFire = input(true);
 
   readonly stats = output<StageStats>();
 
@@ -198,7 +203,7 @@ export class FireworksStageComponent {
   }
 
   protected onPointerDown(event: PointerEvent): void {
-    if (!this.stage || this.paused()) return;
+    if (!this.stage || this.paused() || !this.clickToFire()) return;
     const { x, y } = this.stage.screenToWorld(event.clientX, event.clientY);
     if (y < GROUND - MIN_CLICK_HEIGHT) {
       this.loop.fireAt(x, y);

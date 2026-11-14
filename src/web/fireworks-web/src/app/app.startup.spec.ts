@@ -7,7 +7,7 @@ import { BROWSER_STORAGE } from './core/browser';
 import { MeResponse } from './core/models';
 import { NotificationService } from './core/notifications';
 import { SessionService } from './core/session';
-import { STAGE_RENDERER_FACTORY } from './features/designer/shared/fireworks-stage/fireworks-stage';
+import { STAGE_RENDERER_FACTORY } from './shared/fireworks-stage/fireworks-stage';
 import { FakeStageRenderers } from './testing/fake-stage-renderer';
 import { MemoryStorage } from './testing/memory-storage';
 

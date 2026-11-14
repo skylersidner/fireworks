@@ -140,8 +140,14 @@ Because step 5 rejects a non-object `document`, the document walker's own `("", 
 | 404 | a share code that fails the §9 route constraint falls through to the `/api/{**rest}` catch-all (no query); a well-formed unknown or not-owned code is the service's 404 | catch-all: its own empty 404; service: one fixed body for every creation miss, `{ "message": "No creation has that share code." }` (`CreationService.NotFoundMessage`), written by the controller, never from the service's message, so unknown and not-owned are byte-identical (Boo S9). Clients key on the status, not the text |
 | 403 | writes off (`CanWrite && UserId != null` fails), on every write and on `GET api/me/creations` | `{ message }` |
 | 415 | write with a missing or non-JSON `Content-Type` | ProblemDetails (`application/problem+json`, from `[ApiController]`'s client-error mapping; measured), no `errors` |
-| 413 | write body over 256 KiB, or any other body over 64 KiB (§2.5) | ProblemDetails. The service's 413 also sends **`Connection: close`**: the rest of the body is never read, so Kestrel can't reuse the connection, and without the header a pooling client (browsers included) sent its next request on the dead connection and got a reset (Bowser, measured against the real Program) |
+| 413 | write body over 256 KiB, or any other body over 64 KiB (§2.5) | ProblemDetails, with `Connection: close` (below) |
 | 400 | `not-json` and every envelope, document or list-query issue | §2.4 |
+
+**`Connection: close` (Boo F2, as shipped).** It isn't specific to the 413. When a body is over the limit, the server never reads the rest of it, so Kestrel can't reuse the connection and drops it after the response. Without the header, a pooling client (browsers included) sends its next request on the dead connection and gets a reset (measured against the real Program by Boo and Bowser: a 413, and a 403 to a 300 KB body with writes off, each followed by a request on the same connection). Two places set it:
+- **Every `/api` response whose declared `Content-Length` is over the request's `MaxRequestBodySize` when the response starts** (`ApiResponseHeaders.UseFireworksApiResponseHeaders`, `Services/ApiResponseHeaders.cs`, in `OnStarting`). That covers the 403, 415, 429, the catch-all 404 and the 413 alike, whatever the status. The limit is 256 KiB once a write action's `[RequestSizeLimit]` has applied, and Kestrel's 64 KiB global otherwise (`KestrelLimits.GlobalMaxRequestBodyBytes`). So a write rejected before the action runs, such as a 429 from the limiter middleware, closes for a declared body over 64 KiB. That is reasoned from the pipeline order, not measured, and it's harmless: the cost is one extra connection.
+- **The service's own 413** (`HttpCreationRequestBody.ReadAsync`, `Services/Creations/ICreationRequestBody.cs`) sets it whenever the capped read gives up, including a chunked body with no declared length.
+
+Not covered: a **chunked** over-limit body on a path that never reads it (403, 415, 429, 404). It has no declared length, so the middleware can't see it. Browsers send `Content-Length`, so this is Phase 7 hardening (Boo).
 
 Rate limits, `RejectionStatusCode = 429` (the framework default is 503), committed defaults read from `RateLimits:*` configuration so tests can lower them:
 
@@ -418,7 +424,7 @@ These are device or session state. They never appear in a ShellDocument or ShowD
 - `starBudget` and `persistence` (`QualitySettings`, `QUALITY_LIMITS`). Note: `starBudget` changes RNG draws, so two devices play a creation identically only at the same `starBudget` (§13).
 - `reduceFlashing` and every other display setting.
 - Playback `mode` (`loop`, `manual`, `show`; `PLAYBACK_MODES`).
-- Designer state: `activeBreak`, `shellDirty`, `skyDirty`, and the Phase 5 `source` link from a working copy to its saved record (§11). These live in the draft (`fireworks.draft.v1`), never in a document.
+- Designer state: `activeBreak`, `shellDirty`, `skyDirty`, the Phase 5 `saved` flag (design `phase-5.md` §4), and the Phase 5 `source` link from a working copy to its saved record (§11.2). These live in the draft (`fireworks.draft.v1`), never in a document.
 
 ---
 
@@ -477,7 +483,10 @@ A current-version document from the API that needs any adjustment means the C# a
 - **Generation:** `RandomNumberGenerator.GetItems<char>(alphabet, 8)`, never `System.Random` or a `Guid` slice. On a unique-index collision, re-check whether the desired state holds and retry with a new code, up to 5 attempts (`boo-race-guards-check-desired-state.md`), then fail with 500. At this keyspace a retry is an event worth a log line.
 - **Storage:** `share_code varchar(12)` unique (Phase 4), which leaves room to lengthen codes without a migration, with **`COLLATE "C"` on Postgres** (`UseCollation("C")`, Npgsql only, in the `AddCreations` migration). Equality is ordinal and case-sensitive under any deterministic collation, but **ordering is not**: the compose database's default is `en_US.utf8`, where `'a' < 'B'` (Bowser, measured), so without `"C"` the §2.2.1 `share_code` tiebreak wasn't ordinal. SQLite's `BINARY` already is. Any future `ORDER BY` on a text column that promises ordinal order needs the same collation.
 - **Lookups:** a code the constraint rejects is a 404 (from the `/api/{**rest}` catch-all) with **no database query**; `abcdefgl`, `abcdefgI`, `abcdefgO`, `abcdefg0`, `abcdefg%E2%84%AA`, `abcdefgh%0A` and 7- or 9-character codes all are. A well-formed unknown code is a 404 after exactly one lookup. The client checks the same regex before fetching.
-- A share code is the creation's public identifier and access key. It is never reused after a delete.
+- A share code is the creation's public identifier and access key.
+- **Reuse after a delete is improbable, not prevented** (Yoshi, 2026-11-14, on Boo's Phase 5 info finding). Delete is a hard delete (`CreationRepository.DeleteOwnedAsync`, `ExecuteDeleteAsync`) and nothing remembers a deleted code. The unique index only stops a collision with a **live** row. A new code matches one of `D` deleted codes with probability `D / 58⁸`: about 8 × 10⁻¹¹ per new creation at 10,000 deletes, and about 8 × 10⁻⁹ at a million. If it ever happened, an old link would play the new creation. It would grant nothing: writes are owner-filtered (§10), so the old link's holder can read only what any share-link holder can.
+  - **No deleted-codes table.** Keeping one means a table that only grows, a second uniqueness check on every create and remix, and a takedown (plan Phase 7 runbook) that leaves the code behind. That buys nothing measurable at this keyspace.
+  - **Trigger to add one** (`deleted_share_codes`, checked during generation; Bowser's work if it comes): when total deletes pass **10⁷** (about a 1-in-13-million chance per new creation), or **before any change that shortens codes or narrows the alphabet**, whichever comes first. Lengthening codes, which `varchar(12)` allows, pushes the trigger out instead.
 
 ---
 
@@ -487,7 +496,7 @@ A current-version document from the API that needs any adjustment means the C# a
 - **Reads by share code are public**: no identity needed, unlisted, no gallery (OQ4).
 - **Writes are owner-only and gated by `CanWrite`.** Every create, update, delete and remix path checks `CanWrite && UserId != null` first and returns `Forbidden` (403) when that fails; then update and delete filter on `share_code AND owner_user_id` in one predicate, and a creation the user doesn't own is **404**, so a non-owner can't tell "exists" from "doesn't". Remix needs `CanWrite` but not ownership of the source.
 - **"My creations" follows the write switch**: `GET api/me/creations` returns 403 when `CanWrite` is false, the same gate as the writes (`yoshi-phase1-plan-followups.md`).
-- **Client:** nothing when `!canWrite`. Otherwise the Save rule in §11: a working copy of an owned record offers "Update original" (PUT) or "Save as new" (remix); anything else saves as new. Before Phase 8 every visitor is the default user, so `isOwner` is always true in the running app (§11.5).
+- **Client:** no Save, no save bar and no My creations when `!canWrite`. The player's **Remix** still shows (Skyler, 2026-11-14): it opens a working copy the visitor can edit and play but not save (§11.1). Otherwise the Save rule in §11: a working copy of an owned record offers "Update original" (PUT) or "Save as new" (remix); anything else saves as new. Before Phase 8 every visitor is the default user, so `isOwner` is always true in the running app (§11.5).
 - **Phase 8 needs no schema change.** Replace the `ICurrentUser` registration with a claims-based one, add a `CanWrite` authorization policy on top of the service gate, and add `external_provider`/`external_subject` to `users` (`User.cs` already describes that migration). `owner_user_id`, the documents, the envelope and this file stay as they are. An anonymous visitor then has `UserId == null`, so `isOwner` is false and `canWrite` is false. What happens to creations saved as the default user during test windows is a Phase 8 question (for example, a runbook statement that reassigns them to Skyler's account).
 
 ---
@@ -503,9 +512,9 @@ Skyler, 2026-11-13 (L1–L3, §14):
 
 | Link | Does |
 |---|---|
-| `/s/:code` | The player. Plays the creation, never edits it. Overlay: the name and **Remix**. Share always copies this link. |
+| `/s/:code` | The player. Plays the creation, never edits it. Overlay: the name and **Remix**. Share always copies this link. No "Remixed from" before Phase 8 (§11.5). |
 | `/c/:code` | **The only link that opens a creation for editing**, always as a working copy. Dispatches on the envelope's `kind`: a shell opens in the designer at `/`, a show in the Show Builder (Phase 6). |
-| Player **Remix** | Navigates to `/c/:code`. It makes no API call; the remix happens only if and when the visitor saves (§11.4). |
+| Player **Remix** | **Always shown, whatever `canWrite` is** (Skyler, 2026-11-14); only Save follows `canWrite` (§10). Navigates to `/c/:code`. It makes no API call; the remix happens only if and when the visitor saves (§11.4). With writes off, the working copy can be edited and played but not saved. |
 | My creations **Open** | `/c/:code`. |
 
 There is no `/shows/:code/edit` and no edit-in-place route for either kind. The Show Builder lives at its own route (plan Phase 6) and holds its working copy in its own draft.
@@ -516,16 +525,25 @@ There is no `/shows/:code/edit` and no edit-in-place route for either kind. The 
 
 - **Built from exactly the saved settings:** GET → upgrade → normalize → `editableFrom(shell, DEFAULT_SKY)`. **The fallback sky is `DEFAULT_SKY`, not the visitor's current sky**, so the copy plays the way the share link plays. A saved shell without `sky` then gains an explicit `{160, 0}` when it's saved back. That plays the same and is accepted. A show has a required `sky`, so it has no fallback.
 - **It loads dirty** (L1): `shellDirty` and `skyDirty` are both set, so a preset, an Apply or another link right after loading one asks first. This is the one load that sets dirty. It doesn't break "app-made changes never set dirty", because the visitor chose to open the link.
-- **The draft remembers its `source`:** `{ shareCode, kind, isOwner, updatedAt } | null`, client state only (§7). A link load sets it, and a successful save sets it to the record just written (§11.4). Nothing else changes it: a preset or an Apply on a working copy is an edit to that copy, so "Update original" would save it. A fresh designer with no link and no save has `source: null`.
-- `isOwner` in `source` is a snapshot that picks which Save choice to show. The server decides: a PUT on a record the user no longer owns, or one that was deleted, is 404 (§10). The client then offers "Save as new" (copy: F10, §15).
-- **A 404 from PUT or from `…/remix` means the source is gone to this user, so the fallback "Save as new" is a plain `POST api/creations`, never `…/remix`.** Remix looks the source up too (§2.6 step 6), so a remix of a deleted source is the same 404 and retrying it would loop. Nothing is lost by the plain POST: a remix of a deleted source would have `remixedFrom: null` anyway (§2.1). After the fallback, `source` is the new record.
+- **The draft remembers its `source`:** `{ shareCode, kind, isOwner, updatedAt, name } | null`, client state only (§7). Every field is copied from the `CreationResponse` that set it. `name` is the server's name (so a blank name reads "Custom", §6.4); it lets copy name the original (design `phase-5.md` §2.2, §6 404a; Rosalina Y1). It is rendered as text, never markup (Boo B1). `readSource` stays all-or-nothing: a source without a string `name` reads as `null`. That is safe because no deployed draft ever carried the four-field form.
+- **Three things change `source`, and nothing else does:**
+  1. **A link load** sets it to the loaded record.
+  2. **A successful save**, including a fallback POST, sets it to the record just written (§11.4). Update original keeps the share code and refreshes `updatedAt` and `name`.
+  3. **A 404 from PUT or from `…/remix` sets it to `null`** (Rosalina Y2). The source is gone to this user. Keeping it would offer an Update original that can't succeed, and a Share link that plays nothing.
+
+  A preset or an Apply on a working copy is an edit to that copy, so "Update original" would save it. A fresh designer with no link and no save has `source: null`.
+- `isOwner` in `source` is a snapshot that picks which Save choice to show. The server decides: a PUT on a record the user no longer owns, or one that was deleted, is 404 (§10).
+- **After a 404 the fallback is always a plain `POST api/creations`, never `…/remix`.** Remix looks the source up too (§2.6 step 6), so a remix of a deleted source is the same 404 and retrying it would loop. Nothing is lost by the plain POST: a remix of a deleted source would have `remixedFrom: null` anyway (§2.1). **Who triggers the POST depends on what was asked** (design `phase-5.md` §6):
+  - **404 on Update original (PUT): ask.** `source` becomes `null`, nothing is saved, and the status block offers **Save as new**, which sends the plain POST. The bar now shows plain Save, because `source` is null (§11.4 row 1), so either button sends the same POST. Why ask: the visitor asked to change an existing link, and a new link is a different outcome they should choose.
+  - **404 on Save as new, or on a non-owner Save (remix): fall back by itself.** `source` becomes `null`, and the client sends one plain POST. On success, `source` is the new record and the result is a success with a caveat ("the two aren't linked"). If the POST fails, `source` stays `null` and that failure's own row applies. Why no question: the visitor already asked for a new record, and a plain POST gives them exactly that.
+  - Either way the call ledger has at most two writes and never two remixes (`luigi-phase5-client-foundation.md` point 4).
 
 ### 11.3 Opening a link over unsaved changes (L3)
 
 - Ask first **only when `shellDirty || skyDirty`**. Display settings and the active tab never count, as for presets and Apply.
 - **Cancel:** the current draft stays as it was, the link isn't loaded, and the visitor lands in the editor.
-- **Confirm:** the working copy replaces the draft; the old draft isn't kept.
-- Because a loaded copy is dirty (§11.2), opening a second link straight after the first also asks. Whether Save clears the dirty flags, which would change that, is F4 (§15).
+- **Confirm:** the working copy replaces the shell, the sky, the active tab (Break 1), the dirty flags (both set, `saved` false) and `source`. The old shell isn't kept. **`display` is kept** (Skyler, 2026-11-14): display and flashing preferences are device-wide, as they are for a preset, so a link can't undo a Reduce flashing choice. The same holds when no confirm is needed.
+- Because a loaded copy is dirty (§11.2), opening a second link straight after the first also asks. Under Rosalina's F4 ruling (design `phase-5.md` §4, pending Luigi's confirmation in §4.3), it doesn't after a successful save: a save clears both dirty flags, and a separate `saved` flag drives the "Not saved" indicator. If Luigi brings a counter-proposal, this line follows the outcome.
 - A show link applies the same rule to the Show Builder's own dirty state (Phase 6).
 
 ### 11.4 Save (L2)
@@ -535,7 +553,7 @@ Only when `canWrite` (§10). Every save sends the copy as the document, after `v
 | Working copy | Save offers | Request | Afterward |
 |---|---|---|---|
 | `source` is `null` (fresh work, never saved) | **Save** | `POST api/creations` | a new record; `source` = it, `isOwner: true` |
-| `source.isOwner` is true | **Update original** | `PUT api/creations/{source.shareCode}` | same share code; its share link plays the change; `source.updatedAt` refreshed |
+| `source.isOwner` is true | **Update original** | `PUT api/creations/{source.shareCode}` | same share code; its share link plays the change; `source.updatedAt` and `source.name` refreshed. On a 404: `source` = `null`, then ask (§11.2) |
 | | **Save as new** | `POST api/creations/{source.shareCode}/remix` | a new record with `remixedFrom` = the source; `source` = the new record |
 | `source.isOwner` is false | **Save** (no choice) | `POST api/creations/{source.shareCode}/remix` | the same as Save as new |
 
@@ -548,8 +566,9 @@ Only when `canWrite` (§10). Every save sends the copy as the document, after `v
 
 Every visitor is the default user, so `isOwner` is always true (§10).
 
-- **Observable:** a first Save is a POST with a new share code; **Update original** is a PUT, and the share link plays the change; **Save as new** creates a new share code whose GET has `remixedFrom` set to the original (the visitor owns the remix, so it's visible); the player's Remix opens a dirty working copy; opening a link over unsaved changes asks first, and Cancel keeps the draft; a reload after a link load keeps the edited copy.
+- **Observable:** a first Save is a POST with a new share code; **Update original** is a PUT, and the share link plays the change; **Save as new** creates a new share code whose GET response has `remixedFrom` set to the original (the visitor owns the remix, so the API returns it; checked in the network response, because the UI doesn't show it, below); the player's Remix opens a dirty working copy, with writes on or off; opening a link over unsaved changes asks first, and Cancel keeps the draft; a reload after a link load keeps the edited copy.
 - **Not observable:** the non-owner row of §11.4 (Save with no choice, straight to remix), and `remixedFrom: null` for a non-owner. The server side is covered by Phase 4's two-user service tests. The client side needs a Phase 5 spec with a stubbed `isOwner: false` response that asserts the complete call ledger: exactly one `POST …/remix`, no PUT (`toad-exact-call-ledger-over-positive-assertions.md`).
+- **"Remixed from" is not rendered before Phase 8** (Skyler, 2026-11-14; Boo C10). The API still returns `remixedFrom` under the §2.1 rule, which is the accepted interim exposure, but no page shows it: not the player, My creations, or the designer. Rendering it would put the original's unlisted code in front of every viewer of every remix link. After Phase 8 it may render only when `isAuthenticated && isOwner`. This is a client rule, so §2.1 and the response shape don't change. It supersedes the "only when `isOwner` and `remixedFrom` is set" line in design `phase-5.md` §8.1.
 - **No dev-only second user before Phase 8** (this settles the question plan Phase 5 left to Yoshi and Bowser): the stubbed spec and the two-user service tests cover both sides without new identity code that Phase 8 would have to remove. Trigger to revisit: the first bug in the non-owner path that reaches the running app past those specs.
 
 ---
@@ -852,6 +871,14 @@ The server has no lenient mode, so these live in `normalize.spec.ts`, not in `sc
 | L4 | Does a show stop at `duration`? (Peach Q3, F7) | **No. A show runs until the last particle fades.** `duration` is the launch window only; a cue at `t == duration` is valid and its burst is seen. | §4, §4.5, §6.2 rule 9 |
 | S13 | Before Phase 8 every visitor is the owner; gate `remixedFrom` on `isOwner && CanWrite`? (Boo S13) | **No. Keep the original rule:** visible when `isOwner`, no `CanWrite` term. Every visitor sees a remix's source code until Phase 8; accepted knowingly. | §2.1 |
 
+**Phase 5 rulings (Skyler, 2026-11-14)** that touch this document:
+
+| Ruling | Where it lands |
+|---|---|
+| The player's Remix always shows, whatever `canWrite` is; only Save follows `canWrite`. | §10, §11.1 |
+| Display and flashing preferences are device-wide: a link load keeps `display` and replaces the shell, sky, tab, dirty flags and `source`. | §11.3 |
+| "Remixed from" is not rendered before Phase 8; after Phase 8, only when `isAuthenticated && isOwner`. | §11.5 |
+
 Boo's Phase 4 security review settled the size limits (§2.5); the `remixedFrom` exposure is accepted above, and Boo's Phase 5 share-link review still covers rendering of names and copy.
 
 ---
@@ -871,7 +898,7 @@ None of these are made by this document; each names its owner. F-numbers are Pea
 - **Toad:** the S25 cap is a harness test in code, not a fixture (the server-only format holds a complete multiset): 100 distinct unknown root keys on a valid shell give 100 issues and `truncated: false`; 101 give 100 issues, each a member of the full multiset, and `truncated: true`. Negative control: remove the cap and the 101 case returns 101. Any test that asserts the 400 body's exact key set includes `truncated`.
 
 **Phase 5:**
-- **Luigi:** send compact JSON on every save (§2.5); read `truncated` on a 400 (§2.4); wire `upgradeShell` into draft restore and JSON Apply (§8.3; Peach F6, F14); `/c/:code` as load-then-redirect, the draft `source`, the §11.3 confirm and the §11.4 Save table; the stubbed non-owner call-ledger spec (§11.5).
+- **Luigi:** send compact JSON on every save (§2.5); read `truncated` on a 400 (§2.4); wire `upgradeShell` into draft restore and JSON Apply (§8.3; Peach F6, F14); `/c/:code` as load-then-redirect, the draft `source` (with `name`, and set to `null` by a 404 from PUT or remix, §11.2), the §11.3 confirm (keeping `display`) and the §11.4 Save table; the stubbed non-owner call-ledger spec (§11.5).
 - **Rosalina (design-review):** copy for the new codes in `issueReason`; whether `cleaned` appears in the Apply note; `missing` on an optional field meaning "remove the `null`" (§6.2 rule 13); how the Update original / Save as new choice is presented (§11.4).
 - **F10, Rosalina (design-review brief):** copy for Save-time failures, none of which `issueReason` covers: a 400 on Save (a stale tab can reach it, §8.1), 403 (writes switched off mid-session), 404 on Update original (the original was deleted or isn't yours; offer Save as new, §11.2), 413 (possibly status 0 through Railway's edge, §2.5), 429 (rate limited), a 400 list with `truncated: true`, and the upgrade error "newer than this app; reload" (§8.2).
 - **F4, Rosalina and Luigi:** whether a successful Save clears `shellDirty`/`skyDirty`, and what the Phase 5 dirty indicator means (the flags today mean "changed since the last preset, Apply or link load", the replace-confirm rule). L1 settles the load half: a link load sets both (§11.2). Peach writes the criterion once they decide.

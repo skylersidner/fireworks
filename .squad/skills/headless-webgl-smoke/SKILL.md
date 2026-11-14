@@ -67,3 +67,18 @@ Record `page.on('request')` for `/api` and `/health`, then sort. Phase 1 cold st
 - Headless Chrome doesn't throttle background tabs, and CDP `Page.setWebLifecycleState: frozen` doesn't stop rAF. To test the 0.1 s dt clamp, stall the main thread instead: `page.evaluate(() => { const t = performance.now(); while (performance.now() - t < 10000) {} })`.
 - To compare visuals between the prototype and the port, use matched sim times, not equal wall-clock times. From a fresh page, the port runs about 0.4 s ahead.
 - Check `uptime` first. SwiftShader runs at about 13 fps here, and a load average above about 8 stretches every timing.
+
+## Share links, Save and `/mine` (Phase 5, 2026-11-14, Luigi)
+- Script: `scratchpad/smoke/luigi-p5-donewhen.mjs [base]` against `ng serve` (4200, proxied to the API on 5180). It walks the five Done-when steps and deletes the two records it creates.
+- **The dev server is a dev build, so `window.ng` exists.** Read engine state without a HUD: `ng.getComponent(document.querySelector('app-fireworks-stage')).loop.launchCount` and `.sim.particles.n`. The player has no HUD, so this is the only way to judge "it plays" and "the notice holds" there.
+- Use one browser context per visitor. A second `browser.newContext()` is the "private window": empty storage, so the flashing notice shows.
+- Record the ledger for `/api/creations` and `/api/me/` only, and reset it right before the action under test. `api/me` and `/health/live` fire on every cold load.
+- Clicking Save leaves the draft write 300 ms behind (debounce). Poll the parsed draft for the expected `source` or `saved`, and never sleep a fixed time.
+- `/c/:code` replaces its own history entry, so `page.waitForURL(base + '/')` is the signal that the working copy was handed over.
+- The compose Postgres service isn't called `db`: `docker compose up -d db` prints "no such service". The `fireworks-postgres` container on 5433 is the database.
+
+## Round trip and rate limits (Phase 5 review, 2026-11-14, Toad)
+- Judge a saved document by **parsed equality** (`util.isDeepStrictEqual(get.document, sent)`), never text: jsonb returns keys reordered. Pair it with a negative control (one changed leaf must compare unequal).
+- Capture what the app really sent with `page.waitForRequest(...).postData()`, not what you think it sent. Compare it to the draft's `shell` too: equal means nothing from the draft leaked into the document.
+- The API's write limit is 20 per minute in a fixed window (300 per day), and DELETEs count. A run with more than about 15 writes needs a 65 s gap between batches. Clean up by listing `GET api/me/creations?pageSize=100` filtered on `updatedAt >= <run start>` (scratchpad `toad-p5/cleanup.mjs`, with `--dry` first).
+- Poll the draft after Save. Even 400 ms after an edit plus the POST round trip, `fireworks.draft.v1` can still be null in a fresh context.

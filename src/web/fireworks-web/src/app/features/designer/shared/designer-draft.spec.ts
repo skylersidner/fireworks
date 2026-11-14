@@ -4,9 +4,11 @@ import {
   DRAFT_KEY,
   editableFrom,
   readDraft,
+  readSource,
   serializeDraft,
   type DesignerDraft,
 } from './designer-draft';
+import type { CreationSource } from '../../../core/creation-save';
 
 function stored(text: string): MemoryStorage {
   const storage = new MemoryStorage();
@@ -21,6 +23,8 @@ function draft(overrides: Partial<DesignerDraft> = {}): DesignerDraft {
     display: { mode: 'show' as const, persistence: 0.5, starBudget: 0.6, reduceFlashing: true },
     shellDirty: true,
     skyDirty: true,
+    saved: false,
+    source: null,
     ...overrides,
   };
 }
@@ -132,7 +136,15 @@ describe('designer draft (acceptance 2c.9–2c.12)', () => {
     const d = readDraft(stored(text))!;
     expect(d.shell.name).toBe('Triple Break');
     expect(d).toMatchObject({ shellDirty: true, skyDirty: true });
-    expect(Object.keys(d)).toEqual(['shell', 'activeBreak', 'display', 'shellDirty', 'skyDirty']);
+    expect(Object.keys(d)).toEqual([
+      'shell',
+      'activeBreak',
+      'display',
+      'shellDirty',
+      'skyDirty',
+      'saved',
+      'source',
+    ]);
   });
 
   it('a draft shell without sky restores with the default sky', () => {
@@ -148,6 +160,8 @@ describe('designer draft (acceptance 2c.9–2c.12)', () => {
       'display',
       'shellDirty',
       'skyDirty',
+      'saved',
+      'source',
     ]);
     expect(Object.keys(JSON.parse(text).shell)).toEqual([
       'version',
@@ -157,5 +171,80 @@ describe('designer draft (acceptance 2c.9–2c.12)', () => {
       'sky',
       'breaks',
     ]);
+  });
+});
+
+describe('designer draft source (Phase 5; schema.md §11.2)', () => {
+  const SOURCE: CreationSource = {
+    shareCode: 'Ab3dEf7h',
+    kind: 'shell',
+    isOwner: true,
+    updatedAt: '2026-11-13T21:20:26.65593+00:00',
+    name: 'Willow 2',
+  };
+
+  it('round-trips a working copy source exactly, updatedAt as the same string', () => {
+    const d = draft({ source: SOURCE });
+    const restored = readDraft(stored(serializeDraft(d)))!;
+    expect(restored).toEqual(d);
+    expect(restored.source?.updatedAt).toBe(SOURCE.updatedAt);
+  });
+
+  it('serializes source fields in a fixed order and nothing else from the object', () => {
+    const extra = { ...SOURCE, remixedFrom: 'Zz9yXw8v', document: {} } as CreationSource;
+    const text = serializeDraft(draft({ source: extra }));
+    expect(Object.keys(JSON.parse(text).source)).toEqual([
+      'shareCode',
+      'kind',
+      'isOwner',
+      'updatedAt',
+      'name',
+    ]);
+  });
+
+  it('an old draft with no source restores as fresh work, shell and flags kept', () => {
+    const { source: _s, ...rest } = JSON.parse(serializeDraft(draft({ shellDirty: false })));
+    const d = readDraft(stored(JSON.stringify(rest)))!;
+    expect(d.source).toBeNull();
+    expect(d.shell.name).toBe('Triple Break');
+    expect(d).toMatchObject({ shellDirty: false, skyDirty: true, activeBreak: 2 });
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'Ab3dEf7h'],
+    ['an array', [SOURCE]],
+    ['a malformed share code (l)', { ...SOURCE, shareCode: 'abcdefgl' }],
+    ['a 9-character share code', { ...SOURCE, shareCode: 'Ab3dEf7hJ' }],
+    ['an unknown kind', { ...SOURCE, kind: 'Shell' }],
+    ['a string isOwner', { ...SOURCE, isOwner: 'true' }],
+    ['a missing isOwner', { shareCode: SOURCE.shareCode, kind: 'shell', updatedAt: 'x' }],
+    ['an empty updatedAt', { ...SOURCE, updatedAt: '' }],
+    ['a numeric updatedAt', { ...SOURCE, updatedAt: 1763068826 }],
+    ['a 10 KB updatedAt (Boo C6)', { ...SOURCE, updatedAt: 'x'.repeat(10_240) }],
+    ['kind admin (Boo C6)', { ...SOURCE, kind: 'admin' }],
+    [
+      'kind show in a shell draft (a tampered draft; Boo, Phase 5 info)',
+      { ...SOURCE, kind: 'show' },
+    ],
+    ['a missing name (schema.md §11.2: all-or-nothing)', { ...SOURCE, name: undefined }],
+    ['a numeric name', { ...SOURCE, name: 7 }],
+    ['an over-long name', { ...SOURCE, name: 'n'.repeat(161) }],
+  ])('a source that is %s reads as null without discarding the shell', (_name, source) => {
+    const text = JSON.stringify({ ...JSON.parse(serializeDraft(draft())), source });
+    const d = readDraft(stored(text))!;
+    expect(d.shell.name).toBe('Triple Break');
+    expect(d.source).toBeNull();
+  });
+
+  it('readSource keeps exactly the five fields, for the kind asked for only', () => {
+    expect(readSource({ ...SOURCE, extra: 1 }, 'shell')).toEqual(SOURCE);
+    expect(readSource({ ...SOURCE, kind: 'show', isOwner: false }, 'show')).toEqual({
+      ...SOURCE,
+      kind: 'show',
+      isOwner: false,
+    });
+    expect(readSource({ ...SOURCE, kind: 'show' }, 'shell')).toBeNull();
+    expect(readSource(SOURCE, 'show')).toBeNull();
   });
 });

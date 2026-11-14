@@ -39,12 +39,14 @@
 | **A race guard checks whether the desired state holds,** not a vendor error code. | `boo-race-guards-check-desired-state.md` |
 | **Name methods for what they do.** The same HTTP shape can mean opposite things; check the request record. | `bowser-name-verbs-for-their-semantics.md` |
 | **Membership is its own resource,** never a collection inside an upsert body. | `yoshi-membership-is-a-resource.md` |
+| **Phase 5 client security: text-only rendering app-wide, share-code regex before any URL, isOwner never authorizes, remixedFrom not rendered, test-mode banner.** | `boo-phase5-security-requirements.md` · `boo-phase5-security-verification.md` |
 
 ## 4. UX and copy
 
 | Decision | Record |
 |---|---|
 | **A write that partly fails is a success with a caveat,** never an error. | `rosalina-partial-failure-is-success-with-caveat.md` |
+| **Phase 5 save/share/player UX:** Save clears both dirty flags and a separate saved flag drives "Not saved"; the owner chooses with two visible buttons; save failures go in an inline status block; the player opens paused under reduced motion. | `rosalina-phase-5-design-review.md` · `docs/fireworks-app/design/phase-5.md` |
 
 ## 5. Project decisions (fireworks)
 
@@ -70,3 +72,7 @@
 | **Save on a working copy:** an owned source offers "Update original" (PUT) or "Save as new" (remix); otherwise Save creates a new creation with `remixedFrom` set. Before Phase 8 `isOwner` is always true. | schema.md §11.4–11.5 |
 | **Opening a link over unsaved changes asks first,** only when the shell or sky is dirty (same rule as Apply with `sky`). | schema.md §11.3 |
 | **A show runs until the last particle fades.** `duration` is the launch window only; a cue at `t == duration` is valid and its burst is seen. | schema.md §4.5 |
+| **Remix always shows on the player,** whatever `canWrite` is; only Save is hidden when writes are off (Skyler, 2026-11-14). | plan Phase 5 · `docs/fireworks-app/acceptance/phase-5.md` |
+| **Display and flashing preferences are device-wide:** one flashing-notice dismissal and one Reduce flashing choice shared by the designer and the player; a link load keeps `display` and replaces shell, sky, tab, dirty flags and `source` (Skyler, 2026-11-14). | plan Phase 5 · `docs/fireworks-app/design/phase-5.md` |
+| **"Remixed from" is not rendered before Phase 8;** after Phase 8 only when `isAuthenticated && isOwner` (Skyler, 2026-11-14). | `records/boo-phase5-security-requirements.md` C10 |
+| **A test-mode banner is required in Phase 5** whenever `canWrite && !isAuthenticated` (Skyler, 2026-11-14). | `records/boo-phase5-security-requirements.md` C17 |

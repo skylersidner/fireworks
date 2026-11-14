@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 5 mockup</title>
+<!-- Static mockup for docs/fireworks-app/design/phase-5.md. Tokens are the 2c values
+     (src/web/fireworks-web/src/styles.css). Not app code: Luigi builds from the spec, this only
+     shows proportions and states. -->
+<style>
+  :root {
+    --surface-sunken:#04060c; --surface:#0d111c; --surface-raised:#141a29;
+    --border:#232b40; --border-hover:#3a4562; --border-control:#56627f;
+    --text:#e6e9f2; --muted:#8b93a8; --accent:#ffb347; --accent2:#ff7a59; --on-accent:#1a0d00;
+    --danger:#ff9a8a; --success:#7ddc9f;
+    --success-surface:#12301f; --on-success-surface:#c9f2d7;
+    --danger-surface:#3a1414; --on-danger-surface:#ffd2ca;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--surface-sunken); color:var(--text); font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; padding:24px 16px 64px; }
+  h1.doc { font-size:15px; margin:0 0 4px; }
+  p.doc { color:var(--muted); margin:0 0 24px; font-size:12px; }
+  .label { color:var(--muted); font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; margin:28px 0 8px; }
+  .row { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
+  .panel { width:340px; max-width:100%; background:var(--surface); border:1px solid var(--border); padding:14px 14px 8px; }
+  .panel h2 { font-size:15px; margin:0 0 2px; letter-spacing:.02em; font-weight:400; }
+  .hrow { display:flex; justify-content:space-between; align-items:baseline; }
+  .hrow a { font-size:12px; color:var(--muted); text-decoration:none; }
+  .sub { font-size:12px; color:var(--muted); margin:0 0 12px; }
+  .bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:4px; }
+  .ind { margin-left:auto; font-size:11px; color:var(--muted); }
+  .ind.ok { color:var(--success); }
+  .note { font-size:11px; color:var(--muted); margin:4px 0 10px; }
+  .section { border-top:1px solid var(--border); padding-top:12px; font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; font-weight:600; }
+  .btn { font:inherit; cursor:pointer; border-radius:6px; border:1px solid var(--border); background:var(--surface-raised); color:var(--text); padding:6px 10px; }
+  .btn.sm { padding:2px 8px; font-size:12px; }
+  .btn.save { border-color:var(--accent); color:var(--accent); }
+  .btn.primary { border:0; background:linear-gradient(180deg,var(--accent),var(--accent2)); color:var(--on-accent); font-weight:600; }
+  .btn.danger { background:var(--danger-surface); color:var(--on-danger-surface); border-color:var(--danger); font-weight:600; }
+  .btn[aria-disabled="true"], .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .status { border-radius:6px; border:1px solid var(--border); padding:8px 12px; margin-bottom:12px; font-size:12px; }
+  .status.err { background:var(--danger-surface); color:var(--on-danger-surface); }
+  .status.ok { background:var(--success-surface); color:var(--on-success-surface); }
+  .status .acts { display:flex; gap:8px; margin-top:8px; align-items:center; }
+  .linkbtn { background:none; border:0; color:inherit; text-decoration:underline; font:inherit; cursor:pointer; padding:0; margin-left:auto; }
+  .stage { position:relative; width:640px; max-width:100%; height:360px; background:var(--surface-sunken); border:1px solid var(--border); overflow:hidden; }
+  .skyline { position:absolute; left:0; right:0; bottom:0; height:34px; background:#000;
+    clip-path:polygon(0 60%,6% 60%,6% 20%,11% 20%,11% 55%,18% 55%,18% 0,22% 0,22% 50%,30% 50%,30% 30%,37% 30%,37% 65%,45% 65%,45% 10%,49% 10%,49% 45%,58% 45%,58% 25%,64% 25%,64% 60%,72% 60%,72% 5%,76% 5%,76% 50%,85% 50%,85% 35%,92% 35%,92% 60%,100% 60%,100% 100%,0 100%); }
+  .burst { position:absolute; width:150px; height:150px; border-radius:50%; left:60%; top:22%;
+    background:radial-gradient(circle,rgba(255,201,74,.55) 0 2px,transparent 3px) 0 0/14px 14px; mask:radial-gradient(circle,#000 40%,transparent 70%); -webkit-mask:radial-gradient(circle,#000 40%,transparent 70%); }
+  .topbar { position:absolute; inset:0 0 auto 0; display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:10px 12px 24px; background:linear-gradient(to bottom,rgba(4,6,12,.75),transparent); }
+  .topbar h3 { margin:0; font-size:15px; font-weight:400; text-shadow:0 1px 2px #000; }
+  .topbar .meta { font-size:12px; color:var(--muted); }
+  .topbar .meta a { color:var(--muted); }
+  .ctl { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; align-items:center; }
+  .switch { display:inline-flex; gap:6px; align-items:center; font-size:12px; color:var(--muted); }
+  .track { width:28px; height:16px; border-radius:8px; border:1px solid var(--border-control); background:var(--surface-raised); position:relative; }
+  .track::after { content:""; position:absolute; width:10px; height:10px; border-radius:50%; background:var(--text); top:2px; left:2px; }
+  .notice { position:absolute; left:12px; right:12px; top:50%; transform:translateY(-50%); margin:0 auto; max-width:420px;
+    border-radius:6px; background:var(--surface-raised); border:1px solid var(--border); border-left:3px solid var(--accent);
+    padding:10px 12px; font-size:12px; box-shadow:0 8px 24px rgba(0,0,0,.45); }
+  .notice p { margin:0; }
+  .notice .acts { display:flex; gap:8px; margin-top:10px; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); width:720px; max-width:100%; padding:0; margin:0; list-style:none; }
+  .card { border-radius:8px; background:var(--surface); border:1px solid var(--border); padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .sw { display:flex; gap:6px; }
+  .dot { width:16px; height:16px; border-radius:50%; }
+  .rainbow { background:conic-gradient(red,gold,lime,cyan,blue,magenta,red); box-shadow:0 0 6px #ff5cc8; }
+  .card h4 { margin:0; font-size:13px; font-weight:600; }
+  .card h4 a { color:var(--text); text-decoration:none; }
+  .card .meta { font-size:11px; color:var(--muted); }
+  .card .acts { display:flex; gap:6px; }
+  .nf { width:420px; max-width:100%; border-radius:12px; background:var(--surface); border:1px solid var(--border); padding:20px; }
+  .nf h4 { margin:0 0 6px; font-size:15px; }
+  .nf p { margin:0; color:var(--muted); }
+  .nf .acts { margin-top:16px; display:flex; gap:8px; }
+  .dialog { width:380px; max-width:100%; border-radius:12px; background:var(--surface-raised); border:1px solid var(--border); padding:16px; box-shadow:0 16px 48px rgba(0,0,0,.55); }
+  .dialog h4 { margin:0 0 6px; font-size:15px; }
+  .dialog p { margin:0 0 16px; }
+  .dialog .acts { display:flex; justify-content:flex-end; gap:8px; }
+  .cap { font-size:11px; color:var(--muted); margin-top:6px; max-width:340px; }
+</style>
+</head>
+<body>
+<h1 class="doc">Phase 5 mockup</h1>
+<p class="doc">Static states for docs/fireworks-app/design/phase-5.md. Copy is the spec's; the spec wins where they differ.</p>
+
+<div class="label">Save bar (§2), writes on</div>
+<div class="row">
+  <div>
+    <div class="panel">
+      <div class="hrow"><h2>Fireworks Sandbox</h2><a href="#">My creations</a></div>
+      <p class="sub">Shell designer</p>
+      <div class="bar"><button class="btn save">Save</button><span class="ind">Not saved</span></div>
+      <p class="note">Save to get a share link.</p>
+      <div class="section">Playback</div>
+    </div>
+    <div class="cap">Fresh work, edited. No source, so no Share.</div>
+  </div>
+  <div>
+    <div class="panel">
+      <div class="hrow"><h2>Fireworks Sandbox</h2><a href="#">My creations</a></div>
+      <p class="sub">Shell designer</p>
+      <div class="bar"><button class="btn save">Update original</button><button class="btn save">Save as new</button><button class="btn">Share</button><span class="ind">Not saved</span></div>
+      <p class="note">Update original changes what the share link for “Willow 2” plays. Save as new keeps it and makes a new link.</p>
+      <div class="section">Playback</div>
+    </div>
+    <div class="cap">Owned working copy (every visitor before Phase 8).</div>
+  </div>
+  <div>
+    <div class="panel">
+      <div class="hrow"><h2>Fireworks Sandbox</h2><a href="#">My creations</a></div>
+      <p class="sub">Shell designer</p>
+      <div class="bar"><button class="btn save" disabled>Update original</button><button class="btn save">Save as new</button><button class="btn">Share</button><span class="ind ok">Saved</span></div>
+      <p class="note">Update original changes what the share link for “Willow 2” plays. Save as new keeps it and makes a new link.</p>
+      <div class="section">Playback</div>
+    </div>
+    <div class="cap">Just saved. Update original disabled until the next change.</div>
+  </div>
+</div>
+
+<div class="label">Status block (§6)</div>
+<div class="row">
+  <div class="panel">
+    <div class="status err" role="alert">Couldn't update “Willow 2”: the original was deleted or is no longer yours. Nothing was saved. Save as new to keep your shell with a new share link.
+      <div class="acts"><button class="btn sm">Save as new</button><button class="linkbtn" aria-label="Dismiss message">Dismiss</button></div></div>
+    <div class="bar"><button class="btn save">Save</button><span class="ind">Not saved</span></div>
+    <p class="note">Save to get a share link.</p>
+  </div>
+  <div class="panel">
+    <div class="status ok" role="status">Saved “Willow 3” as a new creation. The original it came from was deleted, so the two aren't linked.
+      <div class="acts"><button class="linkbtn" aria-label="Dismiss message">Dismiss</button></div></div>
+    <div class="bar"><button class="btn save" disabled>Update original</button><button class="btn save">Save as new</button><button class="btn">Share</button><span class="ind ok">Saved</span></div>
+  </div>
+</div>
+
+<div class="label">Open a link over shell or sky changes (§7.2)</div>
+<div class="dialog" role="presentation">
+  <h4>Open “Ring of Fire”?</h4>
+  <p>This replaces your current shell, “Willow 2”, including its breaks and sky, with a copy of “Ring of Fire”. Display settings stay as they are.</p>
+  <div class="acts"><button class="btn">Keep editing</button><button class="btn primary">Open copy</button></div>
+</div>
+
+<div class="label">Player (§8), first visit, Reduce flashing off</div>
+<div class="stage">
+  <div class="burst"></div>
+  <div class="topbar">
+    <div><h3>Willow 2</h3><div class="meta"><a href="#">Fireworks Sandbox</a></div></div>
+    <div class="ctl"><button class="btn save">Remix</button><button class="btn" aria-disabled="true">Pause</button><button class="btn" aria-disabled="true">Replay</button><span class="switch">Reduce flashing <span class="track"></span> Off</span></div>
+  </div>
+  <div class="notice" role="region" aria-label="Flashing lights notice">
+    <p><strong>Flashing lights.</strong> “Willow 2” starts when you close this notice. It has bright bursts and strobe effects. If flashing affects you, turn on Reduce flashing first. You can pause at any time.</p>
+    <div class="acts"><button class="btn primary">Turn on Reduce flashing</button><button class="btn">Play</button></div>
+  </div>
+  <div class="skyline"></div>
+</div>
+<div class="cap">The burst is drawn only to show the bar over sky; while the notice shows, the sky is empty.</div>
+
+<div class="label">My creations card and delete (§10)</div>
+<div class="row">
+  <ul class="grid">
+    <li class="card">
+      <div class="sw" role="img" aria-label="Colors: Gold, Red, Rainbow"><span class="dot" style="background:#ffc94a;box-shadow:0 0 6px #ffc94a"></span><span class="dot" style="background:#ff3b30;box-shadow:0 0 6px #ff3b30"></span><span class="dot rainbow"></span></div>
+      <h4><a href="#">Willow 2</a></h4>
+      <div class="meta">Shell · Updated 3 days ago</div>
+      <div class="acts"><a class="btn sm" href="#" style="text-decoration:none">Play</a><button class="btn sm">Share</button><button class="btn sm" aria-label="Delete “Willow 2”">Delete</button></div>
+    </li>
+    <li class="card">
+      <div class="sw" role="img" aria-label="Colors: Cyan, Blue, Silver, White"><span class="dot" style="background:#4de8ff;box-shadow:0 0 6px #4de8ff"></span><span class="dot" style="background:#4a6bff;box-shadow:0 0 6px #4a6bff"></span><span class="dot" style="background:#cfd8ff;box-shadow:0 0 6px #cfd8ff"></span><span class="dot" style="background:#fff;box-shadow:0 0 6px #fff"></span></div>
+      <h4><a href="#">Custom</a></h4>
+      <div class="meta">Shell · Updated just now</div>
+      <div class="acts"><a class="btn sm" href="#" style="text-decoration:none">Play</a><button class="btn sm">Share</button><button class="btn sm">Delete</button></div>
+    </li>
+  </ul>
+  <div class="dialog" role="presentation">
+    <h4>Delete “Willow 2”?</h4>
+    <p>Its share link will stop working for everyone you've sent it to. This can't be undone.</p>
+    <div class="acts"><button class="btn">Keep it</button><button class="btn danger">Delete</button></div>
+  </div>
+</div>
+
+<div class="label">Not found (§9) and unavailable (§10.2)</div>
+<div class="row">
+  <div class="nf"><h4>Nothing plays at this link</h4><p>The link may be mistyped or cut short, or the creation was deleted. Share links are case-sensitive, so check capital letters too.</p><div class="acts"><a class="btn primary" href="#" style="text-decoration:none">Make your own</a></div></div>
+  <div class="nf"><h4>My creations isn't available</h4><p>Saving is turned off on this site right now, so there's nothing to list here. You can still design shells in the designer, and your work is kept in this browser.</p><div class="acts"><a class="btn" href="#" style="text-decoration:none">Go to the designer</a></div></div>
+</div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { Routes } from '@angular/router';
+import { Routes, UrlMatcher, UrlSegment } from '@angular/router';
 
 /**
  * Every page is lazy. pixi.js is in neither the initial bundle nor any page chunk: the fireworks
@@ -6,7 +6,10 @@ import { Routes } from '@angular/router';
  * so Pixi is a separate lazy chunk fetched only when a stage mounts.
  *
  * `/` is the Shell Designer (OQ8). `/status` is the Phase 1 status page, moved there in 2c with no
- * stage (decided 2026-11-12). Unknown paths go to the designer.
+ * stage (decided 2026-11-12). Phase 5 (schema.md §11.1): `/s/:shareCode` is the player,
+ * `/c/:shareCode` opens a working copy and redirects to `/`, `/mine` is My creations. Any other
+ * path under `/s` or `/c` gets the link not-found page (Peach N3); other unknown paths go to the
+ * designer.
  */
 export const routes: Routes = [
   {
@@ -21,5 +24,43 @@ export const routes: Routes = [
     path: 'status',
     loadComponent: () => import('./pages/status/status-page').then((m) => m.StatusPageComponent),
   },
+  {
+    path: 's/:shareCode',
+    loadComponent: () =>
+      import('./features/player/pages/player-page/player-page').then((m) => m.PlayerPageComponent),
+  },
+  {
+    path: 'c/:shareCode',
+    loadComponent: () =>
+      import('./features/designer/pages/open-link-page/open-link-page').then(
+        (m) => m.OpenLinkPageComponent,
+      ),
+  },
+  {
+    path: 'mine',
+    loadComponent: () =>
+      import('./features/mine/pages/mine-page/mine-page').then((m) => m.MinePageComponent),
+  },
+  {
+    matcher: underPrefix('s'),
+    data: { surface: 'player' },
+    loadComponent: linkNotFound,
+  },
+  {
+    matcher: underPrefix('c'),
+    data: { surface: 'copy' },
+    loadComponent: linkNotFound,
+  },
   { path: '**', redirectTo: '' },
 ];
+
+function linkNotFound() {
+  return import('./pages/link-not-found/link-not-found-page').then(
+    (m) => m.LinkNotFoundPageComponent,
+  );
+}
+
+/** Matches `/{prefix}` and anything under it (after the `:shareCode` route had its chance). */
+export function underPrefix(prefix: string): UrlMatcher {
+  return (segments: UrlSegment[]) => (segments[0]?.path === prefix ? { consumed: segments } : null);
+}

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import type { StageStats } from '../fireworks-stage/fireworks-stage';
+import type { StageStats } from '../../../../shared/fireworks-stage/fireworks-stage';
 
 /**
  * Stage HUD (designer-2c.md §3.7; prototype l.526–527). Its input is the stage's throttled
