@@ -128,13 +128,13 @@ export class DesignerPageComponent {
     () => this.launchedHere() || (this.stats()?.seed ?? null) !== null,
   );
 
-  /** Shown while unavailable, and while re-checking after that; gone on recovery (§6.3). */
+  /** Shown while the API or `api/me` is unavailable, and while re-checking after that (§6.3). */
   protected readonly showApiBanner = linkedSignal<string, boolean>({
-    source: this.apiStatus.status,
+    source: this.apiStatus.bannerStatus,
     computation: (status, previous) =>
       status === 'unavailable' || (status === 'checking' && (previous?.value ?? false)),
   });
-  protected readonly apiChecking = computed(() => this.apiStatus.status() === 'checking');
+  protected readonly apiChecking = computed(() => this.apiStatus.bannerStatus() === 'checking');
 
   protected readonly activeBreakFields = computed(
     () => this.store.form.breaks[this.store.activeBreak()],
@@ -235,7 +235,7 @@ export class DesignerPageComponent {
   }
 
   protected retryApi(): void {
-    this.apiStatus.check();
+    this.apiStatus.retry();
   }
 
   protected launch(): void {

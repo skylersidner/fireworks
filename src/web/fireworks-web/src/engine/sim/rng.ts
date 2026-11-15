@@ -25,6 +25,23 @@ export function mulberry32Step(state: Int32Array, i: number): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
+/** A mulberry32 stream whose state is readable and settable (sim snapshots). */
+export interface SeededRng {
+  (): number;
+  /** The whole generator state: one int32. Copy `state[0]` to snapshot, write it to restore. */
+  readonly state: Int32Array;
+}
+
+/**
+ * The same stream as `mulberry32(seed)`, bit for bit, with its state held in an Int32Array slot
+ * (`mulberry32Step`): `ToInt32(seed)` is `seed | 0`, and the slot's store is the same `| 0`.
+ */
+export function mulberry32Stateful(seed: number): SeededRng {
+  const state = new Int32Array(1);
+  state[0] = seed;
+  return Object.assign(() => mulberry32Step(state, 0), { state });
+}
+
 /** Seed of the n-th launch from a base seed (prototype `fire`: `baseSeed + launchCount++ * 7919`). */
 export function launchSeed(n: number, baseSeed: number = BASE_SEED): number {
   return (baseSeed + n * SEED_STRIDE) | 0;

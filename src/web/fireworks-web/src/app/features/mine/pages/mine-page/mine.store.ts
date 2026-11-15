@@ -24,7 +24,7 @@ export type DeleteOutcome = 'deleted' | 'already-deleted' | CreationError;
  * My creations' list state (plan Phase 5; phase-5.md §10). `@Injectable()`, provided by the page.
  * It only fetches when the page asks, and the page asks only once the session has settled with
  * `canWrite` true (Peach N1), so a visit with writes off makes no `api/me/creations` call.
- * Phase 5 lists shells only (coordinator default for Q4).
+ * Both kinds are listed, with no `kind` filter (phase-6.md §12, D4; Peach 6j.1).
  */
 @Injectable()
 export class MineStore {
@@ -43,26 +43,23 @@ export class MineStore {
   load(page: number): void {
     this.request?.unsubscribe();
     this.state.set({ status: 'loading', page });
-    this.request = this.creations
-      .listMine({ page, pageSize: MINE_PAGE_SIZE, kind: 'shell' })
-      .subscribe({
-        next: (result) => {
-          // Every code is checked before any URL is built from it (Boo C4).
-          const items = (result.items ?? []).filter((item) => {
-            if (isShareCode(item.shareCode)) return true;
-            console.warn('My creations: skipped an item with a malformed share code');
-            return false;
-          });
-          this.state.set({
-            status: 'ready',
-            page: result.page,
-            items,
-            totalCount: result.totalCount,
-          });
-        },
-        error: (error: unknown) =>
-          this.state.set({ status: 'error', error: toCreationError(error) }),
-      });
+    this.request = this.creations.listMine({ page, pageSize: MINE_PAGE_SIZE }).subscribe({
+      next: (result) => {
+        // Every code is checked before any URL is built from it (Boo C4).
+        const items = (result.items ?? []).filter((item) => {
+          if (isShareCode(item.shareCode)) return true;
+          console.warn('My creations: skipped an item with a malformed share code');
+          return false;
+        });
+        this.state.set({
+          status: 'ready',
+          page: result.page,
+          items,
+          totalCount: result.totalCount,
+        });
+      },
+      error: (error: unknown) => this.state.set({ status: 'error', error: toCreationError(error) }),
+    });
   }
 
   /** Deletes one creation. A 404 means it's already gone: the desired state holds (success). */

@@ -28,3 +28,13 @@ public sealed record ValidationErrorResponse(string Message, IReadOnlyList<Valid
             ? new(message, issues.Take(MaxIssues).ToList(), true)
             : new(message, issues, false);
 }
+
+/// <summary>
+/// <c>GET api/client-config</c>. Serialized camelCase:
+/// <c>{ playback: { seekBudgetMs, catchingUpDelayMs, checkpointIntervalSeconds, checkpointMemoryMiB } }</c>.
+/// Anonymous; carries no identity data.
+/// </summary>
+public sealed record ClientConfigResponse(ClientPlaybackConfig Playback);
+
+/// <summary>The <c>ClientPlayback</c> section, validated at startup (ranges in <c>ClientPlaybackOptions</c>).</summary>
+public sealed record ClientPlaybackConfig(int SeekBudgetMs, int CatchingUpDelayMs, int CheckpointIntervalSeconds, int CheckpointMemoryMiB);

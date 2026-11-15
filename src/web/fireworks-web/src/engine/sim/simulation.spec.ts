@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { PATTERNS } from '../model/enums';
+import { PRESETS } from '../model/presets';
 import { newShell } from '../model/shell';
 import { CAP, GROUND, STEP } from './constants';
 import { E_CRACKLE, E_CROSSETTE, E_NONE, K_EMBER, K_POP, K_STAR } from './kinds';
 import { ParticleStore } from './particle-store';
 import { directions } from './patterns';
-import { launchSeed, mulberry32 } from './rng';
+import { launchSeed, mulberry32, mulberry32Stateful } from './rng';
 import { FireworksSim } from './simulation';
 
 describe('rng', () => {
@@ -222,5 +223,70 @@ describe('environment (2a.17)', () => {
     const g = globalThis as { document?: unknown; window?: unknown };
     expect(typeof g.document).toBe('undefined');
     expect(typeof g.window).toBe('undefined');
+  });
+});
+
+describe('snapshot and restore (TimelineDriver checkpoints)', () => {
+  function state(sim: FireworksSim) {
+    const P = sim.particles;
+    const cut = (a: ArrayLike<number>) => Array.from(a).slice(0, P.n);
+    return [
+      P.n,
+      sim.shellCount,
+      sim.simTime,
+      cut(P.x),
+      cut(P.y),
+      cut(P.vx),
+      cut(P.age),
+      cut(P.seed),
+      cut(P.emit),
+      cut(P.kind),
+    ];
+  }
+
+  it('mulberry32Stateful is the mulberry32 stream, bit for bit, and its state restores', () => {
+    for (const seed of [0, 1, -1, 2147483647, -2147483648, 20261112]) {
+      const a = mulberry32(seed);
+      const b = mulberry32Stateful(seed);
+      for (let i = 0; i < 1000; i++) expect(b()).toBe(a());
+      const copy = mulberry32Stateful(b.state[0]);
+      for (let i = 0; i < 10; i++) expect(copy()).toBe(b());
+    }
+  });
+
+  it('restore(snapshot()) then N steps equals N steps, mid-burst, with multi-break shells in flight', () => {
+    const run = (cut: boolean) => {
+      const sim = new FireworksSim();
+      PRESETS.forEach((p, i) => sim.launch(p, 100 + i * 100, 300, launchSeed(i)));
+      for (let i = 0; i < 400; i++) sim.step(STEP);
+      if (cut) {
+        const snap = sim.snapshot();
+        for (let i = 0; i < 50; i++) sim.step(STEP); // wander off, then come back
+        sim.launch(PRESETS[2], 50, 50, 9);
+        sim.restore(snap);
+      }
+      for (let i = 0; i < 600; i++) sim.step(STEP);
+      return state(sim);
+    };
+    expect(run(true)).toEqual(run(false));
+  });
+
+  it('a snapshot is a copy: stepping after it never changes it', () => {
+    const sim = new FireworksSim();
+    sim.launch(PRESETS[0], 640, 300, 1);
+    for (let i = 0; i < 350; i++) sim.step(STEP);
+    const snap = sim.snapshot();
+    const before = structuredClone(snap);
+    for (let i = 0; i < 100; i++) sim.step(STEP);
+    expect(snap).toEqual(before);
+  });
+
+  it('refuses a snapshot from a smaller-capacity or different store', () => {
+    const big = new FireworksSim({ capacity: 5000 });
+    big.launch(PRESETS[1], 640, 300, 1);
+    for (let i = 0; i < 400; i++) big.step(STEP);
+    expect(() => new FireworksSim({ capacity: 10 }).restore(big.snapshot())).toThrow(
+      /different store/,
+    );
   });
 });

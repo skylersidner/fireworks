@@ -75,6 +75,39 @@ public sealed class ProgramOnPostgresTests
         }
     }
 
+    [PostgresFact]
+    [Trait("Category", "Postgres")]
+    public async Task Real_program_serves_client_config_with_an_environment_override_over_appsettings()
+    {
+        // Railway sets ClientPlayback__SeekBudgetMs; the other three must still come from the
+        // committed appsettings.json, which only the real Program (content root = its folder) reads.
+        using var webRoot = new TempWebRoot();
+        var baseUrl = $"http://127.0.0.1:{ApiProcess.FreeLoopbackPort()}";
+        await using var api = ApiProcess.Start(new Dictionary<string, string>
+        {
+            ["ASPNETCORE_ENVIRONMENT"] = "Production",
+            ["ASPNETCORE_URLS"] = baseUrl,
+            ["ConnectionStrings__Postgres"] = PostgresFactAttribute.ConnectionString,
+            ["Identity__DefaultUserId"] = TestIdentity.UserId.ToString(),
+            ["ClientPlayback__SeekBudgetMs"] = "40"
+        }, "--webroot", webRoot.Path);
+
+        await api.WaitForOutputAsync("Now listening on", StartTimeout);
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+
+        using var response = await client.GetAsync("/api/client-config");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var playback = json.RootElement.GetProperty("playback");
+        Assert.Equal(40, playback.GetProperty("seekBudgetMs").GetInt32());
+        Assert.Equal(300, playback.GetProperty("catchingUpDelayMs").GetInt32());
+        Assert.Equal(10, playback.GetProperty("checkpointIntervalSeconds").GetInt32());
+        Assert.Equal(64, playback.GetProperty("checkpointMemoryMiB").GetInt32());
+    }
+
     private static async Task<HttpResponseMessage> Named(string fixture, Func<Task<HttpResponseMessage>> send)
     {
         try

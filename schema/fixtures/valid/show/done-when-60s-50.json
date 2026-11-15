@@ -1,0 +1,548 @@
+{
+  "description": "The Phase 6 Done-when show (acceptance/phase-6.md 6b.1): duration 60, 50 cues, one at t 0 and one at t 60, x at 0 and 1, two same-step pairs in reverse ordinal order (c2/c10, c3/c20), cues with and without burstHeight, wind 12, crossette, crackle, glitter, strobe and four-break shells, and one unused shell (s6).",
+  "kind": "show",
+  "document": {
+    "version": 1,
+    "name": "Done-when 60s",
+    "sky": {
+      "gravity": 160,
+      "wind": 12
+    },
+    "duration": 60,
+    "shells": {
+      "s1": {
+        "version": 1,
+        "name": "Crossette",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 28,
+            "speed": 210,
+            "color1": "green",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1,
+            "drag": 1,
+            "size": 1.2,
+            "trail": "tail",
+            "effect": "crossette",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s2": {
+        "version": 1,
+        "name": "Crackling Heart",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "heart",
+            "stars": 90,
+            "speed": 200,
+            "color1": "pink",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1.5,
+            "drag": 1,
+            "size": 1,
+            "trail": "none",
+            "effect": "crackle",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s3": {
+        "version": 1,
+        "name": "Willow",
+        "burstHeight": 0.72,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 110,
+            "speed": 210,
+            "color1": "gold",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 3.6,
+            "drag": 1.5,
+            "size": 0.8,
+            "trail": "glitter",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s4": {
+        "version": 1,
+        "name": "Strobe",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 150,
+            "speed": 220,
+            "color1": "white",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 2.4,
+            "drag": 1.2,
+            "size": 0.8,
+            "trail": "none",
+            "effect": "strobe",
+            "delay": 0.6
+          }
+        ]
+      },
+      "s5": {
+        "version": 1,
+        "name": "Four Break",
+        "burstHeight": 0.55,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 80,
+            "speed": 170,
+            "color1": "blue",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1.2,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          },
+          {
+            "pattern": "ring",
+            "stars": 60,
+            "speed": 210,
+            "color1": "gold",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1.3,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.7
+          },
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 240,
+            "color1": "white",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "crackle",
+            "delay": 0.8
+          },
+          {
+            "pattern": "peony",
+            "stars": 80,
+            "speed": 170,
+            "color1": "purple",
+            "color2": "none",
+            "changeAt": 0.6,
+            "burn": 1.2,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.9
+          }
+        ]
+      },
+      "s6": {
+        "version": 1,
+        "name": "Peony",
+        "burstHeight": 0.65,
+        "angleJitter": 4,
+        "breaks": [
+          {
+            "pattern": "peony",
+            "stars": 120,
+            "speed": 220,
+            "color1": "red",
+            "color2": "gold",
+            "changeAt": 0.65,
+            "burn": 1.6,
+            "drag": 0.9,
+            "size": 1,
+            "trail": "none",
+            "effect": "none",
+            "delay": 0.6
+          }
+        ]
+      }
+    },
+    "cues": [
+      {
+        "id": "c1",
+        "t": 0,
+        "shell": "s1",
+        "x": 0,
+        "seed": -1640531535
+      },
+      {
+        "id": "c2",
+        "t": 11,
+        "shell": "s2",
+        "x": 0.74,
+        "seed": 1013904226
+      },
+      {
+        "id": "c3",
+        "t": 23.3,
+        "shell": "s3",
+        "x": 0.1,
+        "seed": -626627309
+      },
+      {
+        "id": "c4",
+        "t": 3.7,
+        "shell": "s4",
+        "x": 0.47,
+        "seed": 2027808452
+      },
+      {
+        "id": "c5",
+        "t": 4.9,
+        "shell": "s5",
+        "x": 0.84,
+        "seed": 387276917
+      },
+      {
+        "id": "c6",
+        "t": 6.1,
+        "shell": "s1",
+        "x": 0.2,
+        "seed": -1253254618
+      },
+      {
+        "id": "c7",
+        "t": 7.3,
+        "shell": "s2",
+        "x": 0.57,
+        "seed": 1401181143,
+        "burstHeight": 0.6
+      },
+      {
+        "id": "c8",
+        "t": 8.6,
+        "shell": "s3",
+        "x": 0.94,
+        "seed": -239350392
+      },
+      {
+        "id": "c9",
+        "t": 9.8,
+        "shell": "s4",
+        "x": 0.3,
+        "seed": -1879881927
+      },
+      {
+        "id": "c10",
+        "t": 11,
+        "shell": "s5",
+        "x": 0.67,
+        "seed": 774553834
+      },
+      {
+        "id": "c11",
+        "t": 12.2,
+        "shell": "s1",
+        "x": 0.03,
+        "seed": -865977701
+      },
+      {
+        "id": "c12",
+        "t": 13.5,
+        "shell": "s2",
+        "x": 0.4,
+        "seed": 1788458060
+      },
+      {
+        "id": "c13",
+        "t": 14.7,
+        "shell": "s3",
+        "x": 0.77,
+        "seed": 147926525
+      },
+      {
+        "id": "c14",
+        "t": 15.9,
+        "shell": "s4",
+        "x": 0.13,
+        "seed": -1492605010,
+        "burstHeight": 0.7
+      },
+      {
+        "id": "c15",
+        "t": 17.1,
+        "shell": "s5",
+        "x": 0.5,
+        "seed": 1161830751
+      },
+      {
+        "id": "c16",
+        "t": 18.4,
+        "shell": "s1",
+        "x": 0.87,
+        "seed": -478700784
+      },
+      {
+        "id": "c17",
+        "t": 19.6,
+        "shell": "s2",
+        "x": 0.23,
+        "seed": -2119232319
+      },
+      {
+        "id": "c18",
+        "t": 20.8,
+        "shell": "s3",
+        "x": 0.6,
+        "seed": 535203442
+      },
+      {
+        "id": "c19",
+        "t": 22,
+        "shell": "s4",
+        "x": 0.97,
+        "seed": -1105328093
+      },
+      {
+        "id": "c20",
+        "t": 23.3,
+        "shell": "s5",
+        "x": 0.33,
+        "seed": 1549107668
+      },
+      {
+        "id": "c21",
+        "t": 24.5,
+        "shell": "s1",
+        "x": 0.7,
+        "seed": -91423867,
+        "burstHeight": 0.5
+      },
+      {
+        "id": "c22",
+        "t": 25.7,
+        "shell": "s2",
+        "x": 0.06,
+        "seed": -1731955402
+      },
+      {
+        "id": "c23",
+        "t": 26.9,
+        "shell": "s3",
+        "x": 0.43,
+        "seed": 922480359
+      },
+      {
+        "id": "c24",
+        "t": 28.2,
+        "shell": "s4",
+        "x": 0.8,
+        "seed": -718051176
+      },
+      {
+        "id": "c25",
+        "t": 29.4,
+        "shell": "s5",
+        "x": 0.16,
+        "seed": 1936384585
+      },
+      {
+        "id": "c26",
+        "t": 30.6,
+        "shell": "s1",
+        "x": 0.53,
+        "seed": 295853050
+      },
+      {
+        "id": "c27",
+        "t": 31.8,
+        "shell": "s2",
+        "x": 0.9,
+        "seed": -1344678485
+      },
+      {
+        "id": "c28",
+        "t": 33.1,
+        "shell": "s3",
+        "x": 0.26,
+        "seed": 1309757276,
+        "burstHeight": 0.6
+      },
+      {
+        "id": "c29",
+        "t": 34.3,
+        "shell": "s4",
+        "x": 0.63,
+        "seed": -330774259
+      },
+      {
+        "id": "c30",
+        "t": 35.5,
+        "shell": "s5",
+        "x": 1,
+        "seed": -1971305794
+      },
+      {
+        "id": "c31",
+        "t": 36.7,
+        "shell": "s1",
+        "x": 0.36,
+        "seed": 683129967
+      },
+      {
+        "id": "c32",
+        "t": 38,
+        "shell": "s2",
+        "x": 0.73,
+        "seed": -957401568
+      },
+      {
+        "id": "c33",
+        "t": 39.2,
+        "shell": "s3",
+        "x": 0.09,
+        "seed": 1697034193
+      },
+      {
+        "id": "c34",
+        "t": 40.4,
+        "shell": "s4",
+        "x": 0.46,
+        "seed": 56502658
+      },
+      {
+        "id": "c35",
+        "t": 41.6,
+        "shell": "s5",
+        "x": 0.83,
+        "seed": -1584028877,
+        "burstHeight": 0.7
+      },
+      {
+        "id": "c36",
+        "t": 42.9,
+        "shell": "s1",
+        "x": 0.19,
+        "seed": 1070406884
+      },
+      {
+        "id": "c37",
+        "t": 44.1,
+        "shell": "s2",
+        "x": 0.56,
+        "seed": -570124651
+      },
+      {
+        "id": "c38",
+        "t": 45.3,
+        "shell": "s3",
+        "x": 0.93,
+        "seed": 2084311110
+      },
+      {
+        "id": "c39",
+        "t": 46.5,
+        "shell": "s4",
+        "x": 0.29,
+        "seed": 443779575
+      },
+      {
+        "id": "c40",
+        "t": 47.8,
+        "shell": "s5",
+        "x": 0.66,
+        "seed": -1196751960
+      },
+      {
+        "id": "c41",
+        "t": 49,
+        "shell": "s1",
+        "x": 0.02,
+        "seed": 1457683801
+      },
+      {
+        "id": "c42",
+        "t": 50.2,
+        "shell": "s2",
+        "x": 0.39,
+        "seed": -182847734,
+        "burstHeight": 0.5
+      },
+      {
+        "id": "c43",
+        "t": 51.4,
+        "shell": "s3",
+        "x": 0.76,
+        "seed": -1823379269
+      },
+      {
+        "id": "c44",
+        "t": 52.7,
+        "shell": "s4",
+        "x": 0.12,
+        "seed": 831056492
+      },
+      {
+        "id": "c45",
+        "t": 53.9,
+        "shell": "s5",
+        "x": 0.49,
+        "seed": -809475043
+      },
+      {
+        "id": "c46",
+        "t": 55.1,
+        "shell": "s1",
+        "x": 0.86,
+        "seed": 1844960718
+      },
+      {
+        "id": "c47",
+        "t": 56.3,
+        "shell": "s2",
+        "x": 0.22,
+        "seed": 204429183
+      },
+      {
+        "id": "c48",
+        "t": 57.6,
+        "shell": "s3",
+        "x": 0.59,
+        "seed": -1436102352
+      },
+      {
+        "id": "c49",
+        "t": 58.8,
+        "shell": "s4",
+        "x": 0.96,
+        "seed": 1218333409,
+        "burstHeight": 0.6
+      },
+      {
+        "id": "c50",
+        "t": 60,
+        "shell": "s5",
+        "x": 1,
+        "seed": -422198126
+      }
+    ]
+  }
+}

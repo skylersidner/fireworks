@@ -1,5 +1,7 @@
 # Phase 5 security verification: C1–C20 against Luigi's build
 
+> **Superseded in part by luigi-phase6-show-builder.md (point 8) on 2026-11-14:** the C5 row's "`'show'` → not yet" branch no longer exists. Show links go through the same code, GET, `kind` and response checks, then open. Boo has not re-verified C5 for shows; no Phase 6 security verification is recorded.
+
 **By:** Boo · 2026-11-14 · Phase 5, after Luigi's batch 2 (`luigi-phase5-save-share-player.md`)
 **Status:** proposed. Verdicts on `boo-phase5-security-requirements.md`. No product code changed (strict lockout); defects go to Luigi or another member the coordinator picks.
 **Surfaces:** the code under `src/web/fireworks-web/src/app` (`core/{share-code,creations,open-creation,creation-save,device-preferences}.ts`, `features/player/*`, `features/mine/*`, `features/designer/pages/{open-link-page,designer-page}/*`, `features/designer/shared/{designer-draft,save-copy,designer-copy,save-bar,save-status}*`, `shared/{link-copy,test-mode-banner,message-page,confirm-dialog}*`, `unsafe-sinks.spec.ts`); a mutation run of `unsafe-sinks.spec.ts`; and the running app (ng dev server on 4200 proxied to Toad's API on 5180, `canWrite: true`, `isAuthenticated: false`), driven by Playwright with installed Chrome. Probe script: `scratchpad/pw/probe.mjs` (session scratchpad). My six probe rows were deleted afterwards (204 each).

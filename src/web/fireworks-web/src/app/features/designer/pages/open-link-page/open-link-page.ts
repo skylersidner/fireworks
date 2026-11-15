@@ -21,13 +21,13 @@ import {
   newerVersionMessage,
   notFoundMessage,
   retryWhen,
-  showNotSupportedMessage,
   type LinkAction,
   type LinkMessage,
 } from '../../../../shared/link-copy';
 import { MessagePageComponent } from '../../../../shared/message-page/message-page';
 import { editableFrom } from '../../shared/designer-draft';
 import { WorkingCopyHandoff } from '../../shared/working-copy-handoff';
+import { ShowWorkingCopyHandoff } from '../../../show/shared/show-working-copy-handoff';
 
 /** The "Opening…" line waits this long, so a fast load shows nothing (phase-5.md §7.1). */
 export const OPENING_DELAY_MS = 300;
@@ -68,7 +68,7 @@ export const OPENING_DELAY_MS = 300;
         role="status"
         data-testid="opening"
       >
-        Opening the shared shell…
+        Opening the shared link…
       </p>
     }
   `,
@@ -76,6 +76,7 @@ export const OPENING_DELAY_MS = 300;
 export class OpenLinkPageComponent {
   private readonly creations = inject(CreationsService);
   private readonly handoff = inject(WorkingCopyHandoff);
+  private readonly showHandoff = inject(ShowWorkingCopyHandoff);
   private readonly router = inject(Router);
   private readonly title = inject(Title);
 
@@ -108,6 +109,7 @@ export class OpenLinkPageComponent {
   protected act(action: LinkAction): void {
     if (action === 'retry') this.load();
     else if (action === 'reload') location.reload();
+    else if (action === 'builder') void this.router.navigateByUrl('/show', { replaceUrl: true });
     else void this.router.navigateByUrl('/', { replaceUrl: true });
   }
 
@@ -129,6 +131,13 @@ export class OpenLinkPageComponent {
         void this.router.navigateByUrl('/', { replaceUrl: true });
         return;
       }
+      if (opened.status === 'show') {
+        // A show opens in the Show Builder (schema.md §11.1, phase-6.md §2); the designer draft
+        // is never touched.
+        this.showHandoff.offer({ show: opened.show, source: sourceFrom(opened.response) });
+        void this.router.navigateByUrl('/show', { replaceUrl: true });
+        return;
+      }
       this.opened.set(opened);
       this.title.setTitle(messageFor(opened).title);
     });
@@ -139,16 +148,16 @@ function messageFor(opened: OpenedCreation): LinkMessage {
   switch (opened.status) {
     case 'not-found':
       return notFoundMessage('copy');
-    case 'show':
-      return showNotSupportedMessage();
     case 'newer':
-      return newerVersionMessage('copy');
+      return newerVersionMessage('copy', opened.kind);
     case 'network':
       return loadFailureMessage('copy', 'network', '');
     case 'rate-limited':
       return loadFailureMessage('copy', 'rate-limited', retryWhen(opened.retryAfterSeconds));
     case 'server':
       return loadFailureMessage('copy', 'server', '');
+    case 'invalid':
+      return invalidMessage('copy', opened.kind);
     default:
       return invalidMessage('copy');
   }

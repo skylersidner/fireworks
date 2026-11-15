@@ -13,14 +13,22 @@
       >
         Fireworks Sandbox
       </h1>
-      @if (saveFlow.canWrite()) {
+      <div class="flex gap-3">
         <a
-          routerLink="/mine"
+          routerLink="/show"
           class="text-small text-muted no-underline hover:text-primary"
-          data-testid="nav-mine"
-          >My creations</a
+          data-testid="nav-show"
+          >Show Builder</a
         >
-      }
+        @if (saveFlow.canWrite()) {
+          <a
+            routerLink="/mine"
+            class="text-small text-muted no-underline hover:text-primary"
+            data-testid="nav-mine"
+            >My creations</a
+          >
+        }
+      </div>
     </div>
     <p class="m-0 mb-3 text-small text-muted">Shell designer</p>
 

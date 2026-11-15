@@ -17,7 +17,7 @@ import type {
   TrailFormat,
 } from './stage-renderer';
 import { chooseTrailFormat, TrailBuffer } from './trail-buffer';
-import { particleVisual, type ParticleVisual } from './visual-rules';
+import { FlashSpacing, particleVisual, type ParticleVisual } from './visual-rules';
 
 /** No 24-bit color equals this, so a fresh slot always gets its tint set. */
 const NO_TINT = 0xffffffff;
@@ -48,6 +48,7 @@ export class PixiRenderer implements StageRenderer {
    */
   private tintCache: Uint32Array = new Uint32Array(0);
   private readonly visual: ParticleVisual = { alpha: 0, px: 0, color: 0 };
+  private readonly flashSpacing = new FlashSpacing();
   private readonly resizeObserver: ResizeObserver | null;
   private lastW = 0;
   private lastH = 0;
@@ -118,6 +119,8 @@ export class PixiRenderer implements StageRenderer {
   }
 
   render(sim: FireworksSim, persistence: number, reduceFlashing = false): void {
+    if (reduceFlashing) this.flashSpacing.update(sim.particles, sim.simTime);
+    else this.flashSpacing.reset();
     this.sync(sim, reduceFlashing);
     this.trail.draw(this.worldRoot, persistence);
   }
@@ -172,6 +175,7 @@ export class PixiRenderer implements StageRenderer {
     for (let i = 0; i < P.n; i++) {
       const p = live[i];
       particleVisual(P, i, v, reduceFlashing);
+      if (reduceFlashing && !this.flashSpacing.drawn(P, i, sim.simTime)) v.alpha = 0;
       p.x = P.x[i];
       p.y = P.y[i];
       p.scaleX = p.scaleY = v.px * TEX_SCALE;

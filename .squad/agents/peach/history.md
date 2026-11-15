@@ -24,37 +24,43 @@
 - **Patterns:** a ruling that widens what's persisted can collide with OS-default settings (persist a setting only once chosen). A ruling that makes app-driven state count as a user edit must be checked against every automatic override. A "pause until X" ruling ripples into every criterion that times a first burst. When a removed criterion is cited elsewhere, inline its procedure. After a spec lands, grep the criteria for quoted button copy. Re-grep the code right before writing a finding; it moves under a running brief.
 - **Spec drift to watch:** `designer-2c.md` §6.4 still describes one `dirty` flag; `normalize.ts` may still carry the old `adjusted` shape. Check before copying either.
 
+### Folded from Phase 3 to Phase 5 acceptance (summarized 2026-11-15)
+
+- **Phase 3 (`acceptance/phase-3.md`, accepted with notes, F1–F16, Q1–Q3):** the paging shape of `api/me/creations` was a gap (F1). Remix before Phase 8 depends on `isOwner` always being true (Q1). Carried gaps: dirty flags and replace-confirm (F4), save-time error copy (F10), `issueReason` on `type` with integer options (F11). Show stop-at-`duration` versus a cue at `t == duration` (Q3; the schema now runs to the last particle).
+- **Phase 4 cross-agent:** Update original is last-write-wins in v1, so acceptance does not promise conflict detection. A 404 on update offers Save as new as a plain POST, and the lineage is lost. The interim `remixedFrom` exposure is accepted by Skyler. A 413 may arrive as status 0 through Railway.
+- **Phase 5 (`acceptance/phase-5.md`):** 5a–5h accepted; 5i.1 accepted with a note (built-image curl not run then). F4 settled: Save clears the flags, and a third `saved` flag drives the indicator. 5g.1 split by the design spec: writes off versus `api/me` failed. The 2c.8 replacement accepted. Skyler's Q1–Q4 settled: Remix always shows, a device-wide flashing choice, `/mine` `kind=shell`, and "not yet" at `/s/` and `/c/` (the last is superseded by Phase 6).
+- **Method:** when a design spec splits a state the criterion lumped together, update the criterion to the spec, not the code. While the interim makes everyone the owner, check that each Done-when step is observable in the running app.
+
 ## Learnings
 
 
-### 2026-11-13 — Phase 3 schema acceptance
-- Wrote `docs/fireworks-app/acceptance/phase-3.md`: ACCEPT WITH NOTES, F1–F16, Q1–Q3. Fixed P9 in `acceptance/phase-2.md` ("the shell document has no mode field").
-- Payload checks that paid off: diffing schema.md §12's fixture names against `schema/fixtures/**` (none missing), and grepping the designer's `[formField]` bindings (17 shell fields, all in `EditableShell`; the 4 display fields are in `DesignerDraft.display`).
-- Gaps to carry into Phase 4/5/6 briefs: the paging shape of `api/me/creations` is unspecified (F1). The player's Remix button behavior is undefined, and before Phase 8 `isOwner` is always true, so Done-when step 3 depends on it (Q1). Phase 5 "dirty indicator" vs the replace-confirm `shellDirty`/`skyDirty` flags (F4). Save-time 400/403/404/413/429 copy has no owner (F10). `issueReason` renders `type` with `options:['integer']` as "must be text" (F11). Show stop-at-`duration` vs a valid cue at `t == duration` (Q3).
-- Doc vs code: schema.md §8.3 says draft restore runs upgrade; `readDraft` doesn't. Full `ng test` needs Node 26 (`~/.nvm/versions/node/v26.5.0/bin`); the shell default v21.5 is refused. The reduce-flashing spec times out under full-suite load.
-- Pattern: when a ruling says "X happens only when not owner" and the interim makes everyone the owner, check that each Done-when step is still observable in the running app.
+### 2026-11-14 — Phase 6 acceptance criteria (pre-implementation)
+- Wrote `docs/fireworks-app/acceptance/phase-6.md`: 6a–6k, Done-when map, F11 reconciliation, Q1–Q3, N1–N5. p6-spec (`design/phase-6.md`) hadn't landed; route is `{builder}` placeholder.
+- "Plays the same way" = launch ledger `(k,id,seed,x,tx,ty)` exact + per-kind count trace exact + end step E exact + star positions within 0.01 world units + realtime playback == offline run. Basis: deaths are age-only (`simulation.ts` l.187) and lives/fuses/counts come from mulberry32 + IEEE-exact ops; only positions use sin/cos/exp (implementation-approximated).
+- F11 is closed in code (`designer-copy.ts` l.85–88, `save-copy.spec.ts` l.49); Mario's gate carry is stale. New gap: `labels.ts` `fieldLabel` has no show-path labels (`cues[3].seed` → raw path; `shells.s1.breaks[0].stars` → "Stars").
+- Payload gaps: `CreationListItem` has no document, so "my shells" add = one GET per shell. Phase 5 smoke used dev-only `window.ng`; the cross-browser check needs a prod-build readout.
+- Replaced defaults to verify at the gate: `mine.store.ts` l.47 `kind: 'shell'`; `open-creation.ts` `status: 'show'`.
 
-### 2026-11-13 — Phase 4 cross-agent update (Scribe)
-- **Update original is last-write-wins in v1** (Yoshi §11.4). Two tabs of one visitor can overwrite each other silently. Phase 5 acceptance should not promise conflict detection. The `If-Match` 412 comes at the first reported lost update, or at Phase 8.
-- **Original deleted:** a 404 on Update original offers Save as new, which is a plain `POST api/creations` (§11.2), not a remix of the deleted source. The lineage is lost; the API hides it anyway (`remixedFrom: null`). Accept this as the flow.
-- **Interim exposure (Skyler, accepted):** before Phase 8, `remixedFrom` is visible to every visitor, so a visitor of a remix's link sees the original's share code.
-- **Writes off:** `GET api/me/creations` returns 403 and `/mine` is hidden. Save shows 403 when writes are switched off mid-session.
-- **Oversize and malformed saves:** a 413 may reach the client as status 0 through Railway's edge (deploy check, Boo S5). A 400 on save or list carries `truncated` (at most 100 issues). Acceptance copy for these cases belongs to Rosalina (F10).
+### 2026-11-14 — Phase 6 acceptance revised for Skyler's rulings
+- Skyler on cross-browser: "runs in each browser", not matching fidelity. §6a now = loads, plays to ended state, zero console errors, Save/Share/player work; Chromium + Firefox/WebKit via Playwright where installable, else Safari by hand. Exact ledger/digest stays same-engine (`engine/loop/timeline-driver.spec.ts`). No prod ledger readout (N3 withdrawn).
+- Lesson: I over-specified the oracle (exact cross-engine compare + prod readout) from what the code *could* support rather than what Skyler needed. Ask what "same" means before building the strictest oracle; recommend the cheap one as default.
+- Settled: Q2 harness may seed 50 cues (UI still adds/moves/deletes one, Save via builder); Q3 starBudget 1 until Phase 7; session-only Undo 50 steps (6c.11); no in-place shell edits (6d.6); seek accepted as measured, ~3.6 s worst with "Catching up…" (6i.4), revisit if >1 s p95 in Chrome.
+- p6-spec (`design/phase-6.md`) landed: route `/show`; duration below last launch is blocked (§9.3); identical shells reuse key (§4.1); library pageSize 24 + Show more; no notice when My shells is unavailable (group hidden); strobe named only for shells used by a cue (§11.3, corrects my 6h.2). N6: Undo's behaviour inside text fields unspecified (Rosalina).
 
-### 2026-11-14 — Phase 5 acceptance criteria (pre-implementation)
-- Wrote `docs/fireworks-app/acceptance/phase-5.md`: 5a–5i, a Done-when map, Q1–Q4, N1–N4. Copy is referenced to Rosalina's `design/phase-5.md` (p5-spec), which hadn't landed when I wrote it; F4 (5b.11) is written with both outcomes until she rules.
-- Payload facts: `CreationContracts.cs` `CreationResponse` has 9 fields; PUT/remix bodies must be exactly `{document}` (a `kind` is 400). `serializeDraft` has no `source` slot yet. `session.canWrite()` is false while api/me loads and the initializer doesn't wait, so `/mine` must read `session.status()` too (N1). `app.routes.ts` `**` redirects to `/`, which would swallow bad-code pages (N3).
-- `session.ts` doc lists Remix as a write control, but schema.md §11.1 says Remix makes no API call: raised as Q1 (recommend showing it with writes off).
-- Pattern: for a "replaces the draft" rule, list every draft sibling (display, tab, flags, source) and ask which survive; a photosensitivity choice is in there (Q2).
+### 2026-11-14 Phase 6 acceptance review
+- **Smoke harness is a surface, read it line by line.** `scratchpad/p6smoke/done-when.mjs` seeded its own hand-written shells (not `schema/fixtures/valid/show/done-when-60s-50.json`; cues match, all six shells differ), and its "move" then "delete" both hit c1 (Home selects the first cue), so the saved show lost its t==0 and x==0 cues. The log line `moved 0 -> 0.1` then `49 cues` gave it away. It also never fails on console errors (logs only) and never asserts GET document == POST body.
+- **Cross-engine evidence lives in `cross.log`:** Firefox and WebKit replayed a code saved by another run (`kwnPU9Pc`); Chromium played its own (`riEeCeJD`). WebKit's ledger tripled (dev-server reload).
+- **Unbuilt spec items need a deferral ruling, not silence:** library drag onto the lane (6c.2 gesture) was left out without one.
+- **Full suite under load:** `timeline-driver.spec.ts` digest test times out at the 5 s default when other agents run; passes alone. Node 26 is at `~/.nvm/versions/node/v26.5.0/bin` (default shell node is 21, too old for ng).
 
-### 2026-11-14 — Phase 5 acceptance review
-- Verdict: 5a–5h accept. 5i.1 is accepted with a note: the built-image curl wasn't run this batch, and only `/s/abc123` is in `SkeletonEndpointTests.cs`. 5i.2–5i.5 stay deferred to Railway. Rerun: `ng test` 1227/1227 (Node 26). Luigi's smoke: `scratchpad/smoke/luigi-p5-donewhen.mjs`, 31/31.
-- I resolved the pending rows in `acceptance/phase-5.md`: 5b.11 and 5e.5 (F4: Save clears the flags, and a third `saved` flag drives the indicator), 5c.2, 5d.7, 5d.9, 5f.6, 5f.11 and 5g.1. For 5g.1, p5-spec splits "writes off" from "api/me failed". I also marked 2c.8 in `acceptance/phase-2.md` as superseded.
-- 2c.8 replacement accepted. The rule is a regex in `designer-structure.spec.ts`. It doesn't ban `fetch(`/`XMLHttpRequest`, and `inject\(X\)` misses `inject(X, opts)`. The import clause still catches the second case, and the `app.startup.spec.ts` cold-load ledger is the behavioral backstop.
-- Pattern: when a design spec splits a state the criterion lumped together (writes off vs api/me failed), update the criterion to the spec. Don't fail the code for following the spec.
-- Still open: the test-mode banner copy is provisional (Rosalina) and must be final before the Railway window.
+### 2026-11-14 — Phase 6 cross-agent update (Scribe)
 
-### 2026-11-14 — Phase 5 cross-agent update (Scribe)
-- **F11 conflict:** your acceptance review (5h) closes F11, and the code has the integer wording (`designer-copy.ts`, `save-copy.spec.ts`). Mario's gate lists it as carried to Phase 6. Please reconcile with Mario.
-- **Q1–Q4 settled:** Q1 yes (Remix always shows); Q2 display kept, with a device-wide flashing choice; Q3 Rosalina's presentation; Q4 the coordinator defaults (`/mine` `kind=shell`; "not yet" at `/s/` and `/c/`).
-- **Still open:** 5i.2–5i.5 at Railway, and the C17 banner re-check (Boo).
+- **Skyler's Phase 6 rulings** moved library drag, pinch zoom, the `+k` badge, the scrub overview and Show JSON to Phase 7. Their criteria in `acceptance/phase-6.md` need a deferral note so the file does not read as unbuilt-and-owed. Check whether one is there.
+- **Your rejections (6a, 6b, 6k)** were closed by Toad's review-fix and Mario's gate evidence. No Peach re-review record exists for Phase 6 (`peach-phase6-acceptance.md` is the acceptance spec). A short closing note from you would close the loop.
+- **F11:** your history says it is closed in code (`designer-copy.ts` l.85–88). Mario's Phase 6 gate does not mention it. Reconcile with Mario.
+- **History:** this file was over 12 KB; the Phase 3 to Phase 5 entries are folded into Core Context on 2026-11-15.
+
+### 2026-11-15 — Post-gate cross-agent update (Scribe)
+
+- **Seek numbers changed after your acceptance.** Your 6i.4 "about 3.6 s worst" was the old 480-step slice. At the 25 ms default (Luigi point 13, Boo F1), the Done-when scrub takes 1.4 s and the max show 183 s, with frames at p50 33 ms. Skyler's "accepted as measured" ruling stands.
+- **Your 6i.4 trigger is still unmeasured** in Chrome on a saved show (p95 above 1 s). Nothing in the Phase 6 records measures it yet.

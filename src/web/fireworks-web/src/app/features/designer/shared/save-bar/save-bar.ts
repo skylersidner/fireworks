@@ -43,7 +43,7 @@ const LABELS: Readonly<Record<SaveChoice, string>> = {
             class="btn border-accent text-accent"
             [attr.data-testid]="'save-' + choice"
             [attr.aria-disabled]="saving() !== null ? 'true' : null"
-            [disabled]="isDisabled(choice)"
+            [disabled]="isDisabled(choice) || cannotSaveNote() !== null"
             [attr.title]="isDisabled(choice) ? savedTitle : null"
             (click)="press(choice)"
           >
@@ -95,6 +95,11 @@ export class SaveBarComponent {
   readonly dirty = input(false);
   readonly blockedLink = input<string | null>(null);
   readonly blockedNote = input('');
+  /**
+   * Save can't be offered yet (a show with no cues, phase-6.md §9.1): the buttons stay visible but
+   * disabled, and this note replaces the owner note. Nothing is sent.
+   */
+  readonly cannotSaveNote = input<string | null>(null);
 
   readonly save = output<SaveChoice>();
   readonly share = output<void>();
@@ -117,6 +122,8 @@ export class SaveBarComponent {
   /** §2.2 and §5: the note under the bar. */
   protected readonly note = computed(() => {
     if (!this.canWrite()) return null;
+    const blocked = this.cannotSaveNote();
+    if (blocked !== null) return blocked;
     const source = this.source();
     if (!source) return FRESH_NOTE;
     return source.isOwner ? ownerNote(source.name) : NON_OWNER_NOTE;
@@ -127,7 +134,7 @@ export class SaveBarComponent {
   }
 
   protected press(choice: SaveChoice): void {
-    if (this.saving() !== null || this.isDisabled(choice)) return;
+    if (this.saving() !== null || this.isDisabled(choice) || this.cannotSaveNote() !== null) return;
     this.save.emit(choice);
   }
 }

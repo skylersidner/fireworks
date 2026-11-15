@@ -1,3 +1,4 @@
+using Fireworks.Api.Services.ClientConfig;
 using Fireworks.Api.Services.Identity;
 using Microsoft.Extensions.Configuration;
 
@@ -50,5 +51,27 @@ public sealed class CommittedConfigurationTests
 
         Assert.Null(configuration.GetConnectionString("Postgres"));
         Assert.False(configuration.GetSection("Cors").Exists());
+    }
+
+    [Fact]
+    public void Production_appsettings_carry_all_four_ClientPlayback_values_equal_to_the_class_defaults()
+    {
+        var section = Load("appsettings.json").GetSection(ClientPlaybackOptions.SectionName);
+        var defaults = new ClientPlaybackOptions();
+
+        Assert.Equal(
+            ["CatchingUpDelayMs", "CheckpointIntervalSeconds", "CheckpointMemoryMiB", "SeekBudgetMs"],
+            section.GetChildren().Select(c => c.Key).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal(defaults.SeekBudgetMs.ToString(), section["SeekBudgetMs"]);
+        Assert.Equal(defaults.CatchingUpDelayMs.ToString(), section["CatchingUpDelayMs"]);
+        Assert.Equal(defaults.CheckpointIntervalSeconds.ToString(), section["CheckpointIntervalSeconds"]);
+        Assert.Equal(defaults.CheckpointMemoryMiB.ToString(), section["CheckpointMemoryMiB"]);
+    }
+
+    [Fact]
+    public void Development_appsettings_do_not_override_ClientPlayback()
+    {
+        // Brief: the dev values are the production values, so the section lives in one file only.
+        Assert.False(Load("appsettings.Development.json").GetSection(ClientPlaybackOptions.SectionName).Exists());
     }
 }

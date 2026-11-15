@@ -114,9 +114,13 @@ export function newShell(name: string, o: ShellOverrides = {}): ShellDocument {
 }
 
 /**
- * The sky a shell plays under: its own `sky` block when it has one, otherwise `DEFAULT_SKY`.
+ * The sky a shell plays under: inside a show, the show's `sky` and nothing else (schema.md §4.1,
+ * the shell isn't consulted); otherwise its own `sky` block when it has one, else `DEFAULT_SKY`.
  * `normalize` leaves an absent `sky` absent (so presets round-trip); callers resolve it here.
  */
-export function effectiveSky(shell: Pick<ShellDocument, 'sky'>): SkySettings {
-  return { ...(shell.sky ?? DEFAULT_SKY) };
+export function effectiveSky(
+  shell: Pick<ShellDocument, 'sky'>,
+  showSky?: SkySettings,
+): SkySettings {
+  return { ...(showSky ?? shell.sky ?? DEFAULT_SKY) };
 }

@@ -4,6 +4,7 @@ import { BROWSER_STORAGE } from './browser';
 import {
   DevicePreferencesService,
   FLASH_NOTICE_KEY,
+  MOTION_BLUR_KEY,
   REDUCE_FLASHING_KEY,
 } from './device-preferences';
 
@@ -50,5 +51,52 @@ describe('DevicePreferencesService', () => {
     storage.failWrites = true;
     prefs.dismissFlashNotice();
     expect(prefs.flashNoticeDismissed()).toBe(false);
+  });
+
+  describe('Motion blur (device-wide; Skyler, 2026-11-14)', () => {
+    it.each([
+      ['0.4', 0.4, 0.4],
+      ['0', 0, 0],
+      ['5', 0.92, 0.92],
+      ['-1', 0, 0],
+      ['blurry', null, 0.78],
+      ['', null, 0.78],
+    ])('stored %j reads as choice %j, renders %j', (text, choice, value) => {
+      storage.setItem(MOTION_BLUR_KEY, text);
+      const prefs = create();
+      expect(prefs.motionBlurChoice()).toBe(choice);
+      expect(prefs.motionBlur()).toBe(value);
+    });
+
+    it('absent is the default and writes nothing; a set is stored clamped', () => {
+      const prefs = create();
+      expect(prefs.motionBlurChoice()).toBeNull();
+      expect(prefs.motionBlur()).toBe(0.78);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBeNull();
+      prefs.setMotionBlur(0.3);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.3');
+      prefs.setMotionBlur(2);
+      expect(prefs.motionBlur()).toBe(0.92);
+      prefs.setMotionBlur(Number.NaN);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.92');
+    });
+
+    it('a legacy draft value is adopted only when the device has none', () => {
+      const prefs = create();
+      prefs.adoptLegacyMotionBlur(undefined);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBeNull();
+      prefs.adoptLegacyMotionBlur(0.25);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.25');
+      prefs.adoptLegacyMotionBlur(0.6);
+      expect(prefs.motionBlur()).toBe(0.25);
+    });
+
+    it('refused storage keeps the value for the page only', () => {
+      storage.failWrites = true;
+      const prefs = create();
+      prefs.setMotionBlur(0.1);
+      expect(prefs.motionBlur()).toBe(0.1);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBeNull();
+    });
   });
 });

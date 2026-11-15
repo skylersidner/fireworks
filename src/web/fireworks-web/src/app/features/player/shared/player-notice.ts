@@ -28,9 +28,13 @@ import {
     <p class="m-0" id="player-notice-text" data-testid="flash-notice-text">
       <strong>Flashing lights.</strong>
       “<bdi>{{ name() }}</bdi
-      >” starts when you close this notice.
+      >” starts when you close this notice{{ length() ? ' and runs about ' + length() : '' }}.
       @if (reduceFlashing()) {
-        Reduce flashing is on, so strobe is off and burst flashes are dimmed.
+        @if (length()) {
+          Reduce flashing is on, so strobe is off and burst flashes are dimmed and spaced out.
+        } @else {
+          Reduce flashing is on, so strobe is off and burst flashes are dimmed.
+        }
       } @else {
         {{ strobe() ? 'It has bright bursts and strobe effects.' : 'Its bursts flash brightly.' }}
         If flashing affects you, turn on Reduce flashing first. You can pause at any time.
@@ -65,6 +69,8 @@ export class PlayerNoticeComponent {
   /** Any break has `effect: "strobe"` (§8.3). */
   readonly strobe = input(false);
   readonly reduceFlashing = input(false);
+  /** A show's length, `about {length}` (phase-6.md §11.3); null for a shell. */
+  readonly length = input<string | null>(null);
   readonly turnOn = output<void>();
   readonly play = output<void>();
 

@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import {
   ManualDriver,
   PreviewLoopDriver,
@@ -8,6 +9,7 @@ import {
 } from '../../../../../engine/loop/drivers';
 import { ApiStatusService } from '../../../../core/api-status';
 import { BROWSER_STORAGE, MATCH_MEDIA, REDUCED_MOTION_QUERY } from '../../../../core/browser';
+import { ME_TEST_WINDOW, settleSession } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
 import { MemoryStorage } from '../../../../testing/memory-storage';
@@ -36,6 +38,7 @@ describe('DesignerPageComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
         { provide: MATCH_MEDIA, useValue: media.fn },
         { provide: BROWSER_STORAGE, useValue: storage },
@@ -91,6 +94,12 @@ describe('DesignerPageComponent', () => {
       const { el } = await mount();
       expect(el.querySelector('h1')?.textContent?.trim()).toBe('Fireworks Sandbox');
       expect(el.textContent).toContain('Shell designer');
+      // D1: the Show Builder link is always there, writes on or off (phase-6.md §2).
+      const show = el.querySelector('a[data-testid="nav-show"]');
+      expect([show?.textContent?.trim(), show?.getAttribute('href')]).toEqual([
+        'Show Builder',
+        '/show',
+      ]);
       expect(
         [...el.querySelectorAll('h2.section-heading')].map(
           (h) => h.textContent?.trim().split(/\s/)[0],
@@ -396,8 +405,37 @@ describe('DesignerPageComponent', () => {
       expect(byTest('api-retry')?.textContent?.trim()).toBe('Checking…');
       expect(byTest<HTMLButtonElement>('api-retry')!.disabled).toBe(true);
       http.expectOne('/health/live').flush('Healthy');
+      // Try again also reloads the session (Skyler, 2026-11-14).
+      http.expectOne('/api/me').flush(ME_TEST_WINDOW);
       await stable();
       expect(byTest('api-banner')).toBeNull();
+    });
+
+    // Skyler, 2026-11-14 (Phase 6 gate): with health fine, a failed api/me still shows the banner,
+    // so the hidden save bar is explained; Try again reloads the session and the save bar returns.
+    it('appears when api/me fails with health fine, never while it is in flight, and Try again restores Save', async () => {
+      const answer = settleSession(http, 'pending');
+      const { byTest, stable } = await mount();
+      TestBed.inject(ApiStatusService).check();
+      http.expectOne('/health/live').flush('Healthy');
+      await stable();
+      // api/me still in flight: no banner (Phase 5 N1).
+      expect(byTest('api-banner')).toBeNull();
+      answer('error');
+      await stable();
+      expect(byTest('api-banner')?.textContent).toContain("Can't reach the server right now.");
+      expect(byTest('save-save')).toBeNull();
+
+      byTest('api-retry')!.click();
+      await stable();
+      expect(byTest('api-retry')?.textContent?.trim()).toBe('Checking…');
+      http.expectOne('/health/live').flush('Healthy');
+      await stable();
+      expect(byTest('api-retry')?.textContent?.trim()).toBe('Checking…');
+      http.expectOne('/api/me').flush(ME_TEST_WINDOW);
+      await stable();
+      expect(byTest('api-banner')).toBeNull();
+      expect(byTest('save-save')).not.toBeNull();
     });
 
     it('the first check, before any failure, shows no banner', async () => {

@@ -2,6 +2,7 @@ import { Injector, createEnvironmentInjector, EnvironmentInjector } from '@angul
 import { TestBed } from '@angular/core/testing';
 import { PRESETS } from '../../../../../engine/model/presets';
 import { BROWSER_STORAGE, MATCH_MEDIA, REDUCED_MOTION_QUERY } from '../../../../core/browser';
+import { MOTION_BLUR_KEY } from '../../../../core/device-preferences';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { JSON_NOTE_APPLIED, JSON_NOTE_DEFAULT, JSON_NOTE_EDITED } from '../../shared/designer-copy';
@@ -671,6 +672,44 @@ describe('ShellDesignerStore', () => {
       store.editJson(JSON.stringify(noVersion));
       expect(store.applyJson().status).toBe('loaded');
       expect(store.shell().version).toBe(1);
+    });
+  });
+
+  describe('Motion blur is device-wide (Skyler, 2026-11-14)', () => {
+    const draftWith = (persistence: number) =>
+      serializeDraft({
+        shell: editableFrom(PRESETS[0]),
+        activeBreak: 0,
+        display: { mode: 'loop', persistence, starBudget: 1, reduceFlashing: null },
+        shellDirty: false,
+        skyDirty: false,
+        saved: false,
+        source: null,
+      });
+
+    it('a first visit stores no Motion blur until the slider moves, then stores it', () => {
+      const { store } = create();
+      settle();
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBeNull();
+      store.displayForm.persistence().value.set(0.2);
+      TestBed.tick();
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.2');
+      expect(store.quality().persistence).toBe(0.2);
+    });
+
+    it("an old draft's value is adopted once when the device has none", () => {
+      storage.setItem(DRAFT_KEY, draftWith(0.35));
+      const { store } = create();
+      expect(store.quality().persistence).toBe(0.35);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.35');
+    });
+
+    it("the device value wins over the draft's (a builder change shows here)", () => {
+      storage.setItem(DRAFT_KEY, draftWith(0.35));
+      storage.setItem(MOTION_BLUR_KEY, '0.6');
+      const { store } = create();
+      expect(store.displayModel().persistence).toBe(0.6);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.6');
     });
   });
 

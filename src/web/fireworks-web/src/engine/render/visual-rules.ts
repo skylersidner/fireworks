@@ -69,3 +69,71 @@ export function particleVisual(
   }
   return out;
 }
+
+const STEPS_PER_SECOND = 120;
+/**
+ * Reduce flashing flash spacing (phase-6.md §14.2): a drawn burst flash starts at least 41 steps
+ * after the last drawn one. 41, not 40: at 40, starts at steps 0, 40, 80 and 120 put four flashes
+ * inside one closed 1.000 s span; at 41 any four drawn starts span 123 steps.
+ */
+const FLASH_SPACING_STEPS = 41;
+export const FLASH_SPACING_SECONDS = FLASH_SPACING_STEPS / STEPS_PER_SECOND;
+
+/**
+ * Under Reduce flashing, a burst flash (`K_FLASH`) is drawn only if no other drawn burst flash
+ * started in the previous 41 steps (about 0.34 s) of sim time (phase-6.md §14.2, D5). Renderer only: the sim, every
+ * count and the launch ledger are unchanged (`flashing-content-safety` rule 6).
+ *
+ * A flash is identified by the sim step it started on, `round((simTime - age) * 120)`, which is
+ * stable across frames even though the store swap-removes. Flashes that start on the same step are
+ * one flash in time (they light at the same instant), so they're drawn or skipped together. New
+ * start steps are decided in ascending order, once each; a flash that lives and dies between two
+ * renders was never drawn, so it never counts. Sim time moving backward (a seek or Replay) forgets
+ * everything.
+ */
+export class FlashSpacing {
+  private decided = new Map<number, boolean>();
+  private lastDrawnStart = -Infinity;
+  private lastSimTime = -Infinity;
+  private readonly fresh: number[] = [];
+
+  /** Call once per render, before `drawn`, with the sim's particles and `simTime`. */
+  update(P: ParticleStore, simTime: number): void {
+    if (simTime < this.lastSimTime) this.reset();
+    this.lastSimTime = simTime;
+    const fresh = this.fresh;
+    fresh.length = 0;
+    for (let i = 0; i < P.n; i++) {
+      if (P.kind[i] !== K_FLASH) continue;
+      const start = startStep(P, i, simTime);
+      if (!this.decided.has(start) && !fresh.includes(start)) fresh.push(start);
+    }
+    fresh.sort((a, b) => a - b);
+    for (const start of fresh) {
+      const draw = start - this.lastDrawnStart >= FLASH_SPACING_STEPS;
+      if (draw) this.lastDrawnStart = start;
+      this.decided.set(start, draw);
+    }
+    // A flash lives 0.16 s, so decisions older than a second can't be asked for again.
+    const now = Math.round(simTime * STEPS_PER_SECOND);
+    for (const start of this.decided.keys()) {
+      if (start < now - STEPS_PER_SECOND) this.decided.delete(start);
+    }
+  }
+
+  /** Whether flash particle `i` is drawn. Non-flash particles always are. */
+  drawn(P: ParticleStore, i: number, simTime: number): boolean {
+    if (P.kind[i] !== K_FLASH) return true;
+    return this.decided.get(startStep(P, i, simTime)) ?? false;
+  }
+
+  reset(): void {
+    this.decided = new Map();
+    this.lastDrawnStart = -Infinity;
+    this.lastSimTime = -Infinity;
+  }
+}
+
+function startStep(P: ParticleStore, i: number, simTime: number): number {
+  return Math.round((simTime - P.age[i]) * STEPS_PER_SECOND);
+}

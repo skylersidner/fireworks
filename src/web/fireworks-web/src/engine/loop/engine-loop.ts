@@ -89,6 +89,15 @@ export class EngineLoop implements PlaybackContext {
     return seed;
   }
 
+  /**
+   * Fires `def` at (tx, ty) with a given seed (a show cue's). Doesn't advance the launch counter;
+   * does become `lastLaunch`, so the HUD shows the cue's seed.
+   */
+  fireSeeded(def: ShellDocument, tx: number, ty: number, seed: number): void {
+    this._lastLaunch = { def: structuredClone(def), tx, ty, seed };
+    this.sim.launch(def, tx, ty, seed);
+  }
+
   /** The Launch button: the current shell at its default target. Does not touch the mode timer. */
   launch(): number {
     const [tx, ty] = this.sim.defaultTarget(this.shell, this.worldWidth());
@@ -121,7 +130,8 @@ export class EngineLoop implements PlaybackContext {
 
   /**
    * One rendered frame: clamps dt, updates the fps average, lets the driver fire, then runs fixed
-   * steps. Returns the number of steps taken. If the cap is hit, the leftover time is dropped.
+   * steps, calling the driver's `beforeStep` before each one. Returns the number of steps taken.
+   * If the cap is hit, the leftover time is dropped.
    */
   frame(deltaMS: number): number {
     const dt = Math.min(this.maxFrameDt, deltaMS / 1000);
@@ -132,6 +142,7 @@ export class EngineLoop implements PlaybackContext {
     this.acc += dt;
     let steps = 0;
     while (this.acc >= STEP && steps < this.maxSteps) {
+      this._driver.beforeStep?.(this);
       this.sim.step(STEP);
       this.acc -= STEP;
       steps++;

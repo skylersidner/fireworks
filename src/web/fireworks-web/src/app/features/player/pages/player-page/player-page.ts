@@ -15,13 +15,21 @@ import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription } from 'rxjs';
+import { TimelineDriver } from '../../../../../engine/loop/timeline-driver';
 import { DEFAULT_QUALITY, type ShellDocument } from '../../../../../engine/model/shell';
+import { PRESETS } from '../../../../../engine/model/presets';
+import { STEPS_PER_SECOND, type ShowDocument } from '../../../../../engine/model/show';
+import { estimateShowEnd } from '../../../../../engine/sim/lifetime';
 import { REDUCED_MOTION_QUERY, mediaQuery } from '../../../../core/browser';
+import { ClientConfigStore, checkpointOptions } from '../../../../core/client-config';
 import { CreationsService } from '../../../../core/creations';
 import { DevicePreferencesService } from '../../../../core/device-preferences';
 import { openCreation, type OpenedCreation } from '../../../../core/open-creation';
 import { isShareCode } from '../../../../core/share-code';
-import { FireworksStageComponent } from '../../../../shared/fireworks-stage/fireworks-stage';
+import {
+  FireworksStageComponent,
+  type TimelineFrameHook,
+} from '../../../../shared/fireworks-stage/fireworks-stage';
 import {
   SITE_TITLE,
   creationTitle,
@@ -30,7 +38,6 @@ import {
   newerVersionMessage,
   notFoundMessage,
   retryWhen,
-  showNotSupportedMessage,
   type LinkAction,
   type LinkMessage,
 } from '../../../../shared/link-copy';
@@ -49,6 +56,35 @@ export const CENTER_LINE = 'Press Play to start.';
 /** Where Space already means something (designer-2c.md §6.2's list). */
 const SPACE_OWNERS =
   'input, textarea, select, button, a[href], summary, dialog, [contenteditable]:not([contenteditable="false"]), [role="tab"], [role="switch"], [role="button"], [role="checkbox"], [role="slider"]';
+
+/** The polite announcement at a show's end (phase-6.md §11.2). */
+export const SHOW_ENDED_ANNOUNCEMENT = 'The show has ended.';
+
+/** `{length}` (phase-6.md §11.3): under 60 s in seconds, else whole minutes; always "about". */
+export function showLengthText(seconds: number): string {
+  if (seconds < 60) {
+    const n = Math.max(1, Math.round(seconds));
+    return `${n} ${n === 1 ? 'second' : 'seconds'}`;
+  }
+  const m = Math.round(seconds / 60);
+  return `${m} ${m === 1 ? 'minute' : 'minutes'}`;
+}
+
+/** `m:ss`, whole seconds (the meta line). */
+function clock(t: number): string {
+  const total = Math.max(0, Math.floor(t));
+  const m = Math.floor(total / 60);
+  return `${m}:${String(total - m * 60).padStart(2, '0')}`;
+}
+
+interface PlayingShow {
+  readonly show: ShowDocument;
+  readonly shareCode: string;
+  readonly name: string;
+  readonly strobe: boolean;
+  readonly estimate: number;
+  readonly length: string;
+}
 
 interface Playing {
   readonly shell: ShellDocument;
@@ -90,6 +126,7 @@ interface Playing {
 export class PlayerPageComponent {
   private readonly creations = inject(CreationsService);
   private readonly prefs = inject(DevicePreferencesService);
+  private readonly clientConfig = inject(ClientConfigStore);
   private readonly router = inject(Router);
   private readonly title = inject(Title);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -114,9 +151,61 @@ export class PlayerPageComponent {
       strobe: shell.breaks.some((b) => b.effect === 'strobe'),
     };
   });
+  /** A show (Phase 6): played once with TimelineDriver at `starBudget` 1 (phase-6.md §11.2). */
+  protected readonly playingShow = computed<PlayingShow | null>(() => {
+    const opened = this.opened();
+    if (opened?.status !== 'show') return null;
+    const show = opened.show;
+    const used = new Set(show.cues.map((c) => c.shell));
+    const estimate = estimateShowEnd(show);
+    return {
+      show,
+      shareCode: opened.response.shareCode,
+      name: show.name,
+      // Only shells a cue uses ever play, so only they can strobe (§11.3).
+      strobe: [...used].some((k) => show.shells[k]?.breaks.some((b) => b.effect === 'strobe')),
+      estimate,
+      length: showLengthText(estimate),
+    };
+  });
+  protected readonly driver = computed(() => {
+    const p = this.playingShow();
+    // Checkpoint settings from ClientConfigStore, untracked (applied when a show opens).
+    return p
+      ? new TimelineDriver(p.show, checkpointOptions(untracked(this.clientConfig.playback)))
+      : null;
+  });
+  protected readonly placeholderShell = PRESETS[0];
+  /** At the end step (§11.2): the ended state with Replay. */
+  protected readonly ended = signal(false);
+  protected readonly announcement = signal('');
+  private readonly metaTime = viewChild<ElementRef<HTMLElement>>('metaTime');
+  private readonly progress = viewChild<ElementRef<HTMLElement>>('progress');
+  private lastSecond = -1;
+  private exactEnd: number | null = null;
+  /** Per frame, outside change detection: the meta time and progress line through element refs. */
+  protected readonly frameHook: TimelineFrameHook = (step, driver) => {
+    const p = untracked(this.playingShow);
+    if (!p) return;
+    if (driver.endStep !== null) this.exactEnd = driver.endStep / STEPS_PER_SECOND;
+    const t = step / STEPS_PER_SECOND;
+    const end = this.exactEnd ?? Math.max(p.estimate, t);
+    const bar = this.progress()?.nativeElement;
+    if (bar) bar.style.transform = `scaleX(${end > 0 ? Math.min(1, t / end) : 0})`;
+    // Refresh on a new second, and once when the exact end becomes known (§11.1 "/ 1:07").
+    const second = Math.floor(t) * 2 + (this.exactEnd === null ? 0 : 1);
+    if (second !== this.lastSecond) {
+      this.lastSecond = second;
+      const el = this.metaTime()?.nativeElement;
+      if (el) el.textContent = this.metaText(t, p);
+    }
+  };
+
   protected readonly message = computed<LinkMessage | null>(() => {
     const opened = this.opened();
-    return opened && opened.status !== 'shell' ? messageFor(opened) : null;
+    return opened && opened.status !== 'shell' && opened.status !== 'show'
+      ? messageFor(opened)
+      : null;
   });
 
   /** Shown until answered on this device (shared with the designer). */
@@ -133,8 +222,10 @@ export class PlayerPageComponent {
   protected readonly centerLine = computed(() =>
     this.reduceFlashing() ? CENTER_LINE_REDUCED : CENTER_LINE,
   );
+  /** Motion blur is this device's (shared with the designer and the builder; Skyler, 2026-11-14). */
   protected readonly quality = computed(() => ({
     ...DEFAULT_QUALITY,
+    persistence: this.prefs.motionBlur(),
     reduceFlashing: this.reduceFlashing(),
   }));
 
@@ -155,14 +246,34 @@ export class PlayerPageComponent {
       });
   }
 
+  protected metaClock(t: number): string {
+    return clock(t);
+  }
+
+  protected metaText(t: number, p: PlayingShow): string {
+    return this.exactEnd !== null
+      ? `${clock(t)} / ${clock(this.exactEnd)}`
+      : `${clock(t)} / about ${clock(p.estimate)}`;
+  }
+
+  protected onShowEnded(): void {
+    this.ended.set(true);
+    this.userPaused.set(true);
+    this.announcement.set(SHOW_ENDED_ANNOUNCEMENT);
+  }
+
   protected remix(): void {
-    const code = this.playing()?.shareCode;
+    const code = this.playing()?.shareCode ?? this.playingShow()?.shareCode;
     if (!code || !isShareCode(code)) return;
     void this.router.navigate(['/c', code]);
   }
 
   protected togglePause(): void {
     if (this.noticeVisible()) return;
+    if (this.ended()) {
+      this.replay();
+      return;
+    }
     this.showCenterPlay.set(false);
     this.userPaused.update((p) => !p);
   }
@@ -174,6 +285,18 @@ export class PlayerPageComponent {
   }
 
   protected replay(): void {
+    if (this.playingShow()) {
+      if (this.noticeVisible()) return;
+      // From step 0 again, the same ledger (§11.2, Peach 6h.4).
+      this.stage()?.seek(0);
+      this.ended.set(false);
+      this.announcement.set('');
+      this.showCenterPlay.set(false);
+      this.userPaused.set(false);
+      this.lastSecond = -1;
+      this.focusTestId('player-pause');
+      return;
+    }
     const playing = this.playing();
     if (!playing || this.paused()) return;
     this.stage()?.fireNow(playing.shell);
@@ -206,7 +329,7 @@ export class PlayerPageComponent {
   protected onKeydown(event: KeyboardEvent): void {
     if (event.code !== 'Space' && event.key !== ' ') return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    if (!this.playing() || this.noticeVisible()) return;
+    if ((!this.playing() && !this.playingShow()) || this.noticeVisible()) return;
     const target = event.target;
     if (target instanceof Element && target.closest(SPACE_OWNERS)) return;
     event.preventDefault();
@@ -216,6 +339,9 @@ export class PlayerPageComponent {
 
   private load(): void {
     this.opened.set(null);
+    this.ended.set(false);
+    this.exactEnd = null;
+    this.lastSecond = -1;
     this.showLoading.set(false);
     this.title.setTitle(SITE_TITLE);
     if (this.timer) clearTimeout(this.timer);
@@ -227,9 +353,14 @@ export class PlayerPageComponent {
       this.showLoading.set(false);
       this.opened.set(opened);
       this.title.setTitle(
-        opened.status === 'shell' ? creationTitle(opened.shell.name) : messageFor(opened).title,
+        opened.status === 'shell'
+          ? creationTitle(opened.shell.name)
+          : opened.status === 'show'
+            ? creationTitle(opened.show.name)
+            : messageFor(opened).title,
       );
-      if (opened.status === 'shell' && !this.noticeVisible() && this.showCenterPlay()) {
+      const plays = opened.status === 'shell' || opened.status === 'show';
+      if (plays && !this.noticeVisible() && this.showCenterPlay()) {
         this.focusTestId('player-center-play');
       }
     });
@@ -247,8 +378,6 @@ function messageFor(opened: OpenedCreation): LinkMessage {
   switch (opened.status) {
     case 'not-found':
       return notFoundMessage('player');
-    case 'show':
-      return showNotSupportedMessage();
     case 'newer':
       return newerVersionMessage('player');
     case 'network':

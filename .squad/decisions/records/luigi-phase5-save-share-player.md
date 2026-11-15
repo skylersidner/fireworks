@@ -1,5 +1,7 @@
 # Phase 5 batch 2: Save, Share, the player, `/c/:code` and My creations
 
+> **Superseded in part by luigi-phase6-show-builder.md on 2026-11-14:** point 6's runtime `kind` check no longer answers "not yet" for shows. `openCreation` now opens shows (Phase 6 point 8). The rest of point 6 stands.
+
 Luigi, 2026-11-14. Plan Phase 5; schema.md §7, §11; phase-5.md (Rosalina); `boo-phase5-security-requirements.md` C1–C17; `acceptance/phase-5.md` (Peach). Builds on `luigi-phase5-client-foundation.md`.
 
 ## What

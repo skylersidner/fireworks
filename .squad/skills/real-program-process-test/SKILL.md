@@ -16,3 +16,9 @@ The test project references the API project, so `Fireworks.Api.dll`, its `runtim
 
 ## When to use the harness instead
 For JSON shapes, model binding and per-endpoint behavior, use the SQLite Kestrel harness (`Controllers/FireworksApiHarness.cs`): it's faster and needs no Postgres. Use the process test for the pipeline itself, and run the gated suite (`FIREWORKS_TEST_POSTGRES`) before calling backend work done.
+
+## Options validation and the database (2026-11-15)
+- **`ValidateOnStart()` runs inside `app.Run()`, after Program.cs's migrate block.** A "fails before the database" test with only `ValidateOnStart` sees the Npgsql error first. Run the same `DataAnnotationValidateOptions<T>` eagerly in the registration method (see `ClientConfigRegistration`) and keep `ValidateOnStart` as the backstop.
+- **`IOptions<T>` resolves with class defaults even if nothing registers it.** A test that only checks default values can't see a missing registration in Program.cs. Pair it with an environment-variable override (`Section__Key=...`) against the real program, and assert the overridden value comes back.
+- Add the section's `Section__` prefix to `ApiProcess.ScrubbedPrefixes`, so a variable in your shell can't leak into a test.
+

@@ -21,14 +21,14 @@ import {
   T_GLITTER,
   T_NONE,
 } from './kinds';
-import { ParticleStore } from './particle-store';
+import { ParticleStore, type ParticleSnapshot } from './particle-store';
 import { directions } from './patterns';
-import { mulberry32, type Rng } from './rng';
+import { mulberry32Stateful, type SeededRng } from './rng';
 
 /** A shell in flight: rising, or between breaks. Plain object, as in the prototype. */
 interface ActiveShell {
   readonly def: ShellDocument;
-  readonly rng: Rng;
+  readonly rng: SeededRng;
   x: number;
   y: number;
   vx: number;
@@ -38,6 +38,15 @@ interface ActiveShell {
   idx: number;
   rising: boolean;
   emit: number;
+}
+
+/** Everything `step` reads that `launch` and `step` change (`FireworksSim.snapshot`). */
+export interface SimSnapshot {
+  readonly simTime: number;
+  readonly shells: readonly (Omit<ActiveShell, 'rng'> & { readonly rngState: number })[];
+  readonly particles: ParticleSnapshot;
+  /** Approximate memory held, for checkpoint budgets. */
+  readonly bytes: number;
 }
 
 export interface FireworksSimOptions {
@@ -85,7 +94,7 @@ export class FireworksSim {
 
   /** Launches `def` so it bursts at world point (tx, ty). Deterministic from `seed`. */
   launch(def: ShellDocument, tx: number, ty: number, seed: number): void {
-    const rng = mulberry32(seed);
+    const rng = mulberry32Stateful(seed);
     const g = this.sky.gravity;
     const h = Math.max(60, GROUND - ty);
     const vy = -Math.sqrt(2 * g * h);
@@ -111,6 +120,32 @@ export class FireworksSim {
   clear(): void {
     this.shells = [];
     this.particles.clear();
+  }
+
+  /**
+   * Copies the world: shells in flight (with their generator state), every live particle and
+   * `simTime`. `sky` and `starBudget` are settings, not state: the caller keeps them equal.
+   * `restore(snapshot())` then N steps is bit-identical to N steps.
+   */
+  snapshot(): SimSnapshot {
+    const particles = this.particles.snapshot();
+    const shells = this.shells.map(({ rng, ...rest }) => ({ ...rest, rngState: rng.state[0] }));
+    return {
+      simTime: this._simTime,
+      shells,
+      particles,
+      bytes: particles.bytes + shells.length * 128,
+    };
+  }
+
+  /** Makes the world exactly `snap`. Shell definitions are shared with the snapshot, never edited. */
+  restore(snap: SimSnapshot): void {
+    this.particles.restore(snap.particles);
+    this.shells = snap.shells.map(({ rngState, ...rest }) => {
+      const rng = mulberry32Stateful(rngState);
+      return { ...rest, rng };
+    });
+    this._simTime = snap.simTime;
   }
 
   /** Seconds a preview-loop cycle waits before re-firing `def` (prototype `shellDuration`). */

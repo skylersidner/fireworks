@@ -10,6 +10,12 @@ GET {{Fireworks.Api_HostAddress}}/health/live
 GET {{Fireworks.Api_HostAddress}}/api/me
 Accept: application/json
 
+### Client tuning knobs (Show Builder playback). Anonymous, read-limited, Cache-Control: no-store.
+### 200 { playback: { seekBudgetMs: 25, catchingUpDelayMs: 300, checkpointIntervalSeconds: 10,
+### checkpointMemoryMiB: 64 } } from the ClientPlayback section; ClientPlayback__SeekBudgetMs=40 overrides.
+GET {{Fireworks.Api_HostAddress}}/api/client-config
+Accept: application/json
+
 ### Unknown API path. Must be 404 — NOT 200 text/html from the SPA fallback.
 GET {{Fireworks.Api_HostAddress}}/api/nope
 Accept: application/json

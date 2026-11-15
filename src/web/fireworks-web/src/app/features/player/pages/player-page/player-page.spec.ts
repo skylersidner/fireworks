@@ -7,7 +7,11 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../../../app.routes';
 import { PRESETS } from '../../../../../engine/model/presets';
 import { BROWSER_STORAGE, MATCH_MEDIA, REDUCED_MOTION_QUERY } from '../../../../core/browser';
-import { FLASH_NOTICE_KEY, REDUCE_FLASHING_KEY } from '../../../../core/device-preferences';
+import {
+  FLASH_NOTICE_KEY,
+  MOTION_BLUR_KEY,
+  REDUCE_FLASHING_KEY,
+} from '../../../../core/device-preferences';
 import type { MeResponse } from '../../../../core/models';
 import {
   FireworksStageComponent,
@@ -235,6 +239,24 @@ describe('Player /s/:code', () => {
     });
   });
 
+  describe('Motion blur is the device preference (Skyler, 2026-11-14)', () => {
+    it('renders with the default when this device has none', async () => {
+      storage.setItem(FLASH_NOTICE_KEY, '1');
+      const { fake } = await play();
+      fake!.frame(16, 2);
+      expect(fake!.lastPersistence).toBe(0.78);
+    });
+
+    it('renders with the stored value, and never writes it', async () => {
+      storage.setItem(FLASH_NOTICE_KEY, '1');
+      storage.setItem(MOTION_BLUR_KEY, '0.3');
+      const { fake } = await play();
+      fake!.frame(16, 2);
+      expect(fake!.lastPersistence).toBe(0.3);
+      expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.3');
+    });
+  });
+
   describe('controls (§8.1, §8.2)', () => {
     beforeEach(() => storage.setItem(FLASH_NOTICE_KEY, '1'));
 
@@ -351,10 +373,10 @@ describe('Player /s/:code', () => {
       expect(fakes.starts).toHaveLength(0);
     });
 
-    it('a show: not yet; kind "Shell": not found', async () => {
+    it("a show whose document fails normalizeShow: the can't-be-played copy (Phase 6)", async () => {
       const show = await play(creationResponse({ kind: 'show' }));
       expect(show.byTest('message-heading')?.textContent?.trim()).toBe(
-        "This show can't be played yet.",
+        "This creation can't be played.",
       );
     });
 

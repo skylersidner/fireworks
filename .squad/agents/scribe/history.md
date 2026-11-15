@@ -39,3 +39,15 @@
 ### 2026-11-14 — Phase 5 cross-agent update (Scribe)
 - **Index check (Phase 5):** three items are flagged to Skyler rather than edited into the index: the `/mine` "hidden" wording, the "Save as new (remix)" row after a PUT 404, and the F11 status conflict. The session log holds them.
 - **Marker form:** partial supersession uses the bold `Superseded in part by … on DATE` line under the title, as in Phase 2 to 4. Rulings are cited by date and README §5.
+
+### 2026-11-14 — Phase 6 cross-agent update (Scribe)
+
+- **Supersession marks added in place:** `luigi-phase5-save-share-player.md` point 6 (the "not yet" kind check) and `boo-phase5-security-verification.md` (the C5 show branch). Yoshi's 2a point 8 marker was already in place.
+- **Dates:** file names use the UTC write time (2026-11-15T02:01:39Z). Content is dated 2026-11-14, the batch and ruling date, which is the local date.
+- **Index check:** no new record contradicts a §5 entry. Flags are in the Phase 6 session log for Skyler; the index was not edited.
+
+### 2026-11-15 — Post-gate addendum (Scribe)
+
+- **Plan and index differ.** The 2026-11-15 rulings (seek budget 25 ms, `ClientPlayback` in appsettings, ranges as built, Boo's tightening declined) are in plan §Phase 6 but are not index rows in `decisions/README.md` §5. Flagged in the session log; promotion is Skyler's call.
+- **Supersessions are marked in the records, not the index:** Luigi's point 13 (partial; 8 ms is now 25 ms) and two bullets in `mario-phase6-gate.md`.
+- **Folding:** Boo, Bowser, Luigi and Toad were over 12 KB and are folded. Yoshi is checked against the same rule.

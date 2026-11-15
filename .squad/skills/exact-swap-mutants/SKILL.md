@@ -15,3 +15,9 @@
 - C#: after the revert, `touch` the file so MSBuild rebuilds it.
 
 Script template: `scratchpad/toad-p5/mut.py` (MUTANTS dict of `(file, old, new, specs)`).
+
+## Added in Phase 6
+- **A build failure isn't a kill.** `&& false` (or `if (false)`) narrows a variable to `never`, so the TS compile fails and every spec "fails". Treat a `NO-SUMMARY` or `TS2xxx` result as a broken mutant. Use a type-preserving guard instead: `&& key === ''` or `&& this.code === ''`.
+- **Copy rigs keep the repo's depth** when specs read `${cwd}/../../../schema`: put the copy at `<rig>/r/src/web/fireworks-web` and symlink `<rig>/r/schema` to the real schema (`scratchpad/toad-p6/mut.py`).
+- **Report which tests killed a mutant.** A mutant that only your new test kills shows that the old test was vacuous; quote it as evidence (Phase 6: `player-replay-no-seek` passed Luigi's 6h.4 test).
+- **Self-cancelling mutants.** An involution (`x ^ 1`, `!b`, a swap) applied once per edit cancels out across an even number of edits. If a test makes two edits and checks only at the end, assert after each edit (Phase 6: `move-reseeds` survived until then).

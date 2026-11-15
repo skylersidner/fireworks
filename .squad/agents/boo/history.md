@@ -30,27 +30,23 @@
 - **Verification rig:** three instances on a scratch Postgres (writes off, user A, user B), started one at a time (two migrating at once race on `42P07`). Count queries with `Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command=Information`. zsh needs `env "K=V"` for dotted names, and loops belong in bash. `FIREWORKS_TEST_POSTGRES` must name a throwaway database.
 - **Deploy checks:** S5 (a 200 KiB body must reach the app through Railway's edge) and S21 (the real client IP). One replica until migrations take a lock (Bowser F5).
 
+### Folded from Phase 5 and Phase 6 (summarized 2026-11-15)
+
+- **Phase 5 (`boo-phase5-security-requirements.md` C1–C20; verification record):** client-side traversal is real. The WHATWG `new URL` resolves `/api/creations/../me` and `/api/creations/%2e%2e/me` to `/api/me`, and the router decodes `/s/..%2Fme`. Run the §9 share-code regex before every URL build, and take `source.shareCode` from the response, never the route (C4). The API has no existence oracle (never-existed and deleted codes share one path; delete is `ExecuteDeleteAsync`), so "never reused" is only probabilistic (info for Yoshi). Don't render `remixedFrom` (C10). Gate write controls on `canWrite`, never `isOwner` (C9). Hand proposed index lines to the coordinator; never edit the index.
+- **Sink bans:** Angular remaps `[innerHtml]` to `innerHTML` (`DOM_PROPERTY_REMAPPING` in `@angular/compiler`), and interpolated `href="{{ name }}"` slipped past C2. Mutation-test sink bans with alternate Angular spellings (skill `.squad/skills/angular-unsafe-sink-ban/SKILL.md`).
+- **Phase 5 close-outs:** F1 (Toad's `unsafe-sinks.spec.ts`, 9 of 9), F3 (`readSource` rejects a show `source` in the shell draft) and C3 (Luigi's FSI/PDI `isolate()` in `app/shared/bidi.ts`) closed. C18 (S5, S21, S28) runs at the Railway window.
+- **Tooling:** Node 26 via `PATH=~/.nvm/versions/node/v26.5.0/bin:$PATH` (the default 21 is too old for Angular CLI 22). Single spec: `npx ng test --watch=false --include <path>`. Playwright lives in scratchpad `pw/` with `channel: 'chrome'`. Stub `navigator.clipboard` in `addInitScript`, pre-set `fireworks.flashNotice.v1`, delete probe rows afterwards. zsh has no `timeout`, and foreground `sleep` is blocked: long runs go to the background. Toad mutates files during runs, so check mtimes before trusting a red run.
+- **Phase 6 review (`boo-phase6-security-verification.md`, 2026-11-14):** C1–C17 PASS on show surfaces (C5 re-verified for shows; C17 closed on the final copy). Show issue paths carry shell names (§15), so the C3 isolation check applies. F2 (verifier gap in C2 and C14) and F5 (no show twin of the designer's F6 rule) were closed by Toad, rules 11–12 in `toad-phase6-show-review.md`. F3 (info): `normalizeShow`'s null prototype is lost by spreads and `structuredClone`; safety rests on `Object.hasOwn` plus "every `cue.shell` is own". Probe `constructor`, `toString` and `valueOf` end to end. F4 (info): `<option>` labels aren't isolated, accepted under C3.
+- **Memory and DoS probes:** the 64 MiB doubling loop is a hard bound on counted checkpoint bytes. Typed-array buffers are invisible to `Runtime.getHeapUsage`; read `driver.checkpointBytes`. Use `schema/fixtures/valid/show/at-maximums.json` as a localStorage draft. `JSON.parse('1e999')` is Infinity, the way to smuggle non-finite numbers. Bench the engine in node with the repo's esbuild (scratchpad `boo-bench/`).
+- **Measuring input:** use Event Timing (`type: 'event'`) with `page.mouse.click`. `locator.click` wall time includes actionability waits (Luigi's 461 ms Pause was that, not handler latency).
+- **Rig:** the 4200 dev server proxies `/api` to 5180. Stub `api/me` with `page.route` for C9. Real writes are paced 3.2 s or more apart, and probe rows are deleted. Don't exhaust the shared read bucket while Toad runs.
+- **Client config (addendum 2026-11-15, `bowser-phase6-client-playback-config.md`):** `GET api/client-config` is clean (four ints, `no-store`, `nosniff`, non-GET gives the empty `/api` 404, shares the read bucket with `api/me`). F1 (seek freeze) PASS on the running app: p99 frame 83 ms, real input at most 120 ms. A hostile stub config is clamped safely. The worst in-range config (100 ms, 1 s, 512 MiB) holds 510 MiB of checkpoint buffers and reaches 440 ms input latency, so Boo suggested tighter ranges (50 ms, 128 MiB). Skyler declined that: ranges stay as built.
+
 ## Learnings
 
+### 2026-11-15 — Post-gate cross-agent update (Scribe)
 
-### 2026-11-14 — Phase 5 security-review (client: share links, untrusted creation data)
-- Record: `.squad/decisions/records/boo-phase5-security-requirements.md` (C1–C20). Luigi builds, Toad verifies. C18 (S5/S21 plus the S28 runbook) runs at the Phase 5 Railway round trip, which is the first test window.
-- **Client-side path traversal is real here:** the WHATWG URL parser resolves `/api/creations/../me` and `/api/creations/%2e%2e/me` to `/api/me` (measured with node `new URL`), and the router decodes `/s/..%2Fme` into `../me`. So the §9 regex must run before every URL build, and `source.shareCode` comes from the response, never from the route param (C4).
-- No existence oracle in the API: never-existed and deleted codes take the same `FindByShareCodeAsync` → fixed `NotFoundMessage` path, and delete is a hard `ExecuteDeleteAsync`. Side effect: schema §9's "never reused" is only probabilistic (info for Yoshi).
-- The existing innerHTML ban (`designer-structure.spec.ts:64`) covers only `features/designer` and `app/shared`. Phase 5 surfaces need an app-wide spec (C1). §6.4 keeps Cf characters (U+202E), so bidi isolation of names is hardening (C3).
-- **The accepted interim exposures are API-level. Don't let the UI widen them:** don't render `remixedFrom` (C10). Gate write controls on `canWrite`, never `isOwner`, which is true for every interim visitor (C9).
-- I don't edit `.squad/decisions/README.md` even when a brief asks for an index line. I hand the proposed line to the coordinator, because promotion is Skyler's call.
-
-### 2026-11-14 — Phase 5 security verification (after Luigi's batch 2)
-- Record: `.squad/decisions/records/boo-phase5-security-verification.md`. Everything passes except C18, which is deferred to deploy. C3 partial isolation is accepted (low): every action is its own element, and bidi reordering can't cross elements. The cheap close is FSI/PDI (U+2068/U+2069) inside `quoted()` and the inline name sites.
-- **Verifier gap F1:** Angular remaps `[innerHtml]` to `innerHTML` (`DOM_PROPERTY_REMAPPING` in `@angular/compiler`), so a case-sensitive `innerHTML` ban misses it. Interpolated `href="{{ name }}"` also slipped past the C2 regex. Always mutation-test sink bans with alternate Angular spellings. Skill: `.squad/skills/angular-unsafe-sink-ban/SKILL.md`.
-- Tooling: the default `node` is v21, and Angular CLI 22 needs v22 or later. Use `PATH=~/.nvm/versions/node/v26.5.0/bin:$PATH`. Run a single spec with `npx ng test --watch=false --include <path>`.
-- Toad mutates product files while running tests, so a full-suite run concurrent with Toad gives false failures. Check file mtimes before trusting a red run.
-- Running-app rig: the ng dev server on 4200 proxies `/api` to the API on 5180. Playwright lives in the scratchpad `pw/` with `channel: 'chrome'`. Stub `navigator.clipboard` in `addInitScript`, and pre-set `fireworks.flashNotice.v1`. Delete the probe rows afterwards. `/s/%2e%2e` is normalized to `/` by the browser before the router sees it.
-
-### 2026-11-14 — Phase 5 cross-agent update (Scribe)
-- **F1 closed:** Toad hardened `unsafe-sinks.spec.ts` (9 of 9: case-insensitive sinks, URL-attribute names in three spellings). **F3 closed:** `readSource(value, expected)` rejects a show `source` in the shell draft.
-- **C3 closed:** Luigi's FSI/PDI isolation (`app/shared/bidi.ts` `isolate()`) in the review-fix round.
-- **C17 re-check pending:** the final copy is in place (`TEST_MODE_TEXT`). Record the re-check result; your verification leaves it open.
-- **C18 open at Railway:** S5, S21 and S28. Bowser runs them; you check the output.
-- **Call for you or Yoshi:** Toad's C2 "name"-only heuristic.
+- **Skyler declined your tightening.** The ranges stay as built: `SeekBudgetMs` 4–100, `CheckpointMemoryMiB` 8–512 (plan §Phase 6, 2026-11-15). Caps for shows are a Phase 7 decision with measured numbers, a separate question.
+- **F1 is closed in code** (Luigi's time-budgeted `seekSlice`, 25 ms default). Your addendum re-check PASS stands.
+- **F2 and F5 are closed by Toad** (rules 11–12 in `toad-phase6-show-review.md`): C2 is a shape allowlist with an exact ledger, C14 matches any receiver, and the show entry is pinned by `showEntryViolations()`. Your addendum did not re-check those closures. Please do.
+- **Bowser's record overstates the registration claim** (only the gated test catches it). Bowser corrects it; Toad measured that the ungated `ClientConfigStartupTests` also catch it.

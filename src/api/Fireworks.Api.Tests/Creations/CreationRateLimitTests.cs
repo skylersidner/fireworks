@@ -99,7 +99,7 @@ public sealed class CreationRateLimitTests
     }
 
     [Fact]
-    public async Task Reads_including_the_catch_all_and_api_me_share_120_a_minute_and_health_is_never_limited()
+    public async Task Reads_including_the_catch_all_api_me_and_client_config_share_120_a_minute_and_health_is_never_limited()
     {
         // The committed read default, not a lowered one.
         await using var h = await StartAsync(writes: true, writesPerMinute: 1);
@@ -114,7 +114,7 @@ public sealed class CreationRateLimitTests
             Assert.Equal(HttpStatusCode.TooManyRequests, limitedWrite.StatusCode);
         }
 
-        var paths = new[] { "/api/nope", "/api/me", "/api/creations/abcdefgh", "/api/me/creations" };
+        var paths = new[] { "/api/nope", "/api/me", "/api/creations/abcdefgh", "/api/me/creations", "/api/client-config" };
         for (var i = 0; i < 120; i++)
         {
             using var response = await h.Client.GetAsync(paths[i % paths.Length]);

@@ -113,6 +113,12 @@ export class ShellDesignerStore {
   private readonly prefs = inject(DevicePreferencesService);
   private readonly reducedMotion = mediaQuery(REDUCED_MOTION_QUERY);
   private readonly restored = readDraft(this.storage);
+  /**
+   * Motion blur is device-wide since Phase 6 (Skyler, 2026-11-14), shared with the Show Builder and
+   * the player. A draft from before then holds it; it becomes the device's once, here, before the
+   * Display form reads it.
+   */
+  private readonly initialMotionBlur = this.adoptMotionBlur();
   /** Under the OS reduced-motion setting the designer opens in Manual, every load (Skyler). */
   private readonly forcedManual = untracked(this.reducedMotion);
   private readonly restoredMode: PlaybackMode = this.restored?.display.mode ?? DEFAULT_DISPLAY.mode;
@@ -135,7 +141,7 @@ export class ShellDesignerStore {
 
   readonly displayModel = signal<DisplayModel>({
     mode: this.forcedManual ? 'manual' : this.restoredMode,
-    persistence: this.restored?.display.persistence ?? DEFAULT_DISPLAY.persistence,
+    persistence: this.initialMotionBlur,
     starBudget: this.restored?.display.starBudget ?? DEFAULT_DISPLAY.starBudget,
   });
   readonly displayForm = form(this.displayModel);
@@ -259,6 +265,14 @@ export class ShellDesignerStore {
     // A draft from before Phase 5 holds the Reduce flashing choice; it becomes the device's.
     this.prefs.adoptLegacyReduceFlashing(this.restored?.display.reduceFlashing);
     this.lastWritten = this.serialize();
+
+    // The Display form edits the device's Motion blur; nothing is stored until it differs.
+    effect(() => {
+      const persistence = this.displayModel().persistence;
+      untracked(() => {
+        if (persistence !== this.prefs.motionBlur()) this.prefs.setMotionBlur(persistence);
+      });
+    });
 
     effect((onCleanup) => {
       const json = this.serialize();
@@ -496,6 +510,11 @@ export class ShellDesignerStore {
    * (designer-2c.md §3.5). A Manual the visitor picks while the OS forces it is indistinguishable,
    * which costs nothing: the next load under the same setting is Manual either way.
    */
+  private adoptMotionBlur(): number {
+    this.prefs.adoptLegacyMotionBlur(this.restored?.display.persistence);
+    return this.prefs.motionBlur();
+  }
+
   private displayForDraft(): DisplaySettings {
     const d = this.displayModel();
     const mode = this.forcedManual && d.mode === 'manual' ? this.restoredMode : d.mode;

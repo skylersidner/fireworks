@@ -18,6 +18,16 @@ export interface SpawnOptions {
   gen?: number;
 }
 
+type FieldArray = Float32Array | Uint32Array | Int32Array | Uint8Array;
+
+/** A copy of the live particles (`ParticleStore.snapshot`). Opaque: restore it, don't edit it. */
+export interface ParticleSnapshot {
+  readonly n: number;
+  /** Every field array cut to `n`, in `fields` order. */
+  readonly fields: readonly FieldArray[];
+  readonly bytes: number;
+}
+
 /**
  * Particles as parallel typed arrays with swap-remove (prototype `P`, `spawn`, `kill`, `prand`),
  * as an instance so two stages, or two tests, never share state.
@@ -47,7 +57,7 @@ export class ParticleStore {
   readonly gen: Uint8Array;
 
   /** Every field array, in the prototype's FIELDS order; `kill` copies all of them. */
-  private readonly fields: readonly (Float32Array | Uint32Array | Int32Array | Uint8Array)[];
+  private readonly fields: readonly FieldArray[];
 
   constructor(capacity: number = CAP) {
     this.capacity = capacity;
@@ -147,6 +157,21 @@ export class ParticleStore {
 
   clear(): void {
     this.n = 0;
+  }
+
+  /** Copies every field of the live particles. `restore` brings back exactly this store. */
+  snapshot(): ParticleSnapshot {
+    const fields = this.fields.map((f) => f.slice(0, this.n));
+    return { n: this.n, fields, bytes: fields.reduce((sum, f) => sum + f.byteLength, 0) };
+  }
+
+  /** Makes the live particles exactly those of `snap`. Slots past `n` are dead and never read. */
+  restore(snap: ParticleSnapshot): void {
+    if (snap.n > this.capacity || snap.fields.length !== this.fields.length) {
+      throw new Error('ParticleStore.restore: snapshot from a different store');
+    }
+    this.fields.forEach((f, i) => f.set(snap.fields[i]));
+    this.n = snap.n;
   }
 
   /** Live particle count per kind code (index = `K_*`). */

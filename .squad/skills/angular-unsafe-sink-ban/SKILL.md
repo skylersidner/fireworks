@@ -13,3 +13,7 @@ A string-literal negative control (`UNSAFE_SINK.test('<span [innerHTML]=…>')`)
 
 ## Bidi in names
 §6.4 removes Cc characters but keeps Cf characters (U+202E). Use `<bdi>` where a name stands next to controls. In plain strings (toasts, dialogs, `document.title`), wrap the name in U+2068 … U+2069. Reordering can't cross element boundaries, so a button with fixed text in its own element can't be relabeled.
+
+## Name heuristics go stale as features add name carriers (Phase 6)
+A C2 ban keyed on `\bname\b` misses any expression that carries a name under another identifier. Phase 6 added `shellNameOf(cue)`, `activeName()`, `o.label` (select labels built from names) and `d.title` (confirm titles). When a feature adds a surface, grep its templates for every expression that returns user text, and run each one through the regex as a negative control in node; you don't have to edit a product file to do that. The sturdier rule is to ban any non-literal binding on a URL attribute except an allowlist of code-shaped expressions (`shareCode`, `code`).
+Navigation bans have the same problem: `router\.(navigate|navigateByUrl)\(` misses `inject(Router).navigateByUrl(` and `location.assign(`.

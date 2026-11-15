@@ -7,7 +7,8 @@ import { Routes, UrlMatcher, UrlSegment } from '@angular/router';
  *
  * `/` is the Shell Designer (OQ8). `/status` is the Phase 1 status page, moved there in 2c with no
  * stage (decided 2026-11-12). Phase 5 (schema.md §11.1): `/s/:shareCode` is the player,
- * `/c/:shareCode` opens a working copy and redirects to `/`, `/mine` is My creations. Any other
+ * `/c/:shareCode` opens a working copy and redirects to `/` (a shell) or `/show` (a show, Phase 6),
+ * `/show` is the Show Builder (phase-6.md §2), `/mine` is My creations. Any other
  * path under `/s` or `/c` gets the link not-found page (Peach N3); other unknown paths go to the
  * designer.
  */
@@ -18,6 +19,13 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/designer/pages/designer-page/designer-page').then(
         (m) => m.DesignerPageComponent,
+      ),
+  },
+  {
+    path: 'show',
+    loadComponent: () =>
+      import('./features/show/pages/show-builder-page/show-builder-page').then(
+        (m) => m.ShowBuilderPageComponent,
       ),
   },
   {

@@ -4,7 +4,8 @@
  * from the source tree. Fails on: a legacy forms API or a ControlValueAccessor in the designer or
  * the shared controls; a presentational component that injects the store; identity or HTTP in the
  * designer or `src/app/shared` outside the allowlist (the Save flow, the `/c/` page, the designer
- * page's ApiStatusService, the test-mode banner's SessionService). The app-wide unsafe-sink ban
+ * and builder pages' ApiStatusService, the test-mode banner's SessionService). The builder page is
+ * held to exactly its ApiStatusService hits by the allowlist, not listed with the stores. The app-wide unsafe-sink ban
  * (Boo C1) is `src/app/unsafe-sinks.spec.ts`.
  */
 interface Dirent {
@@ -30,6 +31,8 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const rel = (p: string) => p.slice(APP.length + 1);
 const designer = walk(`${APP}/features/designer`);
+/** The Show Builder (Phase 6) follows the same rule (luigi-phase6-show-builder.md). */
+const builder = walk(`${APP}/features/show`);
 const controls = walk(`${APP}/shared`);
 const read = (p: string) => fs.readFileSync(p, 'utf8');
 
@@ -39,12 +42,22 @@ describe('designer structure', () => {
     expect(controls.some((p) => p.endsWith('range-row.ts'))).toBe(true);
   });
 
+  it('only the builder page and its Save flow inject the builder store', () => {
+    const injectors = builder.filter((p) => /inject\(ShowBuilderStore\)/.test(read(p))).map(rel);
+    expect(injectors.sort()).toEqual([
+      'features/show/pages/show-builder-page/show-builder-page.ts',
+      'features/show/pages/show-builder-page/show-save.ts',
+    ]);
+  });
+
   it('uses Signal Forms only: no ReactiveFormsModule, FormGroup/FormControl, or ControlValueAccessor', () => {
     // Code forms only: doc comments may name what is avoided, and '@angular/forms/signals' is the
     // one allowed entry point.
     const banned =
       /ReactiveFormsModule|\bFormsModule\b|new Form(Group|Control|Array)\b|FormBuilder|implements[^{]*\bControlValueAccessor\b|NG_VALUE_ACCESSOR|from '@angular\/forms'/;
-    const offenders = [...designer, ...controls].filter((p) => banned.test(read(p))).map(rel);
+    const offenders = [...designer, ...builder, ...controls]
+      .filter((p) => banned.test(read(p)))
+      .map(rel);
     expect(offenders).toEqual([]);
   });
 
@@ -157,6 +170,27 @@ describe('designer structure', () => {
       'import core/api-status',
       'inject(ApiStatusService)',
     ],
+    // The builder's API banner only (phase-6.md §19.2 B1); identity goes through ShowSaveFlow.
+    'features/show/pages/show-builder-page/show-builder-page.ts': [
+      'import core/api-status',
+      'inject(ApiStatusService)',
+    ],
+    // ShowSaveFlow, the builder's page-provided Save (Phase 6).
+    'features/show/pages/show-builder-page/show-save.ts': [
+      'import core/creation-save',
+      'import core/creations',
+      'import core/session',
+      'inject(CreationsService)',
+      'inject(SessionService)',
+    ],
+    // "My shells": the write switch (session) and one openCreation per added shell (Peach N2).
+    'features/show/pages/show-builder-page/show-library.ts': [
+      'import core/creations',
+      'import core/open-creation',
+      'import core/session',
+      'inject(CreationsService)',
+      'inject(SessionService)',
+    ],
     // canWrite && !isAuthenticated (Boo C17); identity comes only from SessionService.
     'shared/test-mode-banner.ts': ['import core/session', 'inject(SessionService)'],
   };
@@ -165,6 +199,7 @@ describe('designer structure', () => {
     expect([...BANNED_CORE].sort()).toEqual([
       'api',
       'api-status',
+      'client-config-loader',
       'creation-save',
       'creations',
       'health',
@@ -178,17 +213,22 @@ describe('designer structure', () => {
 
   it('identity and HTTP only where the allowlist says, and only how (2c.8, Phase 5 form)', () => {
     const matching = Object.fromEntries(
-      [...designer, ...controls]
+      [...designer, ...builder, ...controls]
         .map((p) => [rel(p), reaches(read(p))] as const)
         .filter(([, hits]) => hits.length > 0),
     );
     expect(matching).toEqual(ALLOWED);
   });
 
-  it('the store and the draft never reach HTTP or identity', () => {
+  it('the stores and the drafts never reach HTTP or identity (designer and Show Builder)', () => {
+    expect(builder.some((p) => p.endsWith('show-builder.store.ts'))).toBe(true);
     for (const f of [
       'features/designer/pages/designer-page/shell-designer.store.ts',
       'features/designer/shared/designer-draft.ts',
+      'features/show/pages/show-builder-page/show-builder.store.ts',
+      'features/show/shared/show-draft.ts',
+      'features/show/shared/show-edit.ts',
+      'features/show/shared/show-working-copy-handoff.ts',
     ]) {
       expect(reaches(read(`${APP}/${f}`)), f).toEqual([]);
     }
@@ -221,6 +261,12 @@ describe('designer structure', () => {
       ["const r = await fetch('/api/creations');", 'fetch('],
       ['const x = new XMLHttpRequest();', 'XMLHttpRequest'],
       ["readonly list = httpResource(() => '/api/me');", 'httpResource'],
+      // The playback config: the loader reaches HTTP; only its value store is open to the stage.
+      [
+        "import { ClientConfigLoader } from '../../core/client-config-loader';",
+        'import core/client-config-loader',
+      ],
+      ['private readonly l = inject(ClientConfigLoader);', 'inject(ClientConfigLoader)'],
     ] as const) {
       expect(reaches(bad), bad).toContain(hit);
     }
@@ -229,6 +275,8 @@ describe('designer structure', () => {
       'import type { CreationError } from "../../../core/creations";',
       "import { isShareCode } from '../../core/share-code';",
       "import { readStorage } from '../../core/browser';",
+      "import { ClientConfigStore } from '../../core/client-config';",
+      'private readonly c = inject(ClientConfigStore);',
       'const store = inject(ShellDesignerStore);',
       'prefetch(link);',
     ]) {
@@ -276,5 +324,156 @@ describe('designer structure', () => {
     expect(draft).toContain("openShell(raw['shell'])");
     const store = read(`${APP}/features/designer/pages/designer-page/shell-designer.store.ts`);
     expect(store).toContain('const result = openShell(parsed);');
+  });
+
+  /**
+   * The show twin of the F6 rule (Boo Phase 6 F5). A show enters the builder from storage (the
+   * draft) or the network (`/c/` through openCreation and ShowWorkingCopyHandoff), and both go
+   * through `openShow` (upgrade, then lenient normalize). `normalizeShow` is otherwise called only by
+   * `validateShow` and by ShowSaveFlow on the store's own document. Keyed by path under `src/`.
+   */
+  function showEntryViolations(sources: Readonly<Record<string, string>>): string[] {
+    const out: string[] = [];
+    const callers = (re: RegExp, except: RegExp = /^$/) =>
+      Object.keys(sources)
+        .filter((p) => new RegExp(re.source, 'g').test(sources[p].replace(except, '')))
+        .sort();
+    const calls = (p: string, re: RegExp) => sources[p]?.match(new RegExp(re.source, 'g')) ?? [];
+    const pin = (label: string, actual: unknown, expected: unknown) => {
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        out.push(`${label}: ${JSON.stringify(actual)}`);
+      }
+    };
+    const DRAFT = 'app/features/show/shared/show-draft.ts';
+    const SAVE = 'app/features/show/pages/show-builder-page/show-save.ts';
+    const STORE = 'app/features/show/pages/show-builder-page/show-builder.store.ts';
+    const LINK = 'app/features/designer/pages/open-link-page/open-link-page.ts';
+    const OPEN = 'app/core/open-creation.ts';
+    pin('upgradeShow callers', callers(/\bupgradeShow\(/, /export function upgradeShow\(/), [
+      'engine/model/open.ts',
+    ]);
+    pin('normalizeShow callers', callers(/\bnormalizeShow\(/, /export function normalizeShow\(/), [
+      SAVE,
+      'engine/model/open.ts',
+      'engine/model/validate.ts',
+    ]);
+    pin(
+      'ShowSaveFlow normalizes only the store document',
+      calls(SAVE, /\bnormalizeShow\([^)]*\)/),
+      ['normalizeShow(sent.show)'],
+    );
+    pin('validateShow callers', callers(/\bvalidateShow\(/, /export function validateShow\(/), [
+      SAVE,
+    ]);
+    pin('openShow callers', callers(/\bopenShow\(/, /export function openShow\(/), [OPEN, DRAFT]);
+    pin('openCreation opens a show with openShow', calls(OPEN, /\bopenShow\([^)]*\)/), [
+      'openShow(r.document)',
+    ]);
+    // Storage: one parse, the whole `show` field through openShowDraftDocument, which calls
+    // openShow on both branches (with cues, and the empty-cues sentinel).
+    pin('show draft parses', calls(DRAFT, /\bJSON\.parse\(/), ['JSON.parse(']);
+    pin('show draft openShow calls', calls(DRAFT, /\bopenShow\([^)]*\)/), [
+      'openShow(raw)',
+      'openShow(withSentinel)',
+    ]);
+    pin(
+      'show draft restore',
+      calls(DRAFT, /const show = openShowDraftDocument\(raw\['show'\]\);/),
+      ["const show = openShowDraftDocument(raw['show']);"],
+    );
+    pin(
+      'openShowDraftDocument callers',
+      callers(/\bopenShowDraftDocument\(/, /export function openShowDraftDocument\(/),
+      [DRAFT],
+    );
+    pin('readShowDraft callers', callers(/\breadShowDraft\(/, /export function readShowDraft\(/), [
+      STORE,
+    ]);
+    // No other show surface parses text or casts its way to a ShowDocument.
+    pin(
+      'JSON.parse under features/show',
+      callers(/\bJSON\.parse\(/).filter((p) => p.startsWith('app/features/show/')),
+      [DRAFT],
+    );
+    pin('casts to ShowDocument', callers(/\bas\s+ShowDocument\b/), []);
+    // Network: only `/c/` offers a show, and only what openCreation returned.
+    pin('ShowWorkingCopyHandoff offers', callers(/\bshowHandoff\.offer\(/), [LINK]);
+    pin('the offered show', calls(LINK, /showHandoff\.offer\(\{ show: [\w.]+/), [
+      'showHandoff.offer({ show: opened.show',
+    ]);
+    return out;
+  }
+
+  const SRC = APP.slice(0, -'/app'.length);
+  const showSources: Record<string, string> = Object.fromEntries(
+    [...walk(APP), ...walk(`${SRC}/engine`)].map((p) => [p.slice(SRC.length + 1), read(p)]),
+  );
+
+  it('untrusted shows enter through openShow, from storage and from /c/ (Boo Phase 6 F5)', () => {
+    expect(showSources['app/features/show/shared/show-draft.ts']).toBeDefined();
+    expect(showSources['engine/model/open.ts']).toBeDefined();
+    expect(showEntryViolations(showSources)).toEqual([]);
+  });
+
+  it('the show entry rule catches each bypass (negative controls)', () => {
+    const DRAFT = 'app/features/show/shared/show-draft.ts';
+    const STORE = 'app/features/show/pages/show-builder-page/show-builder.store.ts';
+    const LINK = 'app/features/designer/pages/open-link-page/open-link-page.ts';
+    const swap = (path: string, from: string, to: string): Record<string, string> => {
+      expect(showSources[path], path).toContain(from);
+      return { ...showSources, [path]: showSources[path].replace(from, to) };
+    };
+    for (const [label, mutated] of [
+      [
+        'draft restore skips openShow',
+        swap(
+          DRAFT,
+          "const show = openShowDraftDocument(raw['show']);",
+          "const show = raw['show'] as ShowDocument;",
+        ),
+      ],
+      ['draft normalizes without upgrade', swap(DRAFT, 'openShow(raw)', 'normalizeShow(raw)')],
+      [
+        'empty-cues branch skips openShow',
+        swap(DRAFT, 'openShow(withSentinel)', 'normalizeShow(withSentinel)'),
+      ],
+      [
+        'store parses storage itself',
+        swap(STORE, 'readShowDraft(this.storage)', "JSON.parse(this.storage?.getItem('x') ?? '')"),
+      ],
+      [
+        '/c/ offers the raw response',
+        swap(
+          LINK,
+          'showHandoff.offer({ show: opened.show',
+          'showHandoff.offer({ show: opened.response.document',
+        ),
+      ],
+      [
+        'openCreation normalizes a show without upgrade',
+        swap('app/core/open-creation.ts', 'openShow(r.document)', 'normalizeShow(r.document)'),
+      ],
+      [
+        'save normalizes something other than the store document',
+        swap(
+          'app/features/show/pages/show-builder-page/show-save.ts',
+          'normalizeShow(sent.show)',
+          'normalizeShow(pasted)',
+        ),
+      ],
+      [
+        'a new show surface normalizes directly',
+        {
+          ...showSources,
+          'app/features/show/shared/show-json.ts': 'const r = normalizeShow(JSON.parse(t));',
+        },
+      ],
+      [
+        'a new show surface upgrades on its own',
+        { ...showSources, 'app/features/show/shared/show-json.ts': 'const u = upgradeShow(raw);' },
+      ],
+    ] as const) {
+      expect(showEntryViolations(mutated), label).not.toEqual([]);
+    }
   });
 });

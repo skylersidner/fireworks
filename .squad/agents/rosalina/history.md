@@ -49,3 +49,32 @@
 - **Your record's item 7 is partly superseded:** Skyler's 2026-11-14 ruling makes Remix show regardless of `canWrite`. Marked in the record.
 - **Banner copy final:** `phase-5.md` §2.4 and `TEST_MODE_TEXT`. Boo has not recorded the C17 re-check. Keep the phrase "change or delete any saved" (the spec matches it).
 - **Index tension for you:** README §5 says "/mine is hidden" when writes are off. The nav entry is hidden (5g.1), but a direct visit shows your unavailable notice. Confirm the intended behavior; Skyler decides the index wording.
+
+### 2026-11-14: Phase 6 design-review (facilitated, Show Builder)
+- Wrote `docs/fireworks-app/design/phase-6.md` and `phase-6-mockup.html`. Record: `.squad/decisions/records/rosalina-phase-6-design-review.md`. Updated skill `flashing-content-safety` (timed content, the flash-spacing renderer rule, strobe judged from used shells only).
+- Proposed route `/show`; Mario confirms. Peach's `acceptance/phase-6.md` already existed and cites my spec as "p6-spec": read it first next time, since its hooks (6c.9 block/clamp, 6d.3 key reuse, 6e.1 pageSize, 6j.1 no kind filter, N1 labels, N4 no id reuse) are the questions my spec has to answer.
+- The prototype has no show or timeline UI; its only "show" is the Auto show random driver. Everything in Phase 6 is new surface.
+- Code facts that shaped the copy: `simulation.ts` `launch` puts the burst at `tx` and jitters the launch point, so cue `x` is "Position (where it bursts)", not launch position. Rise is `sqrt(2·bh·760/g)` with the show's gravity, and later breaks add `max(0.1, delay)`.
+- Invariant to reuse: the builder stage always equals a run from step 0 at the playhead. So adds round the playhead *up* to 0.1 s, there's no audition, and edits re-seek.
+- `/c/` copy must be kind-neutral until the GET answers (it said "shell"). Watch for copy that assumes a kind the page can't know yet.
+- Open for Skyler: Q1 Undo (recommended yes), Q2 no in-place editing of embedded shells (recommended yes). Yoshi: New seed vs schema "never re-derived".
+
+### 2026-11-14: Phase 6 post-implementation review (Show Builder)
+- Wrote phase-6.md §19 (triage + defects B1–B7) and updated §3, §5.3, §7.2, §9.5, §10.1, §8.1, §14.2, §18 for Skyler's rulings. Record: `rosalina-phase6-post-implementation-review.md`.
+- Must-fix: no API banner in the builder (`show-builder-page.html` has only the test-mode banner; designer uses `designer/shared/api-banner/api-banner.ts`), Undo/Redo `disabled` focus drop, builder notice not taking focus from body (the player's `player-notice.ts` does).
+- Pattern to check every review: a live region bound to a signal never re-announces an identical string (signal equality). Look for repeated sentences (cap blocks, "The show has ended." on a second run).
+- Pattern: any key-driven action (⌘Z) can disable a focused button, not just clicks. Walk undo through every button that depends on document state.
+- Couldn't drive the running app headless (no Playwright in the repo); the dev server served `/show` 200 and the API proxied 502. Review was from code.
+- Follow-up rulings: flash spacing is 41 steps (40 allowed four starts in a closed 1.000 s span); the ended line keeps curly quotes `“{name}” has ended.` (the header's `{name}` rule wins over a bare placeholder in an example). Lesson: write examples with the quotes they render with.
+
+### 2026-11-14 — Phase 6 cross-agent update (Scribe)
+
+- **B1 fixed (Bowser):** the builder has its own API banner (`BUILDER_API_BANNER`; `ApiBannerComponent.message`). B2 (Undo/Redo `aria-disabled`) and B3 (notice focus) are fixed too. Mario's gate verified all three.
+- **Your rulings are in code:** flash spacing 41 steps (`FLASH_SPACING_STEPS`), and the ended line keeps its curly quotes. Mario checked the 41.
+- **Carried:** B4–B7 and the unbuilt items are Phase 7 (Skyler moved library drag, pinch zoom, the `+k` badge, the scrub overview and Show JSON there).
+- **Open for you with Luigi:** the banner follows `/health/live`, not `api/me` (Skyler's open question). Toad's ⌘Z-on-select question is also open.
+
+### 2026-11-15 — Post-gate cross-agent update (Scribe)
+
+- **Your open banner question is ruled.** The API banner follows `api/me` as well as `/health/live`, in the designer and the builder (Skyler, 2026-11-14; built in `luigi-phase6-show-builder.md` point 12). Try again re-probes and reloads the session. It still uses `disabled` (B4–B7, Phase 7).
+- **⌘Z is ruled.** On select, range and checkbox controls the keys stay with the control; buttons and the timeline still undo the show. The §18 Q1 wording in `phase-6.md` was updated by the coordinator.

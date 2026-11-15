@@ -21,3 +21,11 @@
 - **Recorder formats its own output** with the project's Prettier config, so a re-run is byte-identical with no manual step.
 - **Prove the oracle moves:** mutate the prototype slice in a scratch copy, re-run the recorder, diff the fixture. Then restore and confirm byte-identical.
 - **Cross-engine check without browsers:** bundle the golden comparison with the project's esbuild (`node_modules/.bin/esbuild entry.ts --bundle --format=iife`) and run it in Node, `jsc`, and Chrome via `page.evaluate`. Firefox headless from the sandbox never fetched the page (also with the sandbox off); use Skyler's machine.
+
+## Show determinism (Yoshi, Phase 6 TimelineDriver)
+The prototype has no shows, so there is no oracle. The check is **self-consistency plus cross-engine**:
+- **Compare the whole store exactly**, not sums: `Array.from(field).slice(0, n)` for x, y, vx, vy, age, kind, seed, plus `n` and `shellCount`, with `toEqual`. Seek, checkpoint restore and frame size must give a bit-identical store in one engine.
+- **Equivalences to pin:** straight `advance(k)` = loop frames at 24/60/144 fps reaching `k` = `seek(k)` forward = `seek(k)` backward = `seek(k)` from a checkpoint = `seek(k)` from an inherited checkpoint after an edit. Run each at a small `capacity` (2500–3000) as well, so the cap is reached; the cap is where order and history start to matter.
+- **Array-order mutants need same-step cues.** A show without ties can't tell "ordered by `(fireStep, id)`" from "array order". Put three cues on one step, with different shells.
+- **Cross-engine without browsers:** bundle a script with esbuild (`--format=iife`) that runs the show to its end and prints the end step, an FNV hash of `particles.n` per step, the ledger and an x sum. Run it in Node and in `jsc` with a `structuredClone` JSON shim. The Done-when show was identical in both.
+- **Timing benches** go in a scratch esbuild bundle run in Node, never in a spec (performance is benched, standing decision). Don't run mutants while a bench runs; they share the CPU.

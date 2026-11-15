@@ -112,6 +112,143 @@
           </p>
         </div>
       }
+    } @else if (playingShow(); as p) {
+      <app-fireworks-stage
+        class="h-full w-full"
+        [shell]="placeholderShell"
+        [sky]="p.show.sky"
+        [quality]="quality()"
+        [paused]="paused()"
+        [clickToFire]="false"
+        [timeline]="driver()"
+        [frameHook]="frameHook"
+        (ended)="onShowEnded()"
+      />
+
+      <div
+        class="absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 bg-[linear-gradient(to_bottom,rgba(4,6,12,0.75),transparent)] px-3 pt-2.5 pb-6"
+      >
+        <div class="min-w-0 max-w-full">
+          <h1
+            class="m-0 line-clamp-2 text-heading break-words [text-shadow:0_1px_2px_#000]"
+            data-testid="player-name"
+          >
+            <bdi>{{ p.name }}</bdi>
+          </h1>
+          <p class="m-0 text-small text-muted">
+            <a routerLink="/" class="text-muted">Fireworks Sandbox</a> ·
+            <span #metaTime class="tabular-nums" data-testid="player-time"
+              >0:00 / about {{ metaClock(p.estimate) }}</span
+            >
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-1.5">
+          <button
+            type="button"
+            class="btn border-accent text-accent"
+            title="Open a copy in the Show Builder to change and play"
+            data-testid="player-remix"
+            (click)="remix()"
+          >
+            Remix
+          </button>
+          <button
+            type="button"
+            class="btn"
+            data-testid="player-pause"
+            [disabled]="noticeVisible()"
+            (click)="togglePause()"
+          >
+            {{ paused() ? 'Play' : 'Pause' }}
+          </button>
+          <button
+            type="button"
+            class="btn"
+            title="Start the show again from the beginning"
+            data-testid="player-replay"
+            [disabled]="noticeVisible()"
+            (click)="replay()"
+          >
+            Replay
+          </button>
+          <label class="inline-flex items-center gap-1.5 text-small text-muted">
+            Reduce flashing
+            <input
+              type="checkbox"
+              role="switch"
+              class="switch"
+              data-testid="player-reduce-flashing"
+              [checked]="reduceFlashing()"
+              (change)="setReduceFlashing($any($event.target).checked)"
+            />
+            <span class="text-primary" data-testid="player-reduce-flashing-value">{{
+              reduceFlashing() ? 'On' : 'Off'
+            }}</span>
+          </label>
+        </div>
+        <div class="w-full max-w-[640px]"><app-test-mode-banner /></div>
+      </div>
+
+      <div
+        class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-border"
+        aria-hidden="true"
+      >
+        <div
+          #progress
+          class="h-full origin-left bg-accent"
+          style="transform: scaleX(0)"
+          data-testid="player-progress"
+        ></div>
+      </div>
+      <p class="sr-only" aria-live="polite" data-testid="player-announcer">{{ announcement() }}</p>
+
+      @if (noticeVisible()) {
+        <app-player-notice
+          [name]="p.name"
+          [strobe]="p.strobe"
+          [length]="p.length"
+          [reduceFlashing]="reduceFlashing()"
+          (turnOn)="answerNotice(true)"
+          (play)="answerNotice(false)"
+        />
+      } @else if (ended()) {
+        <div
+          class="absolute inset-x-3 top-1/2 mx-auto grid -translate-y-1/2 justify-items-center gap-2"
+          data-testid="player-ended"
+        >
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-testid="player-ended-replay"
+            (click)="replay()"
+          >
+            Replay
+          </button>
+          <p class="m-0 text-small text-muted [text-shadow:0_1px_2px_#000]">
+            “<bdi>{{ p.name }}</bdi
+            >” has ended.
+          </p>
+        </div>
+      } @else if (showCenterPlay()) {
+        <div
+          class="absolute inset-x-3 top-1/2 mx-auto grid -translate-y-1/2 justify-items-center gap-2"
+        >
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-testid="player-center-play"
+            (click)="startFromCenter()"
+          >
+            Play
+          </button>
+          <p
+            class="m-0 text-small text-muted [text-shadow:0_1px_2px_#000]"
+            data-testid="player-center-line"
+          >
+            {{ centerLine() }}
+          </p>
+        </div>
+      }
     } @else {
       <app-static-skyline />
       @if (showLoading()) {

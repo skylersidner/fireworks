@@ -332,7 +332,8 @@ describe('/c/:code working copy', () => {
       expect(json404).toBe(bad);
       expect(empty404).toBe(bad);
       expect(bad).toContain('Nothing plays at this link');
-      expect(bad).toContain("Your shell in the designer hasn't changed.");
+      // Kind unknown: neither editor changed (phase-6.md §10.4, D2).
+      expect(bad).toContain('Nothing in the designer or the Show Builder has changed.');
       expect(ledger).toEqual([`GET /api/creations/${CODE_A}`, `GET /api/creations/${CODE_B}`]);
       await settleDraft();
       expect(storage.getItem(DRAFT_KEY)).toBe(before);
@@ -372,11 +373,23 @@ describe('/c/:code working copy', () => {
       expect(console.warn).not.toHaveBeenCalled();
     });
 
-    it('a show: the "not yet" notice, the draft untouched (Q4 default)', async () => {
+    it('a show that fails normalizeShow: the show copy, both drafts untouched (phase-6.md §10.4)', async () => {
       const dom = await notFoundDom(`/c/${CODE_A}`, () =>
         http.expectOne(`/api/creations/${CODE_A}`).flush(creationResponse({ kind: 'show' })),
       );
-      expect(dom).toContain("This show can't be played yet.");
+      expect(dom).toContain("This show can't be opened.");
+      expect(dom).toContain("Your show in the Show Builder hasn't changed.");
+      expect(dom).toContain('Go to the Show Builder');
+      expect(dom).not.toContain("can't be played yet");
+    });
+
+    it('a show with a newer version: the show reload copy (phase-6.md §10.4)', async () => {
+      const dom = await notFoundDom(`/c/${CODE_A}`, () =>
+        http
+          .expectOne(`/api/creations/${CODE_A}`)
+          .flush(creationResponse({ kind: 'show', document: { version: 2 } })),
+      );
+      expect(dom).toContain('This show needs a newer version of the app.');
     });
 
     it('version 2: the newer-version copy; its value never shown (Boo C15)', async () => {

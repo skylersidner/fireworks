@@ -117,7 +117,7 @@ export class MinePageComponent {
   protected readonly pageAnnouncement = signal('');
   protected readonly skeletons = [0, 1, 2, 3, 4, 5];
   protected readonly unavailableBody = [
-    "Saving is turned off on this site right now, so there's nothing to list here. You can still design shells in the designer, and your work is kept in this browser.",
+    "Saving is turned off on this site right now, so there's nothing to list here. You can still design shells and build shows, and your work is kept in this browser.",
   ];
   protected readonly sessionErrorBody = [
     "My creations can't load right now. You can keep designing; your work is kept in this browser.",

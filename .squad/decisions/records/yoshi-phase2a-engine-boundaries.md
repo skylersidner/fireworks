@@ -23,7 +23,7 @@
 5. **Phase 3's strict validator is normalize plus "zero adjustments".** `validateShell(x)` is valid exactly when `normalizeShell(x).ok` and `adjustments` is empty; every adjustment becomes an error at the same path. One walker, two modes, so the strict and lenient rules can't drift.
 6. **`sky` absent stays absent.** `normalize` never adds or strips a `sky` block; `effectiveSky()` is the only place the 160/0 default is applied to a shell. A shell with no `sky` and one with `{160,0}` play the same but are different documents.
 7. **The crossette `gen === 0` guard stays** (prototype l.313, l.318), and its only control is the unit spec that spawns a dying gen-1 crossette star (`simulation.spec.ts` l.136).
-8. **Phase 6 seams, added when TimelineDriver is built (not before):**
+8. **Phase 6 seams, added when TimelineDriver is built (not before):** *(Superseded in part, 2026-11-14, `yoshi-phase6-timeline-driver.md`: `beforeStep(ctx)` takes no step argument and the driver owns the show clock; the firing formula was already superseded by the Phase 3 record point 5.)*
    - `PlaybackDriver` gets an optional `beforeStep?(ctx, step: number)` that `EngineLoop.frame` calls inside the fixed-step loop, with an integer step counter the loop owns. Cues fire on the first step whose index is at least `Math.round(cue.t / STEP)`, never at a frame boundary.
    - `PlaybackContext` gets `fireSeeded(def, tx, ty, seed)`, which doesn't consume the loop's launch counter (cues carry their own seed).
    - `effectiveSky(shell, showSky?)`: when a show sky is given, it wins (plan Phase 3 recommendation).

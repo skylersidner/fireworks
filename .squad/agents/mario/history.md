@@ -11,47 +11,17 @@
 - **Your focus here:** Phase sequencing, phase-gate reviews against each phase's "Done when", integration between `src/web` and `src/api`, and Railway release readiness.
 - Carried over from the previous project: the role only. No history was copied. General lessons from that project are seeded as standing decisions in `.squad/decisions/README.md`.
 
+### Folded from Phase 0 to Phase 4 gates (summarized 2026-11-15)
+
+- **Phase 0:** the repo starts on `main`. The prototype moved to `prototypes/fireworks-prototype.html` (with `prototypes/README.txt`), the context to `docs/fireworks-app/context.md`. Grep for the transitional wording ("in Phase 0", "moves to"), not only the old filename. `.gitignore` mirrors the reference, plus `src/api/Fireworks.Api/wwwroot/`.
+- **Phase 1 gate (PASS WITH NOTES):** only the .NET 11 runtime is installed, so "runs without roll-forward" is proven by the runs succeeding. Image freshness: `find src -newermt <image Created>` (strip nanoseconds). The fresh-DB migration proof comes from the gated test.
+- **Phase 2 gate:** Pixi only in the lazy `pixi-renderer` chunk; a cold `/status` fetches only main and small chunks. Boundary-spec negative controls run in a copy with `node_modules` symlinked. An acceptance Results column left empty means the parity checklist is incomplete. Release proxy without Railway: the image on `127.0.0.1:18091`. Note: a `/health/ready` 200 was the SPA fallback; check content-type, not status alone.
+- **Phase 3 gate:** 175 fixtures at the time. 16 fixtures were derived by hand from §6 and §2.6 before reading `errors`, and matched 16/16. Negative controls on `generate-fixtures.mjs --check` and `limits.spec.ts`. Gaps raised: schema.md header stale; no Peach review on record; `schema/` in the Docker context but never copied.
+- **Phase 4 gate:** image `fireworks:phase4-gate` on `fireworks_gate4`; two identities via a second container; writes-off 403s; a 270 KB body gets 413 with `Connection: close`. GET returns jsonb key order, so compare parsed values. The 413 is `application/problem+json` (an accepted §2.7 departure). Validation runs before the lookup.
+- **Method:** `git diff <prior tag> -- src/api` empty is the proof of no backend change in a frontend-only phase. The gated suite (`FIREWORKS_TEST_POSTGRES`) is mandatory for Program.cs.
+
 ## Learnings
 
-
-### 2026-11-12 — Phase 0 bootstrap
-- Repo initialized on `main`; one commit "Phase 0: bootstrap repository". Git identity was already set globally (skylersidner); I did not touch it.
-- Moves: prototype to `prototypes/fireworks-prototype.html` (with `prototypes/README.txt`, do-not-edit rule), context to `docs/fireworks-app/context.md`. Plan stays in `plans/`.
-- Reference fix set came from the grep, not guesswork. Besides the expected files it also hit `docs/fireworks-app/context.md` itself (lines 3 and 58), and CLAUDE.md line 7 had "moves to `prototypes/` in Phase 0" wording the grep pattern didn't catch; a second grep for "in Phase 0|Phase 0 moves" found it. Lesson: grep for the transitional wording too, not just the old filename.
-- Remaining intended grep hits: plan lines 159-160 are the Phase 0 task text ("Move X to Y") and correctly name the old paths.
-- `.gitignore` mirrors the reference plus `src/api/Fireworks.Api/wwwroot/`, `.DS_Store`, `.claude/settings.local.json`. `.claude/agents/` and `.squad/` are committed.
-- Phase 0 "open questions resolved" is Skyler's ruling (Peach reviewing §5); the gate can't fully pass until then.
-
-### 2026-11-12 — Phase 1 phase-gate
-- Verdict PASS WITH NOTES; Railway items DEFERRED (1d, Skyler). All evidence from my own runs: `dotnet build` 0 warn/0 err; plain `dotnet test` 26 pass / 3 skip; gated (`FIREWORKS_TEST_POSTGRES`, fireworks_test on 5433) 29/29; npm (Node 26.5.0) ci, test 44/44 in 10 files, typecheck, build into `src/api/Fireworks.Api/wwwroot`.
-- Only the .NET 11 runtime (Microsoft.AspNetCore.App 11.0.0) is installed, so "runs on net11 without roll-forward" is proven by the runs succeeding at all. `dotnet-ef` 10.0.15 local tool (rollForward false) still runs here.
-- Image freshness check: `find src -newermt <image Created>` (strip nanoseconds; bfs rejects them) returned nothing, so the running `fireworks:phase1` container reflects the tree.
-- The long-lived container's log says "No migrations were applied" because compose DB is already migrated; the fresh-DB migration proof is the gated test, and the Railway "startup log shows migration" item needs a fresh Railway DB.
-- Mutant sweep: grep README negative-control mutations against source (CanWrite, Guid.Empty, MapHealthChecks, /api catch-all, EnsureDefaultUserExistsAsync, canary destroyed guard, toadMutant, canWriteTypo). All reverted.
-- Ignore coverage: root `.gitignore` plus `src/web/fireworks-web/.gitignore` (/dist, /out-tsc, /coverage). `git status --ignored` shows only bin/obj/wwwroot/.angular/node_modules ignored.
-
-### 2026-11-13 — Phase 2 phase-gate
-- Own runs (load avg 5–9 on 12 cores; no timeouts): npm ci; `npm test` 363/363 in 25 files; typecheck; prod build. Initial = main 271 KB + one 1 KB chunk, no Pixi identifiers; Pixi only in lazy `pixi-renderer` chunk. Cold `/status` fetched only main, the small initial chunk and `status-page`.
-- Backend untouched (`git diff 3c6de41 -- src/api` empty): `dotnet build` 0/0, plain test 26 pass / 3 skip, gated (`FIREWORKS_TEST_POSTGRES=Host=localhost;Port=5433;Database=fireworks_test;Username=fireworks_app;Password=fireworks_dev_password`) 29/29.
-- Running-app scripts I wrote: `scratchpad/smoke/mario-gate2.mjs <wwwroot>` (own stub server with an apiDown toggle; hold, Toad's Willow repro, confirm rules, sky keep, held Space, draft through reload and in-app `/status`, layout, API down), `mario-parity2.mjs <serve.mjs url>` (proto vs port: presets, every range min/max/step, select values, Launch/Replay seeds, 87.5% click line, tabs, Apply clamp/invalid, DPR cap), `mario-cd2.mjs` (change-detection count). `tools/fps-compare/serve.mjs <port>` serves both apps from one origin with local Pixi; use `?kit=0`.
-- Boundary-spec negative controls: copy `src`, configs and `public` to the scratchpad, symlink `node_modules`, mutate, `npx ng test --watch=false --include src/engine/engine-boundary.spec.ts`. The walker reads the copy's tree, so the real `src` is never touched.
-- Gate judgment: an acceptance "Results" column that's empty means the parity checklist isn't complete, even when my sample passes. My sample is Chrome-only evidence.
-- Benign oddity: under reduced motion on a fresh profile, switching Manual→Preview loop writes no draft key (stored mode is already the default `loop`); nothing is lost because reduced motion forces Manual on every load.
-- Release-readiness proxy without Railway: `docker build -t fireworks:phase2-gate .` succeeded; ran it on 127.0.0.1:18091 against compose Postgres (reuse the `fireworks-app` container's `ConnectionStrings__Postgres`): live/ready 200, `/api/me` 200, `/status` serves index.html, `/api/nope` 404, same `main-*.js` hash as the local build; the 20-cycle leak script passed against it. Image has no `tools/`.
-
-### 2026-11-13 — Phase 3 phase-gate
-- Verdict PASS WITH NOTES. Own runs (load avg ~4.5): `generate-fixtures.mjs --check` ok, 175 fixtures (30 valid, 122 invalid, 23 server-only); `npm test` 953/953 in 29 files; typecheck; prod build (main 271.26 KB, no Pixi in initial chunks); `dotnet build` (from repo root, `Fireworks.slnx`; `dotnet build src/api` fails with MSB1003) 0/0; plain `dotnet test` 26 pass / 3 skip. `git diff b3039e6 -- src/api` empty.
-- Independence check: 16 fixtures derived by hand from §6/§2.6 before reading `errors`, 16/16 match (incl. `kind-mismatch`, `cue-names-bad-key`, `duplicate-key-three`, `envelope-and-document`).
-- Negative controls (scratch copy `scratchpad/drift/`): `--check` exits 1 on an edited fixture and on an extra file; `limits.spec.ts` fails on a changed `limits.ts`, `limits.json` and §5.1 row; validator mutant (embedded `sky` kept) fails exactly the two embedded-sky fixtures.
-- Designer regression script: `scratchpad/smoke/mario-gate3.mjs <wwwroot>` (valid Apply, type/enum/not-object "Couldn't apply" notes naming the field, lenient name cleaning, draft through reload, console errors). Lenient cleaning shows plain "Applied." (Rosalina's `cleaned` copy call is open).
-- Gaps found: schema.md header still "for review" and §15 "still to do" items are done (stale; Yoshi); no Peach Phase 3 review on record though the phase map lists Peach; `schema/` (1.4 MB) is in the Docker context but never COPYed (Bowser to decide `.dockerignore` in Phase 4).
-
-### 2026-11-13 — Phase 4 phase-gate
-- Verdict PASS WITH NOTES; Railway migration item DEFERRED (deploy deferred, Skyler). Own runs (load ~6): `dotnet build --no-incremental` 0/0; plain `dotnet test` 555 pass / 10 skip; gated 565/565; `generate-fixtures.mjs --check` ok (175); npm 953/953, typecheck, build; `git diff cb0f0ff -- src/web schema` empty.
-- Image `fireworks:phase4-gate` on fresh `fireworks_gate4`: both migrations applied in the log. curl round trip mirrors the `.http` file: 201 + Location, GET, PUT, remix (`remixedFrom` set), show POST, list (paging 1/1 and 2/1, `kind`, past end empty, `kind=Shell` 400 enum, huge pageSize clamps), invalid 400 multiset, 415 text/plain and missing, bad code 404, DELETE 204 then 404, remix survives with `remixedFrom` null.
-- Two identities via a second container with a different `Identity__DefaultUserId`: non-owner PUT/DELETE 404, `isOwner` false, `remixedFrom` hidden from non-owner but shown to owner. Swapcase share code 404. 270 KB body 413 + `Connection: close` (with Content-Length and chunked). Writes off: JSON and form POST, PUT, DELETE, remix, `api/me/creations` all 403; public GET 200; `/health/live` text/plain "Healthy".
-- GET returns the document with jsonb key order (length then bytes), and POST/PUT echo the canonical C# order. schema.md line 18 makes key order meaningless; Phase 5 client must compare parsed values, never strings.
-- 413 body is `application/problem+json` (accepted §2.7 departure). A 70 KB PUT on an unknown code got 400 (validation runs before the lookup); that's consistent with gate → envelope → walk → query.
 
 ### 2026-11-14 — Phase 5 phase-gate
 - Verdict PASS WITH NOTES; Railway 5i.2–5i.5 DEFERRED. Record: `.squad/decisions/records/mario-phase5-gate.md`.
@@ -65,3 +35,26 @@
 ### 2026-11-14 — Phase 5 cross-agent update (Scribe)
 - **F11 reconcile:** your gate lists F11 as carried. Peach's acceptance (5h) closes it, and the code has the integer wording. Please check and correct one of the two.
 - **Owners of your carried items:** Bowser (5i.2–5i.5; the dotted-link 404 in Phase 7), Boo (C17 re-check, C18), Luigi (the stale smoke script), Toad (round-trip rerun in the window).
+
+### 2026-11-14 — Phase 6 phase-gate
+- Verdict PASS WITH NOTES; Railway 6k.3/6k.4 DEFERRED. Record: `.squad/decisions/records/mario-phase6-gate.md`.
+- Counts: npm 1433/53 files, gated dotnet 567/567 (+2 from the new done-when fixture), fixtures `--check` 176. `src/api` unchanged since 53b0199.
+- Smoke: `scratchpad/gate6/done-when-mario.mjs` = Toad's `p6smoke/done-when-toad.mjs` with `BASE` from env plus 6b.1 survival checks. Argument 4 sets the player engine, so one run is a cross-engine round trip. Three runs (C→F, F→W, W→C) against the image on localhost:18096 cover all three engines, with 3 writes total. Use `localhost`, not 127.0.0.1, so the clipboard origin matches. `scratchpad/gate6/deeplinks.mjs <code>` does the 6k.2 cold load and reload.
+- The docker build was fully cached, which means the content matches what Bowser built; the image's `main-*.js` hash equals the local build's.
+- `/health/ready` isn't mapped and returns index.html 200; only `/health/live` exists. My Phase 1/2 "ready 200" notes were really the SPA fallback. Check content-type, not status alone.
+- Mutation check pattern reused: rsync to scratch, symlink node_modules, `npx ng test --include <spec>`; spacing 40 is killed by the strict `> 120`.
+- Left running for Skyler: ng serve 4200 (PID 73241), `dotnet run` API 5180 (dotnet run PID 28080, Fireworks.Api PID 28096).
+
+### 2026-11-14 — Phase 6 cross-agent update (Scribe)
+
+- **Your Phase 6 gate (PASS WITH NOTES) is recorded.** Carries: Railway 6k.3 and 6k.4 (Bowser, test window); Phase 7 items (Show JSON, library drag, pinch zoom, the `+k` badge, the scrub overview, Rosalina B4–B7); `/health/ready` not mapped (Bowser, Phase 7).
+- **F11 is still unresolved in the record.** Your Phase 5 gate carried it to Phase 6. The Phase 6 gate does not mention it. Peach's history says it is closed in code. State its status in the Phase 6 record or on the Phase 7 list.
+- **Security review gap:** Boo's C1–C15 bind the Phase 6 builder and show player (`boo-phase5-security-requirements.md`, closing paragraph), and the C5 row now covers show links. No Boo review ran for Phase 6, and the phase map does not require one. Note it on the gate, or raise it with Skyler before Phase 7.
+- **History:** this file was over 12 KB; the Phase 0 to Phase 4 gates are folded into Core Context on 2026-11-15.
+
+### 2026-11-15 — Post-gate cross-agent update (Scribe)
+
+- **Gate figures are superseded in part.** After the gate, Toad's web suite is 1471 in 55 files (1433 at the gate), and the backend is 594/594 gated (567 at the gate). Boo's security verification passed C1–C17 on the show surfaces, and its addendum passed the new endpoint and the seek fix. Both are in `boo-phase6-security-verification.md`.
+- **Your two open questions are ruled and built** (banner on `api/me`; ⌘Z on select, range and checkbox). The gate record's two bullets are marked in place.
+- **Seek changed after the gate:** time-budgeted, 25 ms by default, configurable through appsettings `ClientPlayback` (plan §Phase 6, 2026-11-15). "Seek accepted as measured" still stands; the numbers in the gate do not.
+- **Phase 7 carry:** caps (particle cap for shows, max duration) wait for measured numbers.

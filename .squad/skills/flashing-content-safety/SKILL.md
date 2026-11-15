@@ -20,6 +20,8 @@
    - Name the actual risk from the content: say "strobe" only when the creation has a strobe effect (player, `phase-5.md` §8.3).
    - Name the button for what it does on that surface: "Continue" in the designer, "Play" on the player.
    - A surface whose only job is playback also needs Pause/Play (WCAG 2.2.2), and under reduced motion it opens paused with a visible Play.
+   - **Timed content (shows):** a driver-side spacing rule can't apply, because moving launches changes the creation. Space the flashes in the renderer instead: under Reduce flashing, skip a burst flash within 0.33 s of the previous one (≤ 3 a second; `phase-6.md` §14.2). Decide "strobe" from the shells that cues actually use, not every embedded one, and name the length in the notice for long motion.
+   - **Editors that preview a timeline** (Show Builder) open paused on every load, so the notice holds only Play, Space and sky clicks.
 6. **Test it in the renderer, and prove the sim didn't move:** flip the flag and assert sim goldens are identical (negative control), and assert a strobe star's alpha at a fixed age with the flag on and off.
 
 ## Anti-patterns

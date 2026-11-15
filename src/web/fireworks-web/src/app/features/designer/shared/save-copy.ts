@@ -76,7 +76,14 @@ export interface SaveStatus {
   readonly actions: readonly SaveStatusAction[];
 }
 
-const KEPT = 'Your shell is kept in this browser.';
+/** What is being saved: the copy names it (phase-6.md §10.2: "Your show is kept in this browser."). */
+export type SaveNoun = 'shell' | 'show';
+
+/** Words an issue for the visitor; shows pass their §15 labels. */
+export type ReasonOf = (issue: ShellIssue) => string;
+
+const kept = (noun: SaveNoun) => `Your ${noun} is kept in this browser.`;
+const KEPT = kept('shell');
 
 /** §6 row 404b: the remix's source was gone, and the plain POST saved it. */
 export function fellBackStatus(name: string): SaveStatus {
@@ -88,30 +95,38 @@ export function fellBackStatus(name: string): SaveStatus {
 }
 
 /** §6 row 404a: Update original found nothing to update. */
-export function updateGoneStatus(sourceName: string): SaveStatus {
+export function updateGoneStatus(sourceName: string, noun: SaveNoun = 'shell'): SaveStatus {
   const what = sourceName ? quoted(sourceName) : 'the original';
   return {
     tone: 'error',
-    text: `Couldn't update ${what}: the original was deleted or is no longer yours. Nothing was saved. Save as new to keep your shell with a new share link.`,
+    text: `Couldn't update ${what}: the original was deleted or is no longer yours. Nothing was saved. Save as new to keep your ${noun} with a new share link.`,
     actions: ['saveAsNew'],
   };
 }
 
 /** §6 row 400b for the client's own strict check, which runs before any request (§3.1). */
-export function invalidStatus(issues: readonly ShellIssue[], truncated = false): SaveStatus {
+export function invalidStatus(
+  issues: readonly ShellIssue[],
+  truncated = false,
+  noun: SaveNoun = 'shell',
+  reasonOf: ReasonOf = issueReason,
+): SaveStatus {
   return {
     tone: 'error',
-    text: `Couldn't save: the server didn't accept this shell (${reasons(issues, truncated)}). Reloading the page usually fixes this. ${KEPT}`,
+    text: `Couldn't save: the server didn't accept this ${noun} (${reasons(issues, truncated, reasonOf)}). Reloading the page usually fixes this. ${kept(noun)}`,
     actions: ['reload'],
   };
 }
 
 /** §6 row 413, also the client-side size check (§3.1). */
-export const TOO_LARGE_STATUS: SaveStatus = {
-  tone: 'error',
-  text: "Couldn't save: this shell is larger than the 256 KB the server accepts. Nothing was saved. Your work is kept in this browser.",
-  actions: [],
-};
+export function tooLargeStatus(noun: SaveNoun): SaveStatus {
+  return {
+    tone: 'error',
+    text: `Couldn't save: this ${noun} is larger than the 256 KB the server accepts. Nothing was saved. Your work is kept in this browser.`,
+    actions: [],
+  };
+}
+export const TOO_LARGE_STATUS: SaveStatus = tooLargeStatus('shell');
 
 /**
  * The status block for a failed save (§6). A 404 from a remix never gets here (it falls back);
@@ -121,7 +136,10 @@ export function saveFailureStatus(
   error: CreationError,
   request: SavePlan['request'],
   sourceName: string,
+  noun: SaveNoun = 'shell',
+  reasonOf: ReasonOf = issueReason,
 ): SaveStatus {
+  const KEPT = kept(noun);
   switch (error.kind) {
     case 'validation': {
       const issues: ShellIssue[] = error.errors.map((e) => ({
@@ -136,7 +154,7 @@ export function saveFailureStatus(
           actions: ['reload'],
         };
       }
-      return invalidStatus(issues, error.truncated);
+      return invalidStatus(issues, error.truncated, noun, reasonOf);
     }
     case 'forbidden':
       return {
@@ -145,10 +163,10 @@ export function saveFailureStatus(
         actions: [],
       };
     case 'not-found':
-      if (request === 'update') return updateGoneStatus(sourceName);
-      return serverFault();
+      if (request === 'update') return updateGoneStatus(sourceName, noun);
+      return serverFault(noun);
     case 'too-large':
-      return TOO_LARGE_STATUS;
+      return tooLargeStatus(noun);
     case 'rate-limited':
       return {
         tone: 'error',
@@ -162,14 +180,14 @@ export function saveFailureStatus(
         actions: ['retry'],
       };
     default:
-      return serverFault();
+      return serverFault(noun);
   }
 }
 
-function serverFault(): SaveStatus {
+function serverFault(noun: SaveNoun): SaveStatus {
   return {
     tone: 'error',
-    text: `Couldn't save: something went wrong on the server. Try again in a moment. ${KEPT}`,
+    text: `Couldn't save: something went wrong on the server. Try again in a moment. ${kept(noun)}`,
     actions: ['retry'],
   };
 }
@@ -178,8 +196,15 @@ function serverFault(): SaveStatus {
 export const MAX_REASONS = 3;
 
 /** §6 `{reasons}`: at most 3 joined with `; `, then `, and {k} more`, or `, and more` when truncated. */
-export function reasons(issues: readonly ShellIssue[], truncated = false): string {
-  const listed = issues.slice(0, MAX_REASONS).map(issueReason).join('; ');
+export function reasons(
+  issues: readonly ShellIssue[],
+  truncated = false,
+  reasonOf: ReasonOf = issueReason,
+): string {
+  const listed = issues
+    .slice(0, MAX_REASONS)
+    .map((i) => reasonOf(i))
+    .join('; ');
   if (truncated) return `${listed}, and more`;
   const rest = issues.length - MAX_REASONS;
   return rest > 0 ? `${listed}, and ${rest} more` : listed;

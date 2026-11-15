@@ -1,0 +1,716 @@
+<!-- phase-6.md §3: panel, then main (stage, then dock). Tab order panel → notice → transport →
+     toolbar → timeline; not reordered with CSS. -->
+<div class="flex h-full overflow-hidden max-[761px]:flex-col-reverse">
+  <aside
+    class="w-[340px] flex-none overflow-y-auto border-r border-default bg-surface px-[14px] pt-[14px] pb-10 max-[761px]:h-[40dvh] max-[761px]:w-full max-[761px]:border-t max-[761px]:border-r-0"
+    data-testid="builder-panel"
+  >
+    <div class="flex items-baseline justify-between gap-2">
+      <h1
+        class="m-0 mb-0.5 text-heading tracking-[0.02em]"
+        tabindex="-1"
+        data-testid="panel-heading"
+      >
+        Fireworks Sandbox
+      </h1>
+      <div class="flex gap-3">
+        <a
+          routerLink="/"
+          class="text-small text-muted no-underline hover:text-primary"
+          data-testid="nav-designer"
+          >Shell designer</a
+        >
+        @if (saveFlow.canWrite()) {
+          <a
+            routerLink="/mine"
+            class="text-small text-muted no-underline hover:text-primary"
+            data-testid="nav-mine"
+            >My creations</a
+          >
+        }
+      </div>
+    </div>
+    <p class="m-0 mb-3 text-small text-muted">{{ copy.subtitle }}</p>
+
+    <app-test-mode-banner />
+    @if (showApiBanner()) {
+      <app-api-banner [message]="copy.apiBanner" [checking]="apiChecking()" (retry)="retryApi()" />
+    }
+    @if (saveFlow.status(); as status) {
+      <app-save-status
+        [status]="status"
+        (act)="onStatusAction($event)"
+        (dismiss)="saveFlow.dismissStatus()"
+      />
+    }
+    <app-save-bar
+      [canWrite]="saveFlow.canWrite()"
+      [source]="store.source()"
+      [choices]="saveFlow.choices()"
+      [saving]="saveFlow.saving()"
+      [saved]="store.saved()"
+      [dirty]="store.dirty()"
+      [blockedLink]="saveFlow.blockedLink()"
+      [blockedNote]="blockedNote"
+      [cannotSaveNote]="saveFlow.cannotSave()"
+      (save)="save($event)"
+      (share)="share()"
+    />
+
+    <section class="section" data-testid="show-section">
+      <h2 class="section-heading">
+        Show
+        <button
+          type="button"
+          class="btn btn-sm btn-heading"
+          data-testid="new-show"
+          (click)="newShow()"
+        >
+          New show
+        </button>
+      </h2>
+      <label class="mb-1 block text-muted" for="show-name">Name</label>
+      <input
+        id="show-name"
+        class="field"
+        type="text"
+        data-testid="show-name"
+        [attr.maxlength]="nameMax"
+        [value]="store.show().name"
+        (input)="onName($any($event.target).value)"
+        (blur)="store.endCoalesce()"
+      />
+      <label class="mt-2 mb-1 block text-muted" for="show-duration">Duration (s)</label>
+      <input
+        #durationField
+        id="show-duration"
+        class="field"
+        type="number"
+        step="0.1"
+        data-testid="show-duration"
+        [attr.min]="minDurationAttr()"
+        [attr.max]="durationRange.max"
+        [value]="store.show().duration"
+        (change)="commitDuration(durationField)"
+      />
+      <p class="note" data-testid="duration-note">{{ durationNote() ?? copy.durationNote }}</p>
+    </section>
+
+    <section class="section" data-testid="inspector">
+      <h2 class="section-heading">Cue</h2>
+      @if (store.selectedCue(); as cue) {
+        <p class="m-0 mb-2 text-small text-muted" data-testid="inspector-heading">
+          <bdi>{{ store.show().shells[cue.shell]?.name }}</bdi> · Cue {{ selectedIndex() + 1 }} of
+          {{ store.show().cues.length }}
+        </p>
+        <label class="mb-1 block text-muted" for="cue-shell">Shell</label>
+        <select
+          id="cue-shell"
+          class="field"
+          data-testid="inspector-shell"
+          (change)="setCueShell($any($event.target).value)"
+        >
+          @for (o of shellOptions(); track o.key) {
+            <option [value]="o.key" [selected]="o.key === cue.shell">{{ o.label }}</option>
+          }
+        </select>
+        <label class="mt-2 mb-1 block text-muted" for="cue-t">Launch time (s)</label>
+        <input
+          #tField
+          id="cue-t"
+          class="field"
+          type="number"
+          step="0.1"
+          min="0"
+          data-testid="inspector-t"
+          [attr.max]="store.show().duration"
+          [value]="cue.t"
+          (change)="commitLaunch(tField)"
+        />
+        <p class="note" data-testid="inspector-t-note">
+          @if (launchNote(); as n) {
+            {{ n }}
+          } @else if (selectedTimes(); as times) {
+            {{ cueNote(times.burst, times.fade) }}
+          }
+        </p>
+        <app-range-row
+          label="Position"
+          data-testid="inspector-x"
+          [range]="L.x"
+          [format]="percent"
+          [valueText]="percentText"
+          [value]="cue.x"
+          (valueChange)="setX($event)"
+          (touch)="store.endCoalesce()"
+        />
+        <p class="note">{{ copy.positionNote }}</p>
+        <label class="mt-2 flex items-center gap-1.5 text-muted">
+          <input
+            type="checkbox"
+            data-testid="inspector-own-height"
+            [checked]="cue.burstHeight !== undefined"
+            (change)="setOwnHeight($any($event.target).checked)"
+          />
+          Own burst height
+        </label>
+        <app-range-row
+          [label]="cue.burstHeight === undefined ? 'Burst height (from shell)' : 'Burst height'"
+          data-testid="inspector-height"
+          [range]="L.burstHeight"
+          [format]="fixed2"
+          [disabled]="cue.burstHeight === undefined"
+          [value]="cue.burstHeight ?? store.show().shells[cue.shell]?.burstHeight ?? 0.5"
+          (valueChange)="setBurstHeight($event)"
+          (touch)="store.endCoalesce()"
+        />
+        <div class="mt-2 flex items-center gap-2">
+          <span class="font-mono text-caption text-muted" data-testid="inspector-seed"
+            >Seed {{ cue.seed }}</span
+          >
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-testid="inspector-new-seed"
+            [title]="copy.newSeedTitle"
+            (click)="newSeed()"
+          >
+            New seed
+          </button>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-testid="inspector-duplicate"
+            [attr.aria-disabled]="atCueCap() ? 'true' : null"
+            (click)="duplicateSelected()"
+          >
+            Duplicate
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-testid="inspector-delete"
+            [attr.aria-label]="deleteLabel(cue)"
+            (click)="deleteSelected(true)"
+          >
+            Delete
+          </button>
+        </div>
+      } @else {
+        <p class="note" data-testid="inspector-empty">
+          {{ store.show().cues.length ? copy.inspectorNone : copy.inspectorEmpty }}
+        </p>
+      }
+    </section>
+
+    <section class="section" data-testid="library">
+      <h2 class="section-heading">Library</h2>
+      <p class="note mb-2">{{ copy.libraryNote }}</p>
+
+      @if (embeddedItems().length) {
+        <h3 class="m-0 mt-2 mb-1 text-caption text-muted uppercase">In this show</h3>
+        <ul class="m-0 list-none p-0">
+          @for (item of embeddedItems(); track item.key) {
+            <li class="mb-1 flex items-center gap-1.5">
+              <button
+                type="button"
+                class="btn flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                [class.border-accent]="isActive(item.ref)"
+                [attr.aria-pressed]="isActive(item.ref)"
+                [attr.data-testid]="item.testId"
+                [title]="item.name"
+                (click)="selectLibrary(item.ref)"
+              >
+                @for (sw of item.swatches; track $index) {
+                  <span
+                    class="size-3 flex-none rounded-full"
+                    aria-hidden="true"
+                    [style.background]="sw.background"
+                  ></span>
+                }
+                <span class="min-w-0 flex-1 truncate text-small"
+                  ><bdi>{{ item.name }}</bdi></span
+                >
+                <span class="text-caption text-muted">{{ item.meta }}</span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-sm"
+                [attr.data-testid]="'lib-remove-' + item.key"
+                (click)="removeShell(item.key)"
+              >
+                {{ item.used ? 'Remove…' : 'Remove' }}
+              </button>
+            </li>
+          }
+        </ul>
+      }
+
+      @if (designerItem(); as item) {
+        <h3 class="m-0 mt-2 mb-1 text-caption text-muted uppercase">From the designer</h3>
+        <ul class="m-0 list-none p-0">
+          <li class="mb-1">
+            <ng-container
+              *ngTemplateOutlet="libButton; context: { $implicit: item }"
+            ></ng-container>
+          </li>
+        </ul>
+      }
+
+      <h3 class="m-0 mt-2 mb-1 text-caption text-muted uppercase">Presets</h3>
+      <ul class="m-0 list-none p-0">
+        @for (item of presetItems; track item.testId) {
+          <li class="mb-1">
+            <ng-container
+              *ngTemplateOutlet="libButton; context: { $implicit: item }"
+            ></ng-container>
+          </li>
+        }
+      </ul>
+
+      @if (library.state(); as mine) {
+        @if (mine.status !== 'hidden') {
+          <h3 class="m-0 mt-2 mb-1 text-caption text-muted uppercase">My shells</h3>
+          <div data-testid="lib-mine">
+            @if (mineFailureText(); as text) {
+              <p class="note mb-1" role="status" data-testid="lib-mine-failure">{{ text }}</p>
+            }
+            @if (mine.status === 'ready' && mine.items.length === 0) {
+              <p class="note">{{ copy.myShellsEmpty }}</p>
+            }
+            <ul class="m-0 list-none p-0">
+              @for (item of mine.items; track item.shareCode) {
+                <li class="mb-1">
+                  <button
+                    type="button"
+                    class="btn flex w-full min-w-0 items-center gap-1.5 text-left"
+                    [class.border-accent]="
+                      isActive({ kind: 'mine', shareCode: item.shareCode, name: item.name })
+                    "
+                    [attr.aria-pressed]="
+                      isActive({ kind: 'mine', shareCode: item.shareCode, name: item.name })
+                    "
+                    [attr.data-testid]="'lib-mine-' + item.shareCode"
+                    [title]="item.name"
+                    (click)="selectMine(item)"
+                  >
+                    <span class="min-w-0 flex-1 truncate text-small"
+                      ><bdi>{{ item.name }}</bdi></span
+                    >
+                    <span class="text-caption text-muted">{{
+                      library.fetching() === item.shareCode ? 'Loading…' : 'Saved'
+                    }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+            @if (mine.status === 'error') {
+              <p class="note" role="status">{{ mineErrorText(mine.error) }}</p>
+              <button type="button" class="btn btn-sm mt-1" (click)="library.retry()">
+                Try again
+              </button>
+            } @else if (mine.status === 'ready' && mine.more) {
+              <button type="button" class="btn btn-sm" (click)="library.showMore()">
+                Show more
+              </button>
+            } @else if (mine.status === 'loading') {
+              <p class="note" role="status">Loading…</p>
+            }
+          </div>
+        }
+      }
+    </section>
+
+    <section class="section" data-testid="sky-section">
+      <h2 class="section-heading">Sky</h2>
+      <app-range-row
+        label="Gravity"
+        [range]="L.gravity"
+        [format]="plain"
+        [value]="store.show().sky.gravity"
+        (valueChange)="store.setSky('gravity', $event)"
+        (touch)="store.endCoalesce()"
+      />
+      <app-range-row
+        label="Wind"
+        [range]="L.wind"
+        [format]="plain"
+        [valueText]="windText"
+        [value]="store.show().sky.wind"
+        (valueChange)="store.setSky('wind', $event)"
+        (touch)="store.endCoalesce()"
+      />
+      <p class="note">{{ copy.skyNote }}</p>
+    </section>
+
+    <section class="section" data-testid="display-section">
+      <h2 class="section-heading">Display</h2>
+      <app-range-row
+        label="Motion blur"
+        [range]="L.persistence"
+        [format]="fixed2"
+        [value]="store.persistence()"
+        (valueChange)="store.setPersistence($event)"
+      />
+      <label class="my-1.5 flex items-center gap-2 text-muted">
+        Reduce flashing
+        <input
+          type="checkbox"
+          role="switch"
+          class="switch"
+          data-testid="reduce-flashing"
+          [checked]="store.reduceFlashing()"
+          (change)="store.setReduceFlashing($any($event.target).checked)"
+        />
+        <span class="text-primary">{{ store.reduceFlashing() ? 'On' : 'Off' }}</span>
+      </label>
+    </section>
+  </aside>
+
+  <main class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-sunken">
+    <div
+      #stageBox
+      class="relative min-h-[200px] flex-1 cursor-crosshair bg-surface-sunken max-[761px]:min-h-[160px]"
+    >
+      <app-fireworks-stage
+        class="h-full w-full"
+        [shell]="presetShell"
+        [sky]="store.show().sky"
+        [quality]="store.quality()"
+        [paused]="stagePaused()"
+        [timeline]="store.driver()"
+        [frameHook]="frameHook"
+        (stats)="stats.set($event)"
+        (skyClick)="onSkyClick($event)"
+        (ended)="onEnded($event)"
+        (catchingUp)="onCatchingUp($event)"
+      />
+      @if (store.flashNoticeVisible()) {
+        <div
+          class="absolute top-12 right-3 left-3 z-10 mx-auto block max-w-[420px] rounded-md border border-l-[3px] border-default border-l-accent bg-surface-raised px-3 py-2.5 text-small text-primary shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+          role="region"
+          aria-label="Flashing lights notice"
+          data-testid="flash-notice"
+        >
+          <p class="m-0" id="builder-notice-text">
+            <strong>Flashing lights.</strong>
+            {{ store.reduceFlashing() ? copy.noticeOn : copy.noticeOff }}
+          </p>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            @if (!store.reduceFlashing()) {
+              <button
+                type="button"
+                class="btn btn-primary"
+                data-testid="flash-turn-on"
+                aria-describedby="builder-notice-text"
+                (click)="dismissNotice(true)"
+              >
+                Turn on Reduce flashing
+              </button>
+            }
+            <button
+              type="button"
+              class="btn"
+              data-testid="flash-continue"
+              aria-describedby="builder-notice-text"
+              (click)="dismissNotice(false)"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      }
+      @if (marker(); as m) {
+        <div
+          class="pointer-events-none absolute w-px border-l border-dotted border-accent"
+          aria-hidden="true"
+          [style.left.px]="m.left"
+          [style.top.px]="m.top"
+          [style.height.px]="m.ground - m.top"
+        ></div>
+        <div
+          class="absolute size-[14px] -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border-2 border-accent touch-none"
+          aria-hidden="true"
+          data-testid="stage-marker"
+          [style.left.px]="m.left"
+          [style.top.px]="m.top"
+          (pointerdown)="onMarkerDown($event)"
+        ></div>
+        <p
+          [class.-translate-x-full]="m.labelLeft"
+          [class.-ml-3]="m.labelLeft"
+          [class.ml-3]="!m.labelLeft"
+          class="pointer-events-none absolute m-0 -translate-y-1/2 text-caption text-primary [text-shadow:0_1px_2px_#000]"
+          aria-hidden="true"
+          [style.left.px]="m.left"
+          [style.top.px]="m.top"
+        >
+          {{ m.label }}
+        </p>
+      }
+      <p
+        class="pointer-events-none absolute top-2.5 left-3 m-0 text-small text-muted [text-shadow:0_1px_2px_#000] max-[480px]:max-w-[55%]"
+        data-testid="hint"
+      >
+        {{ coarse() ? hintCoarse : hintFine }}
+      </p>
+      <app-hud [stats]="stats()" />
+      @if (catchingUpText(); as text) {
+        <p
+          class="pointer-events-none absolute bottom-2.5 left-3 m-0 text-small text-muted [text-shadow:0_1px_2px_#000]"
+          role="status"
+          data-testid="catching-up"
+        >
+          {{ text }}
+        </p>
+      }
+    </div>
+
+    <div
+      class="flex h-[232px] flex-none flex-col border-t border-default bg-surface max-[761px]:h-[176px]"
+      data-testid="dock"
+    >
+      <div class="flex h-9 flex-none items-center gap-2 px-2">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          data-testid="play"
+          [disabled]="store.flashNoticeVisible()"
+          [attr.title]="store.flashNoticeVisible() ? copy.playHeldTitle : null"
+          (click)="togglePlay()"
+        >
+          {{ playing() ? 'Pause' : 'Play' }}
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          aria-label="Back to start"
+          data-testid="back-to-start"
+          (click)="backToStart()"
+        >
+          |&lt;
+        </button>
+        <span
+          #timeText
+          class="font-mono text-small whitespace-nowrap tabular-nums"
+          data-testid="time"
+        ></span>
+        <input
+          #scrub
+          type="range"
+          class="min-w-0 flex-1 accent-accent"
+          min="0"
+          step="0.1"
+          aria-label="Playhead"
+          data-testid="scrub"
+          [attr.max]="viewEnd()"
+          [value]="pausedAt()"
+          [attr.aria-valuetext]="valueText(pausedAt())"
+          (input)="onScrubInput($event)"
+          (change)="onScrubEnd()"
+        />
+        <div class="flex gap-1">
+          <button
+            type="button"
+            class="btn btn-sm"
+            aria-label="Zoom out"
+            data-testid="zoom-out"
+            [disabled]="timeline()?.atFit()"
+            (click)="zoom('out')"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            aria-label="Fit whole show"
+            data-testid="zoom-fit"
+            (click)="zoom('fit')"
+          >
+            Fit
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            aria-label="Zoom in"
+            data-testid="zoom-in"
+            [disabled]="timeline()?.atMax()"
+            (click)="zoom('in')"
+          >
+            +
+          </button>
+        </div>
+      </div>
+      <div class="flex h-8 flex-none items-center gap-2 border-t border-default px-2">
+        <button
+          type="button"
+          class="btn btn-sm"
+          data-testid="add-cue"
+          [attr.aria-disabled]="atCueCap() || activeShellBlocked() ? 'true' : null"
+          (click)="addAtPlayhead()"
+        >
+          Add cue
+        </button>
+        <span class="min-w-0 truncate text-caption text-muted"
+          ><bdi>{{ activeName() }}</bdi></span
+        >
+        <button
+          type="button"
+          class="btn btn-sm"
+          data-testid="toolbar-duplicate"
+          [disabled]="!store.selectedCue()"
+          [attr.aria-disabled]="atCueCap() ? 'true' : null"
+          (click)="duplicateSelected()"
+        >
+          Duplicate
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          data-testid="toolbar-delete"
+          [disabled]="!store.selectedCue()"
+          (click)="deleteSelected()"
+        >
+          Delete
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          data-testid="undo"
+          [attr.aria-disabled]="store.canUndo() ? null : 'true'"
+          (click)="undo()"
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          data-testid="redo"
+          [attr.aria-disabled]="store.canRedo() ? null : 'true'"
+          (click)="redo()"
+        >
+          Redo
+        </button>
+        <span
+          class="ml-auto min-w-0 truncate text-right text-caption text-muted"
+          data-testid="toolbar-status"
+          [title]="toolbarStatus()"
+          >{{ toolbarStatus() }}</span
+        >
+      </div>
+      @if (earlyEnd(); as note) {
+        <p
+          class="m-0 border-t border-default px-2 py-0.5 text-caption text-muted"
+          data-testid="early-end"
+        >
+          {{ note }}
+        </p>
+      }
+      <app-show-timeline
+        [show]="store.show()"
+        [ordered]="store.ordered()"
+        [selectedId]="store.selectedCueId()"
+        [view]="store.view()"
+        [end]="store.end()"
+        [endKnown]="store.knownEnd() !== null"
+        (selected)="onSelect($event)"
+        (keyboardSelected)="onKeyboardSelected($event)"
+        (seek)="seekTo($event)"
+        (scrub)="onScrub($event)"
+        (moved)="store.moveCue($event.id, $event.t)"
+        (nudge)="onNudge($event)"
+        (add)="addAtPlayhead()"
+        (duplicate)="duplicateSelected()"
+        (remove)="deleteSelected()"
+        (zoom)="zoom($event.command, $event.around)"
+        (viewChange)="onViewChange($event)"
+        (focusInspector)="focusLaunchField()"
+      />
+      <p class="sr-only" role="status" aria-live="polite" data-testid="announcer">
+        {{ store.announcement() }}
+      </p>
+    </div>
+    <details
+      class="flex-none border-t border-default bg-surface px-2 py-1 text-small"
+      data-testid="cue-list"
+      (toggle)="cueListOpen.set($any($event.target).open)"
+    >
+      <summary class="cursor-pointer text-muted">Cue list ({{ store.show().cues.length }})</summary>
+      @if (cueListOpen()) {
+        <div class="max-h-48 overflow-y-auto">
+          <table class="w-full text-left text-caption">
+            <thead>
+              <tr class="text-muted">
+                <th class="font-normal">Launch</th>
+                <th class="font-normal">Bursts</th>
+                <th class="font-normal">Shell</th>
+                <th class="font-normal">Position</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (cue of store.ordered(); track cue.id) {
+                <tr>
+                  <td>
+                    <button
+                      type="button"
+                      class="cursor-pointer border-0 bg-transparent p-0 text-primary underline"
+                      [attr.aria-pressed]="cue.id === store.selectedCueId()"
+                      (click)="onSelect(cue.id)"
+                    >
+                      {{ formatTime(cue.t) }}
+                    </button>
+                  </td>
+                  <td>{{ burstAt(cue) }}</td>
+                  <td>
+                    <bdi>{{ shellNameOf(cue) }}</bdi>
+                  </td>
+                  <td>{{ percent(cue.x) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </details>
+  </main>
+</div>
+
+<ng-template #libButton let-item>
+  <button
+    type="button"
+    class="btn flex w-full min-w-0 items-center gap-1.5 text-left"
+    [class.border-accent]="isActive(item.ref)"
+    [attr.aria-pressed]="isActive(item.ref)"
+    [attr.data-testid]="item.testId"
+    [title]="item.name"
+    (click)="selectLibrary(item.ref)"
+  >
+    @for (sw of item.swatches; track $index) {
+      <span
+        class="size-3 flex-none rounded-full"
+        aria-hidden="true"
+        [style.background]="sw.background"
+      ></span>
+    }
+    <span class="min-w-0 flex-1 truncate text-small"
+      ><bdi>{{ item.name }}</bdi></span
+    >
+    @if (item.meta) {
+      <span class="text-caption text-muted">{{ item.meta }}</span>
+    }
+  </button>
+</ng-template>
+
+@if (dialog(); as d) {
+  <app-confirm-dialog
+    [title]="d.title"
+    [body]="d.body"
+    [confirmLabel]="d.confirm"
+    [cancelLabel]="d.cancel"
+    [tone]="d.tone"
+    (confirmed)="confirmDialog()"
+    (cancelled)="cancelDialog()"
+  />
+}

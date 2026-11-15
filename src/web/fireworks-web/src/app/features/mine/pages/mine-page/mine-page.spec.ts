@@ -23,7 +23,7 @@ import { MemoryStorage } from '../../../../testing/memory-storage';
 import { relativeTime } from './mine-page';
 
 const tick = (ms = 0) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const LIST = (page: number) => `/api/me/creations?page=${page}&pageSize=24&kind=shell`;
+const LIST = (page: number) => `/api/me/creations?page=${page}&pageSize=24`;
 
 function item(overrides: Partial<CreationListItem> = {}): CreationListItem {
   return {
@@ -134,6 +134,27 @@ describe('My creations /mine', () => {
   });
 
   describe('cards (5g.3; Boo C1–C4)', () => {
+    it('both kinds in one grid, in server order, with the kind word; no kind in the ledger (6j.1, D4)', async () => {
+      const { all, root, stable } = await visit(ME_TEST_WINDOW);
+      http
+        .expectOne(LIST(1))
+        .flush(page([item({ kind: 'show', name: 'A show' }), item({ shareCode: CODE_B })]));
+      await stable();
+      expect(ledger).toEqual(['GET /api/me/creations?page=1&pageSize=24']);
+      const metas = all('mine-card').map((c) =>
+        c.querySelector('p')!.textContent!.replace(/\s+/g, ' ').trim(),
+      );
+      expect(metas.map((m) => m.split(' ·')[0])).toEqual(['Show', 'Shell']);
+      expect(all('card-open').map((a) => a.getAttribute('href'))).toEqual([
+        `/c/${CODE_A}`,
+        `/c/${CODE_B}`,
+      ]);
+      expect(root.textContent).toContain(
+        "Shells and shows you've saved. Anyone with a share link can play it; nothing here is listed publicly.",
+      );
+      expect(root.querySelector('a[data-testid="nav-show"]')!.getAttribute('href')).toBe('/show');
+    });
+
     it('one card per item in order, name as text in a bdi, swatches, links from the code', async () => {
       const { all, root, stable } = await visit(ME_TEST_WINDOW);
       http.expectOne(LIST(1)).flush(

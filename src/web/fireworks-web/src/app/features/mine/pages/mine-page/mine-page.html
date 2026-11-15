@@ -20,15 +20,26 @@
   @default {
     <div class="min-h-dvh bg-surface-sunken px-4 py-5">
       <div class="mx-auto max-w-[1100px]">
-        <a routerLink="/" class="text-small text-muted no-underline hover:text-primary"
-          >← Shell designer</a
-        >
+        <div class="flex gap-3">
+          <a
+            routerLink="/"
+            class="text-small text-muted no-underline hover:text-primary"
+            data-testid="nav-designer"
+            >Shell designer</a
+          >
+          <a
+            routerLink="/show"
+            class="text-small text-muted no-underline hover:text-primary"
+            data-testid="nav-show"
+            >Show Builder</a
+          >
+        </div>
         <h1 class="m-0 mt-2 mb-0.5 text-heading" tabindex="-1" data-testid="mine-heading">
           My creations
         </h1>
         <p class="m-0 mb-4 text-small text-muted">
-          Shells you've saved. Anyone with a share link can play it; nothing here is listed
-          publicly.
+          Shells and shows you've saved. Anyone with a share link can play it; nothing here is
+          listed publicly.
         </p>
         <app-test-mode-banner />
         <p class="sr-only" aria-live="polite" data-testid="mine-announcer">
@@ -76,10 +87,12 @@
                 >
                   <h2 class="m-0 mb-1.5 text-heading">Nothing saved yet</h2>
                   <p class="m-0 text-body text-muted">
-                    Shells you save in the designer show up here, with a share link for each.
+                    Shells you save in the designer and shows you save in the Show Builder show up
+                    here, with a share link for each.
                   </p>
                   <div class="mt-4 flex gap-2">
                     <a routerLink="/" class="btn btn-primary no-underline">Open the designer</a>
+                    <a routerLink="/show" class="btn no-underline">Open the Show Builder</a>
                   </div>
                 </div>
               } @else {
@@ -114,7 +127,7 @@
                         >
                       </h2>
                       <p class="m-0 text-caption text-muted">
-                        Shell · Updated
+                        {{ card.item.kind === 'show' ? 'Show' : 'Shell' }} · Updated
                         <time
                           [attr.datetime]="card.item.updatedAt"
                           [attr.title]="card.updatedTitle"

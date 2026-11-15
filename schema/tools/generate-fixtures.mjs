@@ -217,6 +217,51 @@ valid('show', 'key-edges', 'A 12-character shell key and cue id using - and _.',
   d.cues = [{ id: 'Z9_-z9_-z9_-', t: 1, shell: 'Ab-_cdefghij', x: 0.5, seed: 12345 }];
 }));
 
+// valid/show/done-when-60s-50: the Phase 6 Done-when show (acceptance/phase-6.md 6b.1). Value for
+// value the same document as the web stand-in `doneWhenShow()` (app/testing/show-fixtures.ts).
+{
+  const fourBreak = embedded(PRESETS[9]); // Triple Break + one more break
+  fourBreak.name = 'Four Break';
+  fourBreak.breaks.push({ ...clone(fourBreak.breaks[0]), color1: 'purple', delay: 0.9 });
+  const shells = {
+    s1: embedded(PRESETS[5]), // Crossette
+    s2: embedded(PRESETS[6]), // Crackling Heart (crackle)
+    s3: embedded(PRESETS[2]), // Willow (glitter)
+    s4: embedded(PRESETS[7]), // Strobe
+    s5: fourBreak,
+    s6: embedded(PRESETS[0]), // Peony, used by no cue
+  };
+  const keys = ['s1', 's2', 's3', 's4', 's5'];
+  const cues = [];
+  for (let i = 1; i <= 50; i++) {
+    const cue = {
+      id: `c${i}`,
+      t: Math.round(((i - 1) * 60 * 10) / 49) / 10,
+      shell: keys[(i - 1) % keys.length],
+      x: i === 1 ? 0 : i === 50 ? 1 : ((i * 37) % 101) / 100,
+      seed: Math.imul(i, 2654435761 | 0),
+    };
+    if (i % 7 === 0) cue.burstHeight = [0.5, 0.6, 0.7][i % 3];
+    cues.push(cue);
+  }
+  cues[1].t = cues[9].t; // c2 with c10: same step, array order the reverse of ordinal id order
+  cues[2].t = cues[19].t; // c3 with c20: likewise
+  const show = { version: 1, name: 'Done-when 60s', sky: { gravity: 160, wind: 12 }, duration: 60, shells, cues };
+  // Guard the 6b.1 shape, so an edit above can't quietly drop a required feature.
+  const ts = cues.map((c) => c.t);
+  const ok =
+    cues.length === 50 &&
+    ts.includes(60) && ts.includes(0) && Math.max(...ts) === 60 &&
+    cues.some((c) => c.x === 0) && cues.some((c) => c.x === 1) &&
+    cues.some((c) => 'burstHeight' in c) && cues.some((c) => !('burstHeight' in c)) &&
+    Math.round(cues[1].t * 120) === Math.round(cues[9].t * 120) &&
+    Math.round(cues[2].t * 120) === Math.round(cues[19].t * 120) &&
+    !cues.some((c) => c.shell === 's6') &&
+    fourBreak.breaks.length === 4;
+  if (!ok) throw new Error('done-when-60s-50 no longer meets acceptance/phase-6.md 6b.1');
+  valid('show', 'done-when-60s-50', 'The Phase 6 Done-when show (acceptance/phase-6.md 6b.1): duration 60, 50 cues, one at t 0 and one at t 60, x at 0 and 1, two same-step pairs in reverse ordinal order (c2/c10, c3/c20), cues with and without burstHeight, wind 12, crossette, crackle, glitter, strobe and four-break shells, and one unused shell (s6).', show);
+}
+
 // valid/show/at-maximums: 32 shells x 4 breaks, 1000 cues, duration 600, worst-case lengths.
 {
   let s = 0x9e3779b9;

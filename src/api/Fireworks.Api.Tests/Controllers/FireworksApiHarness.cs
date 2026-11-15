@@ -2,6 +2,7 @@ using Fireworks.Api.Controllers;
 using Fireworks.Api.Data;
 using Fireworks.Api.Repositories;
 using Fireworks.Api.Services;
+using Fireworks.Api.Services.ClientConfig;
 using Fireworks.Api.Services.Creations;
 using Fireworks.Api.Services.Identity;
 using Fireworks.Api.Services.RateLimiting;
@@ -27,7 +28,7 @@ namespace Fireworks.Api.Tests.Controllers;
 /// <b>Not <c>Program.cs</c> itself</b> — that needs Npgsql and migrations (the real Program is
 /// exercised as a child process by <c>ProgramStartupTests</c> and, on Postgres,
 /// <c>ProgramOnPostgresTests</c>). This host repeats the Program.cs calls that shape a response:
-/// <c>AddFireworksIdentity</c> over configuration (so identity binds exactly as the app binds it),
+/// <c>AddFireworksIdentity</c> and <c>AddFireworksClientConfig</c> over configuration (so identity and the client knobs bind exactly as the app binds them),
 /// <c>AddProblemDetails</c>, <c>AddFireworksControllers</c> (default JSON options, no form value providers), health checks,
 /// <c>AddFireworksRateLimiting</c> over configuration, <c>UseExceptionHandler</c>, static files,
 /// explicit routing, <c>UseRateLimiter</c>, the <c>/api/{**rest}</c> 404 and the SPA fallback — in
@@ -104,6 +105,7 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
         }
 
         builder.Services.AddFireworksIdentity(builder.Configuration);
+        builder.Services.AddFireworksClientConfig(builder.Configuration);
         builder.Services.AddHealthChecks();
         builder.Services.AddProblemDetails();
         builder.Services.AddFireworksControllers();

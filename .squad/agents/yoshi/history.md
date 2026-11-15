@@ -36,17 +36,32 @@
 - **Query binding:** `[FromQuery] string?` turns `kind=` into null and takes the first of repeated values, so the list query reads `Request.Query` (trap 7 in `aspnet-request-gates`).
 - **Lesson:** trace every fallback through the endpoint it calls, and every new writer of a contract state through every path that reaches the same state.
 
+### Folded from Phase 5 (summarized 2026-11-15)
+
+- **schema.md Phase 5 edits:** draft `source` gains `name` (Rosalina Y1). A 404 from PUT or remix sets `source` to `null` (Y2), traced through both paths. §11.2: a PUT 404 asks; a remix 404 falls back to a plain POST.
+- **§9 and §2.7:** share-code reuse is "improbable, not prevented". Delete is a hard delete (`CreationRepository.DeleteOwnedAsync`) with no tombstone; revisit at 10⁷ total deletes or any change that shortens codes. `Connection: close` comes from `ApiResponseHeaders` (declared `Content-Length` over `MaxRequestBodySize`) and `HttpCreationRequestBody`'s 413. A 429 on a write route sees the 64 KiB global (reasoned, not measured).
+- **Rulings (Skyler, 2026-11-14)** are in §10, §11.1, §11.3, §11.5 and a §14 table. Rosalina's `phase-5.md` §8.1 contradicted two; flagged, not edited.
+- **Lesson:** trace a new writer of a contract state through every path that reaches it, not only the path the note names.
+
+### Folded from Phase 6 TimelineDriver build (summarized 2026-11-15)
+
+- **Shipped:** `engine/loop/timeline-driver.ts` (was a no-op stub), `engine/sim/lifetime.ts`, `beforeStep?(ctx)` and `fireSeeded` seams, `effectiveSky(shell, showSky?)`, `FireworksSim.snapshot/restore`, `ParticleStore.snapshot/restore`, `mulberry32Stateful`. Record `yoshi-phase6-timeline-driver.md`; schema.md §4.3, §4.4 rule 3, §4.5 and §13 edited in place; the 2a record's point 8 is marked superseded in part.
+- **The driver owns the show clock** (it counts `beforeStep` calls), because the clock resets on seek and starts at show start, which the loop cannot know. The 2a plan was wrong here.
+- **Measured before designing seek:** a pure re-run from 0 costs 0.12 ms/step (Done-when show), 0.28 ms/step (600 s, 1000 presets) and 1.6 ms/step at the 40k cap. Rosalina's Y1 budget (about 1 s) was 20 times over, so exact checkpoints went in now: every 1200 steps, keyed by width, starBudget and capacity, 64 MiB cap that doubles the spacing. Edits inherit checkpoints up to the first differing cue (`options.from`).
+- **Worst-case tail:** 20.88 s measured against `MAX_SHELL_LIFETIME` 21.03 s; rising embers can outlive a short first burn. V8 and JSC agree on ledger and end.
+- **Layering:** `cueTimes` lives in `sim/lifetime.ts` (it needs `GROUND`; model cannot import sim). Rephrase a mutant whose replacement is a substring of the original; don't loosen the guard. No mutants during a timing bench.
+
 ## Learnings
 
-### 2026-11-14 — Phase 5 review points folded into schema.md
-- Draft `source` gains `name` (Rosalina Y1). A 404 from PUT or remix sets `source` to `null` (Y2): that's a third writer, and I extended it to the remix-404 path as well. Rosalina's §6 asymmetry is in §11.2: the PUT 404 asks, the remix 404 falls back to a plain POST by itself.
-- §9: share-code reuse is "improbable, not prevented". Delete is a hard delete (`CreationRepository.DeleteOwnedAsync`). No tombstone table; the trigger is 10⁷ total deletes, or any change that shortens codes. Per-creation odds are `D / 58⁸`.
-- §2.7: `Connection: close` comes from `ApiResponseHeaders` (`OnStarting`, declared `Content-Length` > current `MaxRequestBodySize`, any status) plus `HttpCreationRequestBody`'s 413. A 429 on a write route sees the 64 KiB global, because the limiter runs before `[RequestSizeLimit]` (reasoned, not measured).
-- Skyler's 2026-11-14 rulings went into §10, §11.1, §11.3, §11.5 and a §14 table. Rosalina's `phase-5.md` §8.1 still contradicts two of them; flagged, not edited.
-- Lesson: when a design note adds a state transition to a contract I own (here, a new writer of `source`), trace it through every path that reaches the same state, not only the one the note names.
+### 2026-11-14 — Phase 6 cross-agent update (Scribe)
 
-### 2026-11-14 — Phase 5 cross-agent update (Scribe)
-- **Your Phase 4 record's item 2 is partly superseded:** a PUT 404 now asks, and Save as new is a plain POST. A remix 404 still falls back by itself. Marked in the record; your §11.2 addendum already reflects it.
-- **§2.7 flag closed:** Phase 4 said only the 413 sends `Connection: close`. The Phase 5 addendum now says any `/api` response over the limit does. Check the wording.
-- **Index row:** README §5's "Save as new (remix)" is incomplete after a PUT 404 (§11.2). Not a contradiction; add the fallback when Skyler promotes.
-- **Phase 7:** the dotted-link bare 404 may need a line in §2.7 or §11, depending on Bowser's decision. **Call for you or Boo:** Toad's C2 "name"-only heuristic.
+- **Gate evidence:** Mario's Phase 6 gate ran the driver on the built image (three cross-engine round trips; 1433/1433 frontend). The 2a point 8 marker is in place.
+- **Open for you:** Toad saw frames step past the end (`driver.step` reaches E+2 at 60 fps, so the player's clock can read one frame past the exact end). Decide whether the clamp belongs in the driver.
+- **Revisit trigger unmeasured:** no Chrome p95 for a seek appears in the Phase 6 records, so the >1 s trigger is untested. (The "480 steps per frame" in this note is superseded; see below.)
+- **Check:** the §12.2 row for `done-when-60s-50.json` was added by the coordinator; verify it is there.
+
+### 2026-11-15 — Post-gate cross-agent update (Scribe)
+
+- **Seek is time-budgeted now** (Luigi, point 13; your driver is unchanged). The 480 steps per frame above is superseded. The default budget is 25 ms, served from `api/client-config` (Bowser). Done-when scrub to the end: 1.4 s. Max show: 183 s at frames of p50 33 ms.
+- **Open for you (carried):** a late config does not change the checkpoint interval until reload. `TimelineDriver.inherit` copies `from.cpSteps`, so a new interval applies only to a driver built without `from`; the byte cap applies on the next edit. Decide whether that stays, is documented, or needs a driver change.
+- **Still open from above:** the frame-past-end clamp, and the >1 s p95 Chrome trigger, which has no measurement for a saved show.

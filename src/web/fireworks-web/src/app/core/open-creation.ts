@@ -1,7 +1,8 @@
 import { Observable, catchError, map, of } from 'rxjs';
 import type { ShellAdjustment } from '../../engine/model/normalize';
-import { openShell } from '../../engine/model/open';
+import { openShell, openShow } from '../../engine/model/open';
 import { SHELL_VERSION, type ShellDocument } from '../../engine/model/shell';
+import { SHOW_VERSION, type ShowDocument } from '../../engine/model/show';
 import { CreationsService, toCreationError } from './creations';
 import type { CreationResponse } from './models';
 import { isShareCode } from './share-code';
@@ -15,13 +16,15 @@ import { isShareCode } from './share-code';
  *
  * - `not-found`: a bad code, a 404, or a `kind` that is neither `'shell'` nor `'show'`. One page
  *   for all of them (C12).
- * - `show`: a show before Phase 6 (coordinator default for Q4).
- * - `newer`: the document's `version` is a number above this bundle's; the reload copy.
+ * - `newer`: the document's `version` is a number above this bundle's; the reload copy. `kind` is
+ *   the envelope's, so `/c/` can word it for a shell or a show (phase-6.md §10.4).
  * - `invalid`: anything else that won't open (normalize failure, a bad response code, a version
- *   that isn't a number); its `version` value is never shown (C15).
+ *   that isn't a number); its `version` value is never shown (C15). `kind` is null when the
+ *   response wasn't an object.
  * - `network`, `rate-limited`, `server`: couldn't load; never "doesn't exist".
  * - `shell`: `shell` is the normalized document, and its `name` is the one to display (C5).
  *   `response` is kept for the caller's `source`; its lineage field is never rendered (C10).
+ * - `show` (Phase 6): `show` is the upgraded, normalized ShowDocument, the same checks.
  */
 export type OpenedCreation =
   | {
@@ -29,7 +32,16 @@ export type OpenedCreation =
       readonly shell: ShellDocument;
       readonly response: CreationResponse;
     }
-  | { readonly status: 'show' | 'not-found' | 'newer' | 'invalid' | 'network' | 'server' }
+  | {
+      readonly status: 'show';
+      readonly show: ShowDocument;
+      readonly response: CreationResponse;
+    }
+  | {
+      readonly status: 'newer' | 'invalid';
+      readonly kind: 'shell' | 'show' | null;
+    }
+  | { readonly status: 'not-found' | 'network' | 'server' }
   | { readonly status: 'rate-limited'; readonly retryAfterSeconds: number | null };
 
 /** Fetches and opens the creation at `code`. Never errors; one GET at most (none for a bad code). */
@@ -61,26 +73,28 @@ export function openCreation(
 
 /** The checks after the GET, pure. Logs adjustments and failures by code and path only (C16). */
 export function classifyCreation(response: unknown): OpenedCreation {
-  if (typeof response !== 'object' || response === null) return { status: 'invalid' };
+  if (typeof response !== 'object' || response === null) return { status: 'invalid', kind: null };
   const r = response as CreationResponse;
   const kind: unknown = r.kind;
-  if (kind === 'show') return { status: 'show' };
-  if (kind !== 'shell') return { status: 'not-found' };
-  if (!isShareCode(r.shareCode)) return { status: 'invalid' };
+  if (kind !== 'shell' && kind !== 'show') return { status: 'not-found' };
+  if (!isShareCode(r.shareCode)) return { status: 'invalid', kind };
 
-  const opened = openShell(r.document);
+  const opened = kind === 'shell' ? openShell(r.document) : openShow(r.document);
   if (!opened.ok) {
     const version = opened.errors.find((e) => e.code === 'version');
+    const current = kind === 'shell' ? SHELL_VERSION : SHOW_VERSION;
     const newer =
-      version !== undefined && typeof version.value === 'number' && version.value > SHELL_VERSION;
+      version !== undefined && typeof version.value === 'number' && version.value > current;
     console.warn(`Creation ${r.shareCode} could not be opened:`, issueList(opened.errors));
-    return { status: newer ? 'newer' : 'invalid' };
+    return { status: newer ? 'newer' : 'invalid', kind };
   }
   if (opened.adjustments.length) {
     // schema.md §8.3: a current-version document the lenient walk had to adjust.
     console.warn(`Creation ${r.shareCode} was adjusted on open:`, issueList(opened.adjustments));
   }
-  return { status: 'shell', shell: opened.shell, response: r };
+  return 'shell' in opened
+    ? { status: 'shell', shell: opened.shell, response: r }
+    : { status: 'show', show: opened.show, response: r };
 }
 
 function issueList(items: readonly (ShellAdjustment | { path: string; code: string })[]): string[] {

@@ -73,6 +73,32 @@ The contract is `docs/fireworks-app/schema.md` (§2 envelope and status codes, �
 - **Body limits:** Kestrel's global limit is 64 KiB; the three write actions raise it to 256 KiB. Clients send compact JSON (a pretty-printed worst-case show is 290 KB). A body sent with `Transfer-Encoding: chunked` has its chunk framing counted toward the limit too, so a chunked body somewhat under 256 KiB of JSON can still get 413 (Boo F2). Browsers' `fetch` sends a `Content-Length` for these bodies, so this is information only.
 - **No form binding:** MVC's form value providers are removed for the whole API (`AddFireworksControllers`). With them, a `multipart/form-data` or large urlencoded body was parsed during model binding, before the write gate, and got MVC's 400 instead of 403 or 415 (Boo F1).
 
+### Playback tuning (`ClientPlayback`)
+
+Four settings in `src/api/Fireworks.Api/appsettings.json` tune how the Show Builder seeks and catches up. The API serves them at `GET /api/client-config` as `{ playback: { seekBudgetMs, catchingUpDelayMs, checkpointIntervalSeconds, checkpointMemoryMiB } }`. That endpoint is anonymous and read-only, sends `Cache-Control: no-store`, and counts toward the 120-a-minute read limit. Production and Development use the same values, so the section is only in `appsettings.json`.
+
+Treat the timings below as rough. They come from the team's measurement runs, and an older machine will be slower. "The 60 s show" is the 50-cue fixture `schema/fixtures/valid/show/done-when-60s-50.json`. "The extreme show" is 600 s with 1000 cues at the particle cap.
+
+| Setting | Default | Range | What it adjusts | Higher | Lower |
+|---|---|---|---|---|---|
+| `SeekBudgetMs` | 25 | 4–100 | Milliseconds of simulation the builder runs in each animation frame while it seeks (a scrub, a jump, or catching up after an edit). The rest of the frame goes to drawing and input. | A seek finishes sooner, but the page gets choppier while it runs. 25 ms is about 30 fps while catching up, and the total time is about what the old fixed 480-step slice took (about 1.5 s to the end of the 60 s show). Near 100 the page stalls on a slow machine, which is what the old slice did on the extreme show (about 2 s per frame, frozen for about 2.5 minutes). | The page stays smooth, but a seek takes longer. At 8 ms, seeking to the end of the 60 s show took about 3.3 s at about 60 fps, and the extreme show took about 6 minutes, smooth throughout. |
+| `CatchingUpDelayMs` | 300 | 0–5000 | How long a seek must run before the "Catching up…" notice appears. | Short seeks never flash the notice, but a long one goes unexplained for longer. At 2000 a 1.5 s seek shows no notice at all. | The notice appears sooner. At 0 it flickers on for every seek, even ones that end in the next frame. |
+| `CheckpointIntervalSeconds` | 10 | 1–60 | Show time between the snapshots the builder takes, so that a later seek can start from the nearest snapshot instead of from 0 s. This is TimelineDriver's `checkpointSteps` divided by 120. | Fewer snapshots and less memory, but a seek can have up to this much show time left to simulate after it lands on one. | Seeks land closer to their target, so they finish faster, but there are more snapshots and more memory, and the cap below is reached sooner. |
+| `CheckpointMemoryMiB` | 64 | 8–512 | The memory cap for those snapshots (TimelineDriver's `checkpointBytes`). When the snapshots would go over it, the builder spaces them further apart. One snapshot is at most about 2.56 MB. | More snapshots fit before spacing widens, so busy shows seek faster, but the tab can hold more memory. | Less memory, but busy shows get sparser snapshots and slower seeks. Under 64 MiB the extreme show widened its spacing from 10 s to 40 s and peaked at 35.6 MiB; a lower cap widens it further. |
+
+Once snapshots exist, the median seek was about 0.14 s for 600 s of presets and about 3.6 s for the extreme show.
+
+**Changing a setting.**
+
+- **Locally:** edit the value in `appsettings.json` and restart the API. To try a value without editing the file, set an environment variable for that run, using `__` between the section and the key:
+  ```bash
+  ClientPlayback__SeekBudgetMs=40 dotnet run --project src/api/Fireworks.Api
+  ```
+- **On Railway:** add a service variable, for example `ClientPlayback__SeekBudgetMs` = `40`. Saving it redeploys, and the new value applies once the deploy is live. Remove the variable to go back to the committed value.
+- **Then reload the page.** The SPA reads these settings once, when the page loads, so an open tab keeps the old values until it is reloaded.
+
+**Out-of-range values.** The API refuses to start if any value is outside its range or isn't a whole number. It exits before it touches the database, with a message that names the key, for example `ClientPlayback:SeekBudgetMs must be between 4 and 100 (milliseconds per frame).` On Railway that shows up as a failed deploy, and the previous deploy keeps serving. The browser also clamps each value to the same range, so a bad value can't reach the builder even if it gets through.
+
 ### Migrations
 
 Migrations live in `src/api/Fireworks.Api/Data/Migrations` and are applied automatically on startup, so there is no separate migration step. To add one, run from the API project directory, because the design-time factory reads `appsettings*.json` from the current directory:

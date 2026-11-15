@@ -9,7 +9,10 @@ import { isolate } from './bidi';
 
 export type LinkSurface = 'player' | 'copy';
 
-export type LinkAction = 'home' | 'reload' | 'retry';
+export type LinkAction = 'home' | 'builder' | 'reload' | 'retry';
+
+/** A creation's kind when the response said it; null when it's unknown. */
+export type LinkKind = 'shell' | 'show' | null;
 
 export interface LinkMessage {
   readonly heading: string;
@@ -27,8 +30,12 @@ export function creationTitle(name: string): string {
   return `${isolate(name)} · ${SITE_TITLE}`;
 }
 
+/** Kind unknown (phase-6.md §10.4, D2): the link could have been either kind. */
+const NOTHING_CHANGED = 'Nothing in the designer or the Show Builder has changed.';
 const DESIGNER_UNCHANGED = "Your shell in the designer hasn't changed.";
+const BUILDER_UNCHANGED = "Your show in the Show Builder hasn't changed.";
 const GO_TO_DESIGNER = { action: 'home', label: 'Go to the designer' } as const;
+const GO_TO_BUILDER = { action: 'builder', label: 'Go to the Show Builder' } as const;
 const TRY_AGAIN = { action: 'retry', label: 'Try again' } as const;
 
 /** §9: one page for a bad-format code and a 404, on both surfaces. */
@@ -36,7 +43,7 @@ export function notFoundMessage(surface: LinkSurface): LinkMessage {
   const body = [
     'The link may be mistyped or cut short, or the creation was deleted. Share links are case-sensitive, so check capital letters too.',
   ];
-  if (surface === 'copy') body.push(DESIGNER_UNCHANGED);
+  if (surface === 'copy') body.push(NOTHING_CHANGED);
   return {
     heading: 'Nothing plays at this link',
     body,
@@ -45,8 +52,18 @@ export function notFoundMessage(surface: LinkSurface): LinkMessage {
   };
 }
 
-/** §7.3 / §8.4: the document's `version` is newer than this bundle. */
-export function newerVersionMessage(surface: LinkSurface): LinkMessage {
+/** §7.3 / §8.4: the document's `version` is newer than this bundle (show: phase-6.md §10.4). */
+export function newerVersionMessage(surface: LinkSurface, kind: LinkKind = 'shell'): LinkMessage {
+  if (surface === 'copy' && kind === 'show') {
+    return {
+      heading: 'This show needs a newer version of the app.',
+      body: [
+        'It was saved by a newer version of Fireworks Sandbox than this page has. Reload to open it.',
+      ],
+      actions: [{ action: 'reload', label: 'Reload' }, GO_TO_BUILDER],
+      title: SITE_TITLE,
+    };
+  }
   return surface === 'copy'
     ? {
         heading: 'This shell needs a newer version of the app.',
@@ -66,8 +83,16 @@ export function newerVersionMessage(surface: LinkSurface): LinkMessage {
       };
 }
 
-/** §7.3 / §8.4: normalize rejected a current-version document (validator drift). */
-export function invalidMessage(surface: LinkSurface): LinkMessage {
+/** §7.3 / §8.4: normalize rejected a current-version document (show: phase-6.md §10.4). */
+export function invalidMessage(surface: LinkSurface, kind: LinkKind = 'shell'): LinkMessage {
+  if (surface === 'copy' && kind === 'show') {
+    return {
+      heading: "This show can't be opened.",
+      body: [`Its saved data isn't valid in this version of the app. ${BUILDER_UNCHANGED}`],
+      actions: [GO_TO_BUILDER],
+      title: SITE_TITLE,
+    };
+  }
   return surface === 'copy'
     ? {
         heading: "This shell can't be opened.",
@@ -83,17 +108,7 @@ export function invalidMessage(surface: LinkSurface): LinkMessage {
       };
 }
 
-/** §8.2 coordinator default (Q4): a show until Phase 6. The draft is untouched. */
-export function showNotSupportedMessage(): LinkMessage {
-  return {
-    heading: "This show can't be played yet.",
-    body: ['Shows arrive in a later version of Fireworks Sandbox.'],
-    actions: [GO_TO_DESIGNER],
-    title: SITE_TITLE,
-  };
-}
-
-/** §7.3 / §8.4 status 0, 429 and 5xx. Never "doesn't exist" (Boo C12). */
+/** §7.3 / §8.4 status 0, 429 and 5xx, kind unknown (phase-6.md §10.4). Never "doesn't exist" (Boo C12). */
 export function loadFailureMessage(
   surface: LinkSurface,
   failure: 'network' | 'rate-limited' | 'server',
@@ -106,7 +121,7 @@ export function loadFailureMessage(
       heading: "Can't reach the server.",
       body: [
         copy
-          ? `The shared shell couldn't be loaded. Check your connection and try again. ${DESIGNER_UNCHANGED}`
+          ? `The shared creation couldn't be loaded. Check your connection and try again. ${NOTHING_CHANGED}`
           : "This creation couldn't be loaded. Check your connection and try again.",
       ],
       actions: [TRY_AGAIN, ...extra],
@@ -123,7 +138,7 @@ export function loadFailureMessage(
   }
   return {
     heading: 'Something went wrong on the server.',
-    body: [copy ? `Try again in a moment. ${DESIGNER_UNCHANGED}` : 'Try again in a moment.'],
+    body: [copy ? `Try again in a moment. ${NOTHING_CHANGED}` : 'Try again in a moment.'],
     actions: [TRY_AGAIN, ...extra],
     title: SITE_TITLE,
   };

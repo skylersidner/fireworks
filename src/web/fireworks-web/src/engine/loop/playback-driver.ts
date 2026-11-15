@@ -10,6 +10,11 @@ export interface PlaybackContext {
   worldWidth(): number;
   /** Fires `def` at world (tx, ty) with the next derived seed. Returns the seed. */
   fire(def: ShellDocument, tx: number, ty: number): number;
+  /**
+   * Fires `def` at world (tx, ty) with the caller's `seed`, without consuming the loop's launch
+   * counter (a show cue carries its own seed, schema.md §4.4 rule 3).
+   */
+  fireSeeded(def: ShellDocument, tx: number, ty: number, seed: number): void;
 }
 
 /**
@@ -24,4 +29,11 @@ export interface PlaybackDriver {
   onUserFire(ctx: PlaybackContext): void;
   /** Hold off automatic firing for `seconds` (prototype: loading a preset sets `modeTimer`). */
   hold(seconds: number): void;
+  /**
+   * Called inside the fixed-step loop immediately before every `sim.step(STEP)`, so a driver can
+   * fire on an exact step rather than at a frame boundary (schema.md §4.4 rule 3). A driver that
+   * needs a step index counts these calls itself: the show clock starts at show start and resets
+   * on seek, which the loop knows nothing about (yoshi-phase6-timeline-driver.md).
+   */
+  beforeStep?(ctx: PlaybackContext): void;
 }

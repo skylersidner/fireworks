@@ -7,6 +7,7 @@ import {
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { httpErrorInterceptor } from './core/http-error-interceptor';
+import { ClientConfigLoader } from './core/client-config-loader';
 import { SessionService } from './core/session';
 
 import { routes } from './app.routes';
@@ -34,6 +35,11 @@ export const appConfig: ApplicationConfig = {
     // render does not wait for it. See SessionService.load() for when this has to change.
     provideAppInitializer(() => {
       inject(SessionService).load().subscribe();
+    }),
+    // The playback knobs (seek budget, checkpoints), also in the background: until they arrive,
+    // or if the request fails, ClientConfigStore's defaults apply.
+    provideAppInitializer(() => {
+      inject(ClientConfigLoader).load().subscribe();
     }),
   ],
 };

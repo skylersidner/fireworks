@@ -24,7 +24,10 @@ function slice(from, to) {
   if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
   return html.slice(a, b);
 }
-const simSource = slice('const COLORS = {', '/* ============================================================\n   Renderer');
+const simSource = slice(
+  'const COLORS = {',
+  '/* ============================================================\n   Renderer',
+);
 const durationSource = slice('function shellDuration(def) {', 'function tick(ticker)');
 // The prototype's own fire() (launch counter, base seed and the 7919 stride), so the sequence
 // scenario's seeds come from the oracle, not from a constant typed into this harness.

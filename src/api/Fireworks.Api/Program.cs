@@ -1,6 +1,7 @@
 using Fireworks.Api.Data;
 using Fireworks.Api.Repositories;
 using Fireworks.Api.Services;
+using Fireworks.Api.Services.ClientConfig;
 using Fireworks.Api.Services.Creations;
 using Fireworks.Api.Services.Identity;
 using Fireworks.Api.Services.RateLimiting;
@@ -21,6 +22,11 @@ var connectionString = builder.Configuration.GetConnectionString("Postgres")
 // so a missing or malformed id stops the process before it opens a database connection. See
 // AddFireworksIdentity for why this is not ValidateOnStart().
 builder.Services.AddFireworksIdentity(builder.Configuration);
+
+// Same for the client playback knobs (ClientPlayback, served by GET api/client-config): an
+// out-of-range value stops the process here with its own message, before the database. See
+// AddFireworksClientConfig for why this is eager as well as ValidateOnStart().
+builder.Services.AddFireworksClientConfig(builder.Configuration);
 
 // 1a. Kestrel's global body limit is 64 KiB; the creation writes raise it per action to 256 KiB.
 // Never add request decompression (UseRequestDecompression): today a gzip body is read raw and fails

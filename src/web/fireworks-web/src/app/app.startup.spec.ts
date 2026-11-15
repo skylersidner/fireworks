@@ -1,10 +1,12 @@
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { ApplicationInitStatus } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { App } from './app';
 import { appConfig } from './app.config';
 import { BROWSER_STORAGE } from './core/browser';
-import { MeResponse } from './core/models';
+import { ClientConfigStore, DEFAULT_PLAYBACK } from './core/client-config';
+import { ClientConfigResponse, MeResponse } from './core/models';
 import { NotificationService } from './core/notifications';
 import { SessionService } from './core/session';
 import { STAGE_RENDERER_FACTORY } from './shared/fireworks-stage/fireworks-stage';
@@ -16,8 +18,9 @@ import { MemoryStorage } from './testing/memory-storage';
  * root App: the requests the app issues before anyone touches it.
  *
  * Exact call ledger (standing decision, testing §2). Since 2c the only `/health/live` caller is
- * ApiStatusService (started by App, read by the designer banner and `/status`), and `api/me`
- * comes only from the session initializer. The designer adds nothing (acceptance 2c.8). The test
+ * ApiStatusService (started by App, read by the designer banner and `/status`), `api/me`
+ * comes only from the session initializer, and `api/client-config` only from ClientConfigLoader's
+ * initializer (Phase 6 follow-up). The designer adds nothing (acceptance 2c.8). The test
  * compares the complete sorted multiset per route, so a page that probes again, a designer that
  * loads the session, or a dropped initializer all fail here.
  */
@@ -28,6 +31,16 @@ describe('App cold start (real appConfig)', () => {
     isAuthenticated: false,
     canWrite: true,
   };
+  const served: ClientConfigResponse = {
+    playback: {
+      seekBudgetMs: 40,
+      catchingUpDelayMs: 500,
+      checkpointIntervalSeconds: 20,
+      checkpointMemoryMiB: 128,
+    },
+  };
+  const answer = (url: string) =>
+    url === '/api/me' ? me : url === '/api/client-config' ? served : 'Healthy';
 
   async function coldStart(url: string) {
     TestBed.configureTestingModule({
@@ -47,28 +60,31 @@ describe('App cold start (real appConfig)', () => {
   }
 
   it.each(['/', '/status'])(
-    '%s issues exactly GET /api/me once and GET /health/live once',
+    '%s issues exactly GET /api/me, GET /api/client-config and GET /health/live once each',
     async (url) => {
       const { http, fixture } = await coldStart(url);
 
       const pending = http.match(() => true);
       const ledger = pending.map((r) => `${r.request.method} ${r.request.urlWithParams}`).sort();
-      expect(ledger).toEqual(['GET /api/me', 'GET /health/live']);
+      expect(ledger).toEqual(['GET /api/client-config', 'GET /api/me', 'GET /health/live']);
+      // Rendered while all three are pending: the config does not block the first render.
+      expect((fixture.nativeElement as HTMLElement).querySelector('router-outlet')).not.toBeNull();
+      // And no initializer is holding bootstrap open on a pending request (Toad): an initializer
+      // that returns its Observable keeps ApplicationInitStatus.done false until it settles.
+      expect(TestBed.inject(ApplicationInitStatus).done).toBe(true);
+      expect(TestBed.inject(ClientConfigStore).playback()).toEqual(DEFAULT_PLAYBACK);
 
-      for (const req of pending) {
-        req.flush(req.request.url === '/api/me' ? me : 'Healthy');
-      }
+      for (const req of pending) req.flush(answer(req.request.url));
       await fixture.whenStable();
       expect(TestBed.inject(SessionService).canWrite()).toBe(true);
+      expect(TestBed.inject(ClientConfigStore).playback()).toEqual(served.playback);
       http.verify();
     },
   );
 
   it('/status shows the probe and the session it was given', async () => {
     const { http, fixture } = await coldStart('/status');
-    for (const req of http.match(() => true)) {
-      req.flush(req.request.url === '/api/me' ? me : 'Healthy');
-    }
+    for (const req of http.match(() => true)) req.flush(answer(req.request.url));
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="health-status"]')?.textContent?.trim()).toBe('Healthy');
@@ -88,6 +104,8 @@ describe('App cold start (real appConfig)', () => {
     expect(el.querySelector('[role="dialog"], [aria-modal="true"]')).toBeNull();
     expect(TestBed.inject(NotificationService).notifications()).toEqual([]);
     expect(el.textContent).not.toMatch(/\/api\/|\/health/);
+    // The config request failed too: defaults, silently (no toast, above; no banner of its own).
+    expect(TestBed.inject(ClientConfigStore).playback()).toEqual(DEFAULT_PLAYBACK);
     vi.restoreAllMocks();
   });
 });

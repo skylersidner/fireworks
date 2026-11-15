@@ -207,12 +207,26 @@ describe('drivers (2a.16)', () => {
     );
   });
 
-  it('TimelineDriver is a stub that never fires', () => {
-    const { sim, loop } = makeLoop({ driver: new TimelineDriver() });
+  it('TimelineDriver fires cues inside the step loop, through fireSeeded (timeline-driver.spec.ts)', () => {
+    const sky = { gravity: 160, wind: 0 };
+    const shells = { p: { ...structuredClone(PRESETS[0]) } };
+    const cues = [{ id: 'a', t: 0.05, shell: 'p', x: 0.5, seed: 42 }];
+    const driver = new TimelineDriver({ version: 1, name: 'S', sky, duration: 1, shells, cues });
+    const { sim, loop } = makeLoop({ driver });
     const spy = vi.spyOn(sim, 'launch');
-    for (let f = 0; f < 60; f++) loop.frame(16);
-    expect(spy).not.toHaveBeenCalled();
+    for (let f = 0; f < 6; f++) loop.frame(16);
+    expect(spy.mock.calls.map((c) => c[3])).toEqual([42]);
+    expect(loop.launchCount).toBe(0);
     expect(loop.driver.mode).toBe('timeline');
+  });
+
+  it('fireSeeded launches with the given seed, leaves the counter and sets lastLaunch', () => {
+    const { sim, loop } = makeLoop();
+    const spy = vi.spyOn(sim, 'launch');
+    loop.fireSeeded(loop.shell, 10, 20, -99);
+    expect(spy.mock.calls[0].slice(1)).toEqual([10, 20, -99]);
+    expect(loop.lastLaunch).toMatchObject({ tx: 10, ty: 20, seed: -99 });
+    expect(loop.launch()).toBe(20261112);
   });
 
   it('clear empties the sky but keeps the seed counter', () => {
