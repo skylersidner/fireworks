@@ -27,3 +27,17 @@ export function doneWhenShow(): ShowDocument {
   if (!opened.ok) throw new Error(`${DONE_WHEN_FIXTURE} is not a valid show`);
   return opened.show;
 }
+
+/**
+ * A short show: the Done-when shells, 12 cues in the first 3 s (two same-step pairs), so a run to
+ * the end is quick (about 1,220 steps). The stage and page specs prove delegation on it (Yoshi T1);
+ * the Done-when show's own end and ledger are pinned in the engine specs.
+ */
+export function shortShow(): ShowDocument {
+  const show = doneWhenShow();
+  show.duration = 3;
+  show.cues = show.cues
+    .slice(0, 12)
+    .map((c, i) => ({ ...c, t: [0, 0.4, 0.4, 1, 1.3, 2, 2.2, 2.5, 3, 3, 1.7, 0.9][i] }));
+  return show;
+}

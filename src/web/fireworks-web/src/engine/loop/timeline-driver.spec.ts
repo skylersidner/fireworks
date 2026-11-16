@@ -3,22 +3,33 @@
  * TimelineDriver (plan Phase 6, schema.md §4.4–4.5, §13). Determinism, the firing rule, seek and
  * the end of a show. Negative controls for the `<=` comparison, the `(fireStep, id)` tie order and
  * the seek reset are recorded in `.squad/decisions/records/yoshi-phase6-timeline-driver.md`.
+ *
+ * Checkpoints, warm-up handoff and inheritance are in `timeline-driver.checkpoints.spec.ts`. The
+ * cases that run the 60 s Done-when show to its end, twice or at several frame sizes are in
+ * `timeline-driver.daily.spec.ts` (daily tier); each has a small-show equivalent here.
  */
 import { openShow } from '../model/open';
 import { PRESETS } from '../model/presets';
-import { newShell, type ShellDocument } from '../model/shell';
-import type { EmbeddedShell, ShowCue, ShowDocument } from '../model/show';
+import { newShell } from '../model/shell';
 import { GROUND, STEP } from '../sim/constants';
-import { KIND_COUNT } from '../sim/kinds';
 import { MAX_SHELL_LIFETIME } from '../sim/lifetime';
-import { FireworksSim } from '../sim/simulation';
-import { EngineLoop } from './engine-loop';
 import {
-  TimelineDriver,
-  secondsToStep,
-  stepToSeconds,
-  type TimelineDriverOptions,
-} from './timeline-driver';
+  SMALL_CP,
+  WIDTH,
+  cue,
+  doneWhenShow,
+  embed,
+  kindCounts,
+  makeLoop,
+  playFrames,
+  referenceRun,
+  show,
+  smallShow,
+  snapshot,
+  straight,
+  type ReferencePoint,
+} from './testing/timeline-spec-helpers';
+import { TimelineDriver, secondsToStep, stepToSeconds } from './timeline-driver';
 
 interface NodeFs {
   readFileSync(path: string, encoding: 'utf8'): string;
@@ -27,88 +38,10 @@ declare const process: { cwd(): string; getBuiltinModule(id: 'node:fs'): NodeFs 
 const fs = process.getBuiltinModule('node:fs');
 const FIXTURES = `${process.cwd()}/../../../schema/fixtures`;
 
-const WIDTH = 1280;
-
-// Toad, Phase 7 C3: every spec here runs the engine (1-3 s each alone, node). The full suite's
-// own workers slow this file 5-6x (75 s for 49 tests at load 12), so the 5 s default timed out
-// specs that pass alone in under 1 s. A real hang still fails, at 30 s.
+// Toad, Phase 7 C3: every spec here runs the engine. The full suite's own workers slow this file
+// 5-6x, so the 5 s default timed out specs that pass alone in under 1 s. A real hang still fails,
+// at 30 s.
 vi.setConfig({ testTimeout: 30_000 });
-
-function embed(shell: ShellDocument): EmbeddedShell {
-  const { sky: _sky, ...rest } = structuredClone(shell);
-  return rest;
-}
-
-function show(cues: ShowCue[], o: Partial<ShowDocument> = {}): ShowDocument {
-  return {
-    version: 1,
-    name: 'Test show',
-    sky: { gravity: 160, wind: 0 },
-    duration: 600,
-    shells: { p: embed(PRESETS[0]) },
-    cues,
-    ...o,
-  };
-}
-
-function cue(id: string, t: number, o: Partial<ShowCue> = {}): ShowCue {
-  return { id, t, shell: 'p', x: 0.5, seed: 1000 + id.charCodeAt(0), ...o };
-}
-
-function makeLoop(doc: ShowDocument, capacity?: number, options?: TimelineDriverOptions) {
-  const sim = new FireworksSim({ capacity });
-  const driver = new TimelineDriver(doc, options);
-  const loop = new EngineLoop(sim, undefined, { worldWidth: () => WIDTH, driver });
-  return { sim, driver, loop };
-}
-
-/** The whole live particle store, exactly, plus the shells in flight. */
-function snapshot(sim: FireworksSim) {
-  const P = sim.particles;
-  const take = (a: ArrayLike<number>) => Array.from(a).slice(0, P.n);
-  return {
-    n: P.n,
-    shells: sim.shellCount,
-    x: take(P.x),
-    y: take(P.y),
-    vx: take(P.vx),
-    vy: take(P.vy),
-    age: take(P.age),
-    kind: take(P.kind),
-    seed: take(P.seed),
-  };
-}
-
-function kindCounts(sim: FireworksSim): number[] {
-  const counts = new Array<number>(KIND_COUNT).fill(0);
-  for (let i = 0; i < sim.particles.n; i++) counts[sim.particles.kind[i]]++;
-  return counts;
-}
-
-/** A 60 s, 50-cue show (the Phase 6 Done-when shape) over every preset. */
-function doneWhenShow(): ShowDocument {
-  const shells: Record<string, EmbeddedShell> = {};
-  PRESETS.forEach((p, i) => (shells[`s${i}`] = embed(p)));
-  const cues = Array.from({ length: 50 }, (_, i) =>
-    cue(`c${String(i).padStart(2, '0')}`, (i * 59.5) / 49, {
-      shell: `s${i % PRESETS.length}`,
-      x: ((i * 37) % 100) / 100,
-      seed: (i * 2654435761) | 0,
-      ...(i % 3 === 0 ? { burstHeight: 0.4 + (i % 5) * 0.1 } : {}),
-    }),
-  );
-  return show(cues, { duration: 60, shells });
-}
-
-/** Plays `frames` 60 fps frames through the loop, recording particle count after each. */
-function playFrames(loop: EngineLoop, sim: FireworksSim, frames: number): number[] {
-  const trace: number[] = [];
-  for (let f = 0; f < frames; f++) {
-    loop.frame(1000 / 60);
-    trace.push(sim.particles.n);
-  }
-  return trace;
-}
 
 describe('TimelineDriver firing rule (schema.md §4.4)', () => {
   it('fires a cue at t = 0 before step 0, before any sim.step', () => {
@@ -240,31 +173,32 @@ describe('TimelineDriver firing rule (schema.md §4.4)', () => {
 });
 
 describe('TimelineDriver determinism', () => {
+  // Small-show equivalent of the daily Done-when case (testing strategy §3 item 1).
   it('the same show gives the same ledger, particle-count trace and final state across two runs', () => {
-    const a = makeLoop(doneWhenShow());
-    const b = makeLoop(doneWhenShow());
-    const frames = 60 * 20;
+    const a = makeLoop(smallShow());
+    const b = makeLoop(smallShow());
+    const frames = 60 * 5;
     const traceA = playFrames(a.loop, a.sim, frames);
     const traceB = playFrames(b.loop, b.sim, frames);
     expect(traceA.some((n) => n > 0)).toBe(true);
+    expect(a.driver.ledger).toHaveLength(12);
     expect(traceB).toEqual(traceA);
     expect(b.driver.ledger).toEqual(a.driver.ledger);
     expect(snapshot(b.sim)).toEqual(snapshot(a.sim));
   });
 
+  // Small-show equivalent of the daily Done-when case.
   it('frame size never matters: 60 fps, 144 fps and 24 fps frames equal a straight run', () => {
     for (const ms of [1000 / 60, 1000 / 144, 1000 / 24]) {
-      const played = makeLoop(doneWhenShow());
-      for (let f = 0; f < Math.floor(12_000 / ms); f++) played.loop.frame(ms);
-      const straight = makeLoop(doneWhenShow());
+      const played = makeLoop(smallShow());
+      for (let f = 0; f < Math.floor(4_000 / ms); f++) played.loop.frame(ms);
+      const straight = makeLoop(smallShow());
       straight.driver.advance(straight.loop, played.driver.step);
-      expect(played.driver.step).toBeGreaterThan(1400);
+      expect(played.driver.step).toBeGreaterThan(470);
       expect(snapshot(played.sim)).toEqual(snapshot(straight.sim));
       expect(played.driver.ledger).toEqual(straight.driver.ledger);
     }
-    // Runs the Done-when show three times; under the full suite's parallel load it needs more
-    // than the default 5 s (Luigi, Phase 6 build).
-  }, 20_000);
+  });
 
   it('same-step cues in another array order give the identical particle store (§4.4 rule 4)', () => {
     const shells = { p: embed(PRESETS[0]), q: embed(PRESETS[5]), r: embed(PRESETS[8]) };
@@ -299,43 +233,40 @@ describe('TimelineDriver determinism', () => {
 });
 
 describe('TimelineDriver seek (plan Phase 6: scrub re-runs from t = 0)', () => {
-  function straightTo(step: number, capacity?: number) {
-    const r = makeLoop(doneWhenShow(), capacity);
-    r.driver.advance(r.loop, step);
-    return r;
-  }
+  // One straight run of the Done-when show serves every oracle in this block (Yoshi T7.1).
+  let ref: ReadonlyMap<number, ReferencePoint> | null = null;
+  const at = (step: number): ReferencePoint => {
+    ref ??= referenceRun(doneWhenShow(), [300, 400, 700, 900]);
+    return ref.get(step)!;
+  };
 
   it('seek to k equals a straight run to k, forward and backward', () => {
-    const at900 = straightTo(900);
-    const at400 = straightTo(400);
     const s = makeLoop(doneWhenShow());
     s.driver.seek(s.loop, 900);
-    expect(snapshot(s.sim)).toEqual(snapshot(at900.sim));
+    expect(snapshot(s.sim)).toEqual(at(900).snapshot);
     s.driver.seek(s.loop, 400); // backward: reset and re-run
     expect(s.driver.step).toBe(400);
-    expect(snapshot(s.sim)).toEqual(snapshot(at400.sim));
-    expect(s.driver.ledger).toEqual(at400.driver.ledger);
+    expect(snapshot(s.sim)).toEqual(at(400).snapshot);
+    expect(s.driver.ledger).toEqual(at(400).ledger);
     s.driver.seek(s.loop, 900); // forward: run on
-    expect(snapshot(s.sim)).toEqual(snapshot(at900.sim));
-    expect(s.driver.ledger).toEqual(at900.driver.ledger);
+    expect(snapshot(s.sim)).toEqual(at(900).snapshot);
+    expect(s.driver.ledger).toEqual(at(900).ledger);
   });
 
   it('a backward seek at the particle cap still equals a straight run (no state survives)', () => {
     const cap = 3000;
-    const at1000 = straightTo(1000, cap);
     const s = makeLoop(doneWhenShow(), cap);
     s.driver.seek(s.loop, 3000);
     s.driver.seek(s.loop, 1000);
-    expect(snapshot(s.sim)).toEqual(snapshot(at1000.sim));
+    expect(snapshot(s.sim)).toEqual(snapshot(straight(doneWhenShow(), 1000, cap).sim));
   });
 
   it('seek after playing through the loop equals a straight run', () => {
-    const at300 = straightTo(300);
     const s = makeLoop(doneWhenShow());
     playFrames(s.loop, s.sim, 400);
     s.driver.seek(s.loop, 300);
-    expect(snapshot(s.sim)).toEqual(snapshot(at300.sim));
-    expect(s.driver.ledger).toEqual(at300.driver.ledger);
+    expect(snapshot(s.sim)).toEqual(at(300).snapshot);
+    expect(s.driver.ledger).toEqual(at(300).ledger);
   });
 
   it('seek back past the end clears done', () => {
@@ -357,7 +288,6 @@ describe('TimelineDriver seek (plan Phase 6: scrub re-runs from t = 0)', () => {
   });
 
   it('a budgeted seek arrives in slices and equals a straight run, even if the target moves', () => {
-    const at700 = straightTo(700);
     const s = makeLoop(doneWhenShow());
     s.driver.seek(s.loop, 900);
     // Backward to 500, 100 steps per call: reset, then 0 → 100 → … The target moves to 700.
@@ -367,11 +297,11 @@ describe('TimelineDriver seek (plan Phase 6: scrub re-runs from t = 0)', () => {
     let calls = 0;
     while (!s.driver.seek(s.loop, 700, 100)) calls++;
     expect([calls, s.driver.step]).toEqual([4, 700]);
-    expect(snapshot(s.sim)).toEqual(snapshot(at700.sim));
-    expect(s.driver.ledger).toEqual(at700.driver.ledger);
+    expect(snapshot(s.sim)).toEqual(at(700).snapshot);
+    expect(s.driver.ledger).toEqual(at(700).ledger);
     // Already there: a no-op that reports arrival.
     expect(s.driver.seek(s.loop, 700, 100)).toBe(true);
-    expect(snapshot(s.sim)).toEqual(snapshot(at700.sim));
+    expect(snapshot(s.sim)).toEqual(at(700).snapshot);
   });
 
   it('time and step convert with the cue rounding', () => {
@@ -381,348 +311,30 @@ describe('TimelineDriver seek (plan Phase 6: scrub re-runs from t = 0)', () => {
   });
 });
 
-describe('TimelineDriver checkpoints (exact; acceptance 6i.2)', () => {
-  const OFF = { checkpointSteps: 0 };
-
-  function straight(doc: ShowDocument, step: number, capacity?: number, width = WIDTH) {
-    const sim = new FireworksSim({ capacity });
-    const driver = new TimelineDriver(doc, OFF);
-    const loop = new EngineLoop(sim, undefined, { worldWidth: () => width, driver });
-    driver.advance(loop, step);
-    return { sim, driver };
-  }
-
-  it('are taken every 1200 steps on the way, and a seek from one equals a straight run at the cap', () => {
-    const cap = 3000;
-    const s = makeLoop(doneWhenShow(), cap);
-    s.driver.seek(s.loop, 4000);
-    expect(s.driver.checkpointSteps).toEqual([1200, 2400, 3600]);
-    const restore = vi.spyOn(s.sim, 'restore');
-    const reset = vi.spyOn(s.sim, 'clear');
-    for (const target of [2500, 3601, 1199, 3600, 1200]) {
-      s.driver.seek(s.loop, target);
-      const ref = straight(doneWhenShow(), target, cap);
-      expect(snapshot(s.sim)).toEqual(snapshot(ref.sim));
-      expect(s.driver.ledger).toEqual(ref.driver.ledger);
-    }
-    // 2500 ← 2400, 3601 ← 3600 (forward jump), 1199 ← reset, 3600 ← 3600, 1200 ← 1200.
-    expect(restore).toHaveBeenCalledTimes(4);
-    expect(reset).toHaveBeenCalledTimes(1);
-  });
-
-  it('a seek lands within one checkpoint spacing of work', () => {
-    const s = makeLoop(doneWhenShow());
-    s.driver.seek(s.loop, 6000);
-    const step = vi.spyOn(s.sim, 'step');
-    s.driver.seek(s.loop, 5999);
-    expect(step).toHaveBeenCalledTimes(5999 - 4800);
-  });
-
-  it('turned off, every backward seek re-runs from 0', () => {
-    const s = makeLoop(doneWhenShow(), undefined, OFF);
-    s.driver.seek(s.loop, 3000);
-    expect(s.driver.checkpointSteps).toEqual([]);
-    const step = vi.spyOn(s.sim, 'step');
-    s.driver.seek(s.loop, 2999);
-    expect(step).toHaveBeenCalledTimes(2999);
-  });
-
-  it('are taken during live playback too, and stay exact', () => {
-    const s = makeLoop(doneWhenShow());
-    playFrames(s.loop, s.sim, 1300); // about 2600 steps through the loop
-    expect(s.driver.checkpointSteps).toEqual([1200, 2400]);
-    s.driver.seek(s.loop, 2401);
-    expect(snapshot(s.sim)).toEqual(snapshot(straight(doneWhenShow(), 2401).sim));
-  });
-
-  it('a width change drops them, and the next seek is a straight run at the new width', () => {
-    let width = WIDTH;
-    const sim = new FireworksSim();
-    const driver = new TimelineDriver(doneWhenShow());
-    const loop = new EngineLoop(sim, undefined, { worldWidth: () => width, driver });
-    driver.seek(loop, 3000);
-    width = 900;
-    driver.seek(loop, 2500);
-    expect(snapshot(sim)).toEqual(snapshot(straight(doneWhenShow(), 2500, undefined, 900).sim));
-    expect(driver.ledger.every((l) => l.tx === l.x * 900)).toBe(true);
-    // A forward seek after a width change also re-runs: the old run wasn't at this width.
-    width = 1000;
-    driver.seek(loop, 2600);
-    expect(snapshot(sim)).toEqual(snapshot(straight(doneWhenShow(), 2600, undefined, 1000).sim));
-    // Several full seeks of the Done-when show; under the full suite's parallel load it can exceed
-    // the default 5 s (1.6 s alone; Toad, Phase 6 review).
-  }, 20_000);
-
-  it('a starBudget change drops them', () => {
-    const s = makeLoop(doneWhenShow());
-    s.driver.seek(s.loop, 3000);
-    s.sim.starBudget = 0.5;
-    s.driver.seek(s.loop, 2500);
-    const ref = straight(doneWhenShow(), 0);
-    ref.sim.starBudget = 0.5;
-    const loop = new EngineLoop(ref.sim, undefined, {
-      worldWidth: () => WIDTH,
-      driver: ref.driver,
-    });
-    ref.driver.seek(loop, 2500);
-    expect(snapshot(s.sim)).toEqual(snapshot(ref.sim));
-  });
-
-  it('over the memory cap the spacing doubles, and seeks stay exact', () => {
-    const s = makeLoop(doneWhenShow(), undefined, { checkpointBytes: 1 });
-    s.driver.seek(s.loop, 7000);
-    expect(s.driver.checkpointSteps.length).toBe(1);
-    s.driver.seek(s.loop, 5000);
-    expect(snapshot(s.sim)).toEqual(snapshot(straight(doneWhenShow(), 5000).sim));
-  });
-
-  it('checkpoints filled on a shadow sim (idle warm-up) are exact on the visible one', () => {
-    const doc = doneWhenShow();
-    const shadow = makeLoop(doc);
-    while (!shadow.driver.seek(shadow.loop, 7000, 500)); // spread over "idle frames"
-    const visible = makeLoop(doc);
-    const driver = new TimelineDriver(doc, { from: shadow.driver });
-    visible.loop.setDriver(driver);
-    expect(driver.checkpointSteps).toEqual(shadow.driver.checkpointSteps);
-    const step = vi.spyOn(visible.sim, 'step');
-    driver.seek(visible.loop, 6500);
-    expect(step).toHaveBeenCalledTimes(6500 - 6000);
-    expect(snapshot(visible.sim)).toEqual(snapshot(straight(doc, 6500).sim));
-  });
-
-  describe('warm-up handoff: twin and adoptCheckpoints (Phase 7)', () => {
-    it('a twin runs on its own sim; adopting its checkpoints changes nothing but the start of a seek', () => {
-      const doc = doneWhenShow();
-      const live = makeLoop(doc);
-      live.driver.seek(live.loop, 300);
-      const before = snapshot(live.sim);
-      const shadowSim = new FireworksSim();
-      const twin = live.driver.twin();
-      const shadowLoop = new EngineLoop(shadowSim, undefined, {
-        worldWidth: () => WIDTH,
-        driver: twin,
-      });
-      while (!twin.seek(shadowLoop, 7000, 700));
-      expect(live.driver.step).toBe(300);
-      expect(snapshot(live.sim)).toEqual(before);
-      expect(live.driver.adoptCheckpoints(twin)).toBe(5);
-      expect(live.driver.checkpointSteps).toEqual([1200, 2400, 3600, 4800, 6000]);
-      expect(live.driver.step).toBe(300);
-      expect(snapshot(live.sim)).toEqual(before);
-      const step = vi.spyOn(live.sim, 'step');
-      live.driver.seek(live.loop, 6100);
-      expect(step).toHaveBeenCalledTimes(100);
-      const ref = straight(doc, 6100);
-      expect(snapshot(live.sim)).toEqual(snapshot(ref.sim));
-      expect(live.driver.ledger).toEqual(ref.driver.ledger);
-      expect(live.driver.adoptCheckpoints(twin)).toBe(0); // already held
-    });
-
-    it('takes only checkpoints before the first step where the schedules differ', () => {
-      const doc = doneWhenShow();
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 6001);
-      const next = { ...doc, cues: doc.cues.map((c) => (c.id === 'c30' ? { ...c, seed: 1 } : c)) };
-      const b = makeLoop(next);
-      expect(b.driver.adoptCheckpoints(a.driver)).toBe(3); // c30 fires at 4371
-      expect(b.driver.checkpointSteps).toEqual([1200, 2400, 3600]);
-      b.driver.seek(b.loop, 5000);
-      expect(snapshot(b.sim)).toEqual(snapshot(straight(next, 5000).sim));
-    });
-
-    it('refuses another sky, and keeps the memory cap (spacing doubles)', () => {
-      const doc = doneWhenShow();
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 6001);
-      const windy = makeLoop({ ...doc, sky: { gravity: 160, wind: 3 } });
-      expect(windy.driver.adoptCheckpoints(a.driver)).toBe(0);
-      const capped = makeLoop(doc, undefined, { checkpointBytes: 1 });
-      capped.driver.adoptCheckpoints(a.driver);
-      expect(capped.driver.checkpointSteps.length).toBeLessThanOrEqual(1);
-      capped.driver.seek(capped.loop, 5500);
-      expect(snapshot(capped.sim)).toEqual(snapshot(straight(doc, 5500).sim));
-    });
-
-    // Yoshi addendum 1, gap M9 (Toad, Phase 7 C3): `compatible` must compare the digest flag.
-    // A checkpoint from a digest-off run carries the unfolded seed digest, so a digest-on driver
-    // that restored it would report a different digest than a straight run (6a.2 would lie).
-    it('refuses checkpoints across different traceDigest settings, both ways and through { from }', () => {
-      const doc = doneWhenShow();
-      const off = makeLoop(doc);
-      off.driver.seek(off.loop, 4900);
-      const on = makeLoop(doc, undefined, { traceDigest: true });
-      on.driver.seek(on.loop, 4900);
-      expect(off.driver.checkpointSteps).toEqual([1200, 2400, 3600, 4800]);
-
-      const adopter = makeLoop(doc, undefined, { traceDigest: true });
-      expect(adopter.driver.adoptCheckpoints(off.driver)).toBe(0);
-      expect(adopter.driver.checkpointSteps).toEqual([]);
-      expect(off.driver.adoptCheckpoints(on.driver)).toBe(0);
-
-      const inherited = makeLoop(doc, undefined, { traceDigest: true, from: off.driver });
-      expect(inherited.driver.checkpointSteps).toEqual([]);
-      inherited.driver.seek(inherited.loop, 4900);
-      expect(inherited.driver.traceDigest).toBe(on.driver.traceDigest);
-      adopter.driver.seek(adopter.loop, 4900);
-      expect(adopter.driver.traceDigest).toBe(on.driver.traceDigest);
-    });
-  });
-
-  describe('inherited after an edit (options.from)', () => {
-    function edited(doc: ShowDocument, id: string, change: Partial<ShowCue>): ShowDocument {
-      return { ...doc, cues: doc.cues.map((c) => (c.id === id ? { ...c, ...change } : c)) };
-    }
-
-    it('keeps checkpoints before the first changed cue and drops the rest; the re-seek is exact', () => {
-      const doc = doneWhenShow();
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 6001); // the 6000 checkpoint is taken as step 6000 begins
-      expect(a.driver.checkpointSteps).toEqual([1200, 2400, 3600, 4800, 6000]);
-      // c30 fires at step round(30 * 59.5 / 49 * 120) = 4371.
-      const next = edited(doc, 'c30', { seed: 12345 });
-      const b = new TimelineDriver(next, { from: a.driver });
-      expect(b.checkpointSteps).toEqual([1200, 2400, 3600]);
-      a.loop.setDriver(b);
-      b.seek(a.loop, 6000);
-      const ref = straight(next, 6000);
-      expect(snapshot(a.sim)).toEqual(snapshot(ref.sim));
-      expect(b.ledger).toEqual(ref.driver.ledger);
-    });
-
-    it('a checkpoint on the changed cue’s own step is kept (it was taken before that cue fired)', () => {
-      const doc = show([cue('a', 1), cue('b', 10), cue('c', 15)]);
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 2500);
-      expect(a.driver.checkpointSteps).toEqual([1200, 2400]);
-      const next = edited(doc, 'b', { x: 0.9 }); // b fires on step 1200
-      const b = new TimelineDriver(next, { from: a.driver });
-      expect(b.checkpointSteps).toEqual([1200]);
-      a.loop.setDriver(b);
-      b.seek(a.loop, 2000);
-      expect(snapshot(a.sim)).toEqual(snapshot(straight(next, 2000).sim));
-    });
-
-    it('adding, removing or moving a cue diverges at the earlier of its steps', () => {
-      const doc = show([cue('a', 1), cue('b', 25), cue('c', 40)]);
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 5000);
-      const cps = (d: ShowDocument) => new TimelineDriver(d, { from: a.driver }).checkpointSteps;
-      expect(cps({ ...doc, cues: [...doc.cues, cue('d', 15)] })).toEqual([1200]);
-      // A strict prefix (last cue removed) caps at its own last cue (b on 3000): D1.
-      expect(cps({ ...doc, cues: doc.cues.filter((c) => c.id !== 'c') })).toEqual([1200, 2400]);
-      expect(cps(edited(doc, 'c', { t: 12 }))).toEqual([1200]); // now fires on 1440, before b
-      expect(cps(edited(doc, 'b', { t: 25.001 }))).toEqual([1200, 2400, 3600, 4800]); // same step
-      expect(cps({ ...doc, sky: { gravity: 161, wind: 0 } })).toEqual([]);
-    });
-
-    it('a checkpoint taken after the old show ended doesn’t carry its end into a longer show', () => {
-      const doc = show([cue('a', 0)]);
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 2500);
-      expect(a.driver.done).toBe(true);
-      const next = { ...doc, cues: [...doc.cues, cue('b', 30)] };
-      const b = new TimelineDriver(next, { from: a.driver });
-      expect(b.checkpointSteps).toEqual([1200, 2400]);
-      a.loop.setDriver(b);
-      b.seek(a.loop, 2500);
-      expect([b.done, b.endStep]).toEqual([false, null]);
-      expect(b.runToEnd(a.loop)).toBeGreaterThan(3600);
-    });
-
-    it('deleting the last cue past the new end: the end equals a straight run’s (D1)', () => {
-      const doc = show([cue('a', 1), cue('b', 5), cue('c', 40)]);
-      const next = { ...doc, cues: doc.cues.filter((c) => c.id !== 'c') };
-      const ref = straight(next, 4900);
-      expect(ref.driver.endStep).toBe(1113);
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 4900);
-      const b = new TimelineDriver(next, { from: a.driver });
-      expect(b.checkpointSteps).toEqual([]); // b fires on 600, before the first checkpoint
-      a.loop.setDriver(b);
-      b.seek(a.loop, 4900);
-      expect([b.done, b.endStep]).toEqual([true, 1113]);
-      expect(snapshot(a.sim)).toEqual(snapshot(ref.sim));
-      expect(b.ledger).toEqual(ref.driver.ledger);
-      const adopted = makeLoop(next);
-      adopted.driver.adoptCheckpoints(a.driver);
-      adopted.driver.seek(adopted.loop, 4900);
-      expect([adopted.driver.done, adopted.driver.endStep]).toEqual([true, 1113]);
-    });
-
-    // Toad, Phase 7 C3: D1's cap also covers the empty receiver (every cue deleted). The cap is
-    // `?? 0`; with `?? Infinity` an empty show kept every checkpoint before the old first cue,
-    // each with `next === 0 === length` and the old show's unended `endStep`, so the end was
-    // dated at the restored checkpoint instead of a straight run's.
-    it('deleting every cue past the old first launch: nothing is kept, the end is a straight run’s', () => {
-      const doc = show([cue('a', 15), cue('b', 30)]);
-      const empty = { ...doc, cues: [] };
-      const ref = straight(empty, 3000);
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 3000);
-      expect(a.driver.checkpointSteps).toEqual([1200, 2400]);
-      const b = new TimelineDriver(empty, { from: a.driver });
-      expect(b.checkpointSteps).toEqual([]);
-      a.loop.setDriver(b);
-      b.seek(a.loop, 3000);
-      expect([b.done, b.endStep]).toEqual([ref.driver.done, ref.driver.endStep]);
-      expect(snapshot(a.sim)).toEqual(snapshot(ref.sim));
-      const adopted = makeLoop(empty);
-      expect(adopted.driver.adoptCheckpoints(a.driver)).toBe(0);
-      adopted.driver.seek(adopted.loop, 3000);
-      expect([adopted.driver.done, adopted.driver.endStep]).toEqual([
-        ref.driver.done,
-        ref.driver.endStep,
-      ]);
-    });
-
-    it('built from a driver with checkpoints off, keeps its own interval; off stays off', () => {
-      const doc = doneWhenShow();
-      const off = makeLoop(doc, undefined, { checkpointSteps: 0 });
-      off.driver.seek(off.loop, 3000);
-      expect(new TimelineDriver(doc, { from: off.driver }).checkpointInterval).toBe(1200);
-      const on = makeLoop(doc);
-      on.driver.seek(on.loop, 3000);
-      const z = new TimelineDriver(doc, { from: on.driver, checkpointSteps: 0 });
-      expect([z.checkpointInterval, z.checkpointSteps]).toEqual([0, []]);
-    });
-
-    it('an embedded shell edit diverges at the first cue that uses it', () => {
-      const shells = { p: embed(PRESETS[0]), q: embed(PRESETS[3]) };
-      const doc = show([cue('a', 1), cue('b', 25, { shell: 'q' })], { shells });
-      const a = makeLoop(doc);
-      a.driver.seek(a.loop, 4000);
-      const q = { ...shells.q, breaks: [{ ...shells.q.breaks[0], stars: 50 }] };
-      const next = { ...doc, shells: { ...shells, q } };
-      const b = new TimelineDriver(next, { from: a.driver });
-      expect(b.checkpointSteps).toEqual([1200, 2400]);
-      a.loop.setDriver(b);
-      b.seek(a.loop, 3700);
-      expect(snapshot(a.sim)).toEqual(snapshot(straight(next, 3700).sim));
-    });
-  });
-});
-
 describe('TimelineDriver trace digest (acceptance 6a.2)', () => {
   const ON = { traceDigest: true };
 
+  // Small-show equivalent of the daily Done-when case: to the end, through the loop, after seeks.
   it('is equal across runs, through the loop or offline, and after a seek', () => {
-    const a = makeLoop(doneWhenShow(), undefined, ON);
-    const b = makeLoop(doneWhenShow(), undefined, ON);
+    const a = makeLoop(smallShow(), undefined, ON);
+    // 120-step checkpoints, so both seeks below start from a restored checkpoint (960, then 480),
+    // as the Done-when case's seeks do at 1200-step spacing.
+    const b = makeLoop(smallShow(), undefined, { ...ON, checkpointSteps: SMALL_CP });
     a.driver.runToEnd(a.loop);
-    playFrames(b.loop, b.sim, 5000);
+    playFrames(b.loop, b.sim, 700);
+    expect(b.driver.step).toBeGreaterThan(a.driver.endStep!);
+    const restore = vi.spyOn(b.sim, 'restore');
     b.driver.seek(b.loop, a.driver.endStep!);
     expect(b.driver.traceDigest).toBe(a.driver.traceDigest);
-    b.driver.seek(b.loop, 3000);
-    const c = makeLoop(doneWhenShow(), undefined, ON);
-    c.driver.advance(c.loop, 3000);
+    b.driver.seek(b.loop, 500);
+    expect(restore).toHaveBeenCalledTimes(2);
+    const c = makeLoop(smallShow(), undefined, ON);
+    c.driver.advance(c.loop, 500);
     expect(b.driver.traceDigest).toBe(c.driver.traceDigest);
-    // Three full runs of the Done-when show; under the full suite's parallel load it can exceed
-    // the default 5 s (2.4 s alone; Toad, Phase 6 review). 20 s timed out under a mutant run's
-    // load in Phase 7 C3; 30 s matches the file's setting.
-  }, 30_000);
+  });
 
   it('negative control: one seed changed by 1 changes the digest and the ledger', () => {
-    const doc = doneWhenShow();
+    const doc = smallShow();
     const off = {
       ...doc,
       cues: doc.cues.map((c, i) => (i === 7 ? { ...c, seed: c.seed + 1 } : c)),
@@ -785,9 +397,10 @@ describe('TimelineDriver end of show (schema.md §4.5)', () => {
     expect(driver.done).toBe(false);
   });
 
-  it('the Done-when show (60 s, 50 cues) ends within its bound, on the same step twice', () => {
-    const a = makeLoop(doneWhenShow());
-    const b = makeLoop(doneWhenShow());
+  // Small-show equivalent of the daily Done-when case.
+  it('a 12-cue show ends within its bound, after its last launch, on the same step twice', () => {
+    const a = makeLoop(smallShow());
+    const b = makeLoop(smallShow());
     const end = a.driver.runToEnd(a.loop);
     expect(b.driver.runToEnd(b.loop)).toBe(end);
     expect(end).toBeGreaterThan(a.driver.lastFireStep);

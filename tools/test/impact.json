@@ -1,0 +1,12 @@
+{
+  "_comment": "Folder-level test-impact map for `run.mjs quick` only (testing-strategy.md §4.5). Keys are paths under src/web/fireworks-web/ (prefix match); values are extra --include globs or folders. Sibling specs (X.ts -> X*.spec.ts) are added automatically. Never used by regular or daily.",
+  "web": {
+    "src/engine/": ["src/engine", "src/app/shared/fireworks-stage"],
+    "src/app/shared/fireworks-stage/": ["src/app/shared/fireworks-stage"],
+    "src/app/features/show/shared/": ["src/app/features/show"],
+    "src/app/features/designer/shared/": ["src/app/features/designer"],
+    "src/app/core/": ["src/app/core", "src/app/app.startup.spec.ts"],
+    "src/app/app.config.ts": ["src/app/app.startup.spec.ts"],
+    "src/app/app.routes.ts": ["src/app"]
+  }
+}

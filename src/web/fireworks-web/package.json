@@ -8,7 +8,12 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit",
-    "format": "prettier --write \"src/**/*.{ts,html,scss,css,json}\""
+    "format": "prettier --write \"src/**/*.{ts,html,scss,css,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,html,scss,css,json}\"",
+    "fixtures:check": "node ../../../schema/tools/generate-fixtures.mjs --check",
+    "test:regular": "ng test --no-watch --exclude=\"**/*.daily.spec.ts\" --exclude=\"**/*.final.spec.ts\"",
+    "test:daily": "ng test --no-watch --include=\"**/*.daily.spec.ts\"",
+    "test:final": "ng test --no-watch --include=\"**/*.final.spec.ts\""
   },
   "private": true,
   "imports": {

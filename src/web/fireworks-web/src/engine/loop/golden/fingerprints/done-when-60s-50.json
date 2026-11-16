@@ -1,0 +1,117 @@
+{
+  "header": {
+    "generated": "tools/fingerprints/record.mjs from engine/loop/golden/show-fingerprint.ts. Do not edit by hand.",
+    "rule": "Updated only by reviewed change (schema.md §8.1). Every re-record appends its --reason here; the diff is the review.",
+    "history": [
+      {
+        "date": "2026-11-16",
+        "reason": "First record (testing interlude T2). The Phase 7 engine as shipped; no oracle exists for shows, so these pin the port, and self-consistency stays with the run-vs-run and property specs.",
+        "node": "v26.5.0",
+        "changed": ["first record"]
+      }
+    ]
+  },
+  "case": {
+    "name": "done-when-60s-50",
+    "tier": "regular",
+    "input": {
+      "fixture": "done-when-60s-50"
+    },
+    "run": {
+      "width": 1280,
+      "capacity": 40000,
+      "starBudget": 1
+    }
+  },
+  "inputDigest": 2969396159,
+  "fingerprint": {
+    "endStep": 7926,
+    "lastFireStep": 7200,
+    "launches": 50,
+    "ledgerHash": 2501554244,
+    "traceDigest": 198872087,
+    "populationDigest": 2364972129,
+    "peakN": 10041,
+    "peakStep": 3227,
+    "samples": [
+      {
+        "step": 600,
+        "n": 172,
+        "shells": 2,
+        "kinds": [0, 170, 0, 0, 0, 2]
+      },
+      {
+        "step": 1200,
+        "n": 3702,
+        "shells": 2,
+        "kinds": [282, 3239, 0, 179, 0, 2]
+      },
+      {
+        "step": 1800,
+        "n": 4656,
+        "shells": 3,
+        "kinds": [273, 746, 3386, 249, 0, 2]
+      },
+      {
+        "step": 2400,
+        "n": 5363,
+        "shells": 3,
+        "kinds": [340, 112, 4909, 0, 0, 2]
+      },
+      {
+        "step": 3000,
+        "n": 5314,
+        "shells": 3,
+        "kinds": [260, 183, 4868, 0, 0, 3]
+      },
+      {
+        "step": 3600,
+        "n": 5544,
+        "shells": 2,
+        "kinds": [110, 129, 5131, 172, 0, 2]
+      },
+      {
+        "step": 4200,
+        "n": 3655,
+        "shells": 2,
+        "kinds": [234, 3419, 0, 0, 0, 2]
+      },
+      {
+        "step": 4800,
+        "n": 1629,
+        "shells": 3,
+        "kinds": [148, 1026, 453, 0, 0, 2]
+      },
+      {
+        "step": 5400,
+        "n": 5393,
+        "shells": 3,
+        "kinds": [396, 125, 4869, 0, 1, 2]
+      },
+      {
+        "step": 6000,
+        "n": 5299,
+        "shells": 2,
+        "kinds": [260, 128, 4909, 0, 0, 2]
+      },
+      {
+        "step": 6600,
+        "n": 4948,
+        "shells": 2,
+        "kinds": [110, 117, 4719, 0, 0, 2]
+      },
+      {
+        "step": 7200,
+        "n": 548,
+        "shells": 2,
+        "kinds": [90, 456, 0, 0, 0, 2]
+      },
+      {
+        "step": 7800,
+        "n": 562,
+        "shells": 0,
+        "kinds": [80, 0, 79, 403, 0, 0]
+      }
+    ]
+  }
+}

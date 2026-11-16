@@ -128,6 +128,68 @@ npm run format
 
 ## Testing
 
+### Test tiers
+
+There are four tiers, all started from one entry point. The design and its reasoning are in [`docs/fireworks-app/testing-strategy.md`](docs/fireworks-app/testing-strategy.md) (adopted 2026-11-16). Run from the repo root with Node 26.5.0 first on your `PATH`; the browser gates need `npm ci` once in `tools/browser-gates` (Playwright 1.65.0, pinned), and every tier except `quick` needs Postgres (`docker compose up -d postgres`).
+
+```bash
+node tools/test/run.mjs quick      # dev loop, not a gate (~15–30 s; longer when a change touches the engine)
+node tools/test/run.mjs regular    # every change and every phase gate (< 5 min)
+node tools/test/run.mjs daily      # manual only, once per phase before its gate (~25–30 min)
+node tools/test/run.mjs final      # end-of-project review only: daily + benchmarks, at-maximums, uncached docker build
+node tools/test/daily-status.mjs   # is the latest daily (or final) green, complete and < 24 h old?
+```
+
+| Tier | What it runs | Expected time |
+|---|---|---|
+| `quick` | `prettier --check` on changed web files, `npm run typecheck`, `ng test --include` on the specs impacted by your changes (sibling specs plus the folder map in `tools/test/impact.json`), and `dotnet test --filter` on the matching test classes when C# changed | 15–30 s for a leaf change; about 100 s when the change touches the engine (2026-11-15, load 9–12) |
+| `regular` | `format:check`, `fixtures:check`, typecheck, `test:regular` (every spec except `*.daily.spec.ts` and `*.final.spec.ts`), `ng build`, `dotnet build`, the Postgres `dotnet test`, then the Chromium smoke | **170 s measured** (2026-11-15, load 15.6 at the start and 19.5 at the end); about 3–3.9 min estimated at low load |
+| `daily` | everything in `regular` except the smoke, then `test:daily` (`*.daily.spec.ts`), the browser gates (Chromium, Firefox and WebKit, with their negative controls), the real-time 66 s play in three engines, and the T2 fingerprints (regular cases plus `realistic-600`) in three engines | **21.4 min measured** (2026-11-16, first full run; load 3.9 at the start, 5.1 at the end, 5-minute average about 9 late in the run) |
+| `final` | everything in `daily`, plus `test:final` (`*.final.spec.ts`: the `at-maximums` fingerprint), the `at-maximums` fingerprint in three engines (`FP_CASES=at-maximums`), the report-only benchmarks (`gate-warm`, `tools/bench/bench.mjs`) and an uncached `docker build` | daily plus about 15–25 min (estimate) |
+
+How the runner behaves:
+- It prints one line per step with its time, and a summary table at the end. It writes every step's full output, plus `run.log` and `summary.json`, under `test-results/<tier>/<stamp>/` (gitignored).
+- `regular` and `quick` stop at the first failing step; `daily` and `final` run every step.
+- **The `final` tier** (Skyler, 2026-11-16) runs only at the end-of-project review. Benchmarks, the `at-maximums` runs and the uncached Docker build live only there. Its output goes to `test-results/final/<stamp>/`. A complete, green final run also satisfies `daily-status.mjs`, because it runs every daily step.
+- Exit codes: 0 means every gating step passed, 1 means one failed, 2 means a usage or setup error (for example, Postgres not running).
+- Options: `--list`, `--only a,b`, `--skip a,b`, `--keep-going`.
+- **There are no automatic retries** (flake quarantine, Skyler 2026-11-16). A test that fails and then passes on an unchanged tree is logged in `tools/test/quarantine.json` with an owner and a cause. It keeps running in the daily tier and is fixed or deleted within one phase.
+- `unit-web` prints the slowest spec file and warns about any file over 30 s or any test over 5 s. These are warnings; they never fail the run.
+
+**Databases and servers.** Each run gets its own databases and drops them at the end: `fireworks_test_<tier>_<pid>` for the Postgres `dotnet test`, and `fireworks_smoke_<tier>_<pid>` for the browser steps. The dev database `fireworks` is never touched. The browser steps start their own API: the built `Fireworks.Api.dll`, serving the `ng build` output from `wwwroot`, in **Production** mode (the real headers and CSP) with `Identity__AllowAnonymousWrites=true`, on a free port on 127.0.0.1. The runner stops that API when the steps finish and doesn't touch anything else that is running (the dev API on 5180, `ng serve` on 4200). To use a server that is already running, set `SMOKE_BASE=http://127.0.0.1:<port>`. It must be in Production mode with writes on, or the headers check fails.
+
+**The Chromium smoke** (`tools/browser-gates/smoke.mjs`, about 60–70 s with the API start) is part of the regular tier (Skyler, 2026-11-16). It runs, in Chromium with the real CSP:
+- `headers.py main`: 287 header and caching checks;
+- `gate-roundtrip` with `SKIP_PLAY=1`: builder edit, Save, Share, and the Show JSON round trip;
+- the 10 s show played to its end under Playwright virtual time, then Replay played to its end, followed by the frozen-clock negative control;
+- `gate-csp` on all nine pages;
+- the `gate-csp` negative control on three pages.
+
+**Running the daily suite.** It runs only when you start it, once per phase before its gate. There is no scheduler (Skyler, 2026-11-16; "No CI" stands).
+1. Start Postgres and leave the machine otherwise idle (one heavy job at a time; the final tier's benchmarks are only comparable at load ≤ 6).
+2. Run `node tools/test/run.mjs daily`. The result goes to `test-results/daily/<stamp>/summary.json`.
+3. Check it with `node tools/test/daily-status.mjs`.
+
+How daily steps are judged:
+- **Fail the run:** every Chromium gate and its negative control; the Firefox and WebKit runs of `gate-csp` (each page loads with no violations or errors and the stage runs) and `gate-roundtrip` (save, share, Show JSON, and the real-time play to the end); every fingerprint run step (a crash or timeout) and the Chromium fingerprint compare; in `final`, also the uncached `docker build`.
+- **Report only:** the Firefox and WebKit keyboard, reduced-motion and follow walks (fidelity, not "does it run"); the Firefox and WebKit fingerprint compares; in `final`, the benchmarks (`gate-warm`, `tools/bench/bench.mjs`).
+
+To re-run only the browser half against a server you started yourself, use `BASE=… node tools/browser-gates/daily.mjs` (add `TIER=final` for the final-only browser steps).
+
+**The 24-hour gate rule.** A phase gate needs a daily (or final) run that is green, complete and less than 24 h old, unless Skyler accepts the specific failure in writing. `daily-status.mjs` exits 0 only in that case. It reads the newest run, so a later red or partial run is never hidden behind an older green one. A run started with `--only` or `--skip` is marked incomplete and never counts. The output also shows the commit the run used, and says so if `HEAD` has moved since.
+
+**Mutants** (`tools/mutants/run.mjs`) run at test replacement, at gates whose phase touched the mutated code, and at the final review. They don't run daily, and they run serially.
+- `--list` shows the sets.
+- `--check <set>` reports which mutants no longer apply to the current code.
+- `<set> [ids]` copies the repo into `test-results/mutants/` (the shared tree is never mutated). It checks that a baseline passes, then runs each exact-swap mutant against only the specs that can kill it.
+- **A timeout is never a kill:** a run whose only failures are timeouts is reported as `TIMEOUT`, not `KILLED`.
+
+**The seek benchmark** is `node tools/bench/bench.mjs [shows] [caps]`. It runs in Node with no render and is report-only; in the tiers it runs only in `final`. Record `uptime` with every number.
+
+**The pre-commit hook is opt-in.** It is never installed automatically. `sh tools/test/install-hook.sh` installs it. On each commit it runs `run.mjs quick --hook`: `prettier --check` on the staged web files, then typecheck (about 15 s). It never runs `ng test`. Skip it once with `git commit --no-verify`, or remove it with `rm .git/hooks/pre-commit`.
+
+### Individual commands
+
 ```bash
 # Backend: everything except the Postgres-gated tests, which report as Skipped
 dotnet test Fireworks.slnx
@@ -186,6 +248,16 @@ Every command above is a verification step, and a check that has never been seen
 | `npm run typecheck` | the same line appended to a spec file (`core/health.spec.ts`) | `TS2322` from `tsconfig.spec.json`, exit 2 (2026-11-12, Toad; Luigi reported the same with his own break) |
 | `npm run typecheck` | template typo `session.canWriteTypo()` in `home.html` | **passes (exit 0).** `tsc` does not see templates; `npm test` and `npm run build` catch it. Known limit, not a defect (2026-11-12, Toad) |
 | `npm run build` | template typo `session.canWriteTypo()` in `home.html` | `[ERROR] TS2551`, exit 1 (2026-11-12, Toad) |
+| `npm run format:check` | a new file `src/toad-format-neg.ts` containing `export const toadNeg   =  {a:1};` | `[warn] Code style issues found`, exit 1; exit 0 after the file is deleted (2026-11-15, Toad) |
+| `npm run fixtures:check` | one byte in `schema/fixtures/valid/show/minimal.json` (`Minimal show` to `Minimal shoW`), then reverted | `differs valid/show/minimal.json`, exit 1; `check ok: 176 fixtures match` after the revert (2026-11-15, Toad) |
+| `node tools/test/run.mjs regular` | a failing step: `SMOKE_BASE=http://127.0.0.1:9 … --only fixtures,smoke` (nothing listens there) | `smoke FAIL`, tier `FAIL (smoke)`, exit 1. A real failure did the same in the first full run: a load timeout in `unit-web` stopped the tier at that step, exit 1 (2026-11-15, Toad) |
+| `node tools/test/daily-status.mjs` | a synthetic newest `summary.json`: green and complete; then `--max-age-h 0`; then `green: false`; and the real `--only` run | `OK` exit 0; `stale` exit 1; `red: csp-webkit` exit 1; `incomplete` exit 1 (2026-11-15, Toad) |
+| smoke `headers` (`headers.py main`) | `HEADERS_NEG=1`: expect `'unsafe-eval'` in the CSP and `no-cache` on hashed assets (Mario's Phase 7 checker control) | `main: 251 ok, 24 fail`, exit 1 (2026-11-15, Toad; the daily step `headers-neg`) |
+| smoke `player-vt` (virtual-time play and Replay) | `NEG_HIDE_ENDED=1` (the ended state is removed as it appears) | `did not end under virtual time`, exit 1 |
+| smoke `player-vt` frozen-clock control | `PAUSE=0`: no `pauseAt`, so `install()` alone keeps real time | readout `0:00` to `0:03` in 3 s, `MOVED`, exit 1. With `pauseAt`, `0:00` stays `0:00` (2026-11-15, Toad) |
+| smoke `csp-neg` (`gate-csp MODE=none`) | `NEG_SELFTEST=1`: the injection is skipped, so no script is blocked | `NOT CAUGHT` on every page, exit 1. Every page counts as caught only on a `script-src` violation event and with the stage not running; a favicon `img-src` violation doesn't count (2026-11-15, Toad) |
+| smoke `roundtrip` (Show JSON) | `TOAD_JSON_TAMPER=1`: one seed is edited before Apply | `7k.3 Show JSON round trip differs`, exit 1 (2026-11-15, Toad; the daily step `roundtrip-neg-tamper`) |
+| `tools/mutants/classify.mjs` (a timeout is never a kill) | the verdict counts every failure instead of only non-timeout ones | the self-check fails 2 of 6 cases (`timeout` only gives `KILLED`), exit 1 (2026-11-15, Toad) |
 
 A verification command with no negative control is an assumption, not a check.
 

@@ -11,6 +11,7 @@ import {
 } from '../../../engine/model/shell';
 import { GROUND } from '../../../engine/sim/constants';
 import { FakeStageRenderers } from '../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../testing/stage-clock';
 import {
   FireworksStageComponent,
   STAGE_RENDERER_FACTORY,
@@ -59,7 +60,7 @@ describe('FireworksStageComponent', () => {
     fakes = new FakeStageRenderers();
     TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [{ provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory }],
+      providers: [{ provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory }, provideStepClock()],
     });
   });
 

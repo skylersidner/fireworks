@@ -23,8 +23,13 @@ import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { DRAFT_KEY, editableFrom, serializeDraft } from '../../shared/designer-draft';
+import { DRAFT_DEBOUNCE_MS } from '../designer-page/shell-designer.store';
 
-const tick = (ms = 0) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/**
+ * Advances the fake timers (testing strategy §3 item 9): `setTimeout` is faked for every test
+ * here, so a wait costs no real time. Microtasks and Angular's own scheduling still run.
+ */
+const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms).then(() => undefined);
 
 /**
  * `/c/:code` (schema.md §11.1–11.3; phase-5.md §7, §9; acceptance 5d, 5e; Boo C4, C5, C12–C14),
@@ -37,6 +42,7 @@ describe('/c/:code working copy', () => {
   let fakes: FakeStageRenderers;
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     storage = new MemoryStorage();
@@ -63,6 +69,7 @@ describe('/c/:code working copy', () => {
     } finally {
       vi.restoreAllMocks();
       TestBed.resetTestingModule();
+      vi.useRealTimers();
     }
   });
 
@@ -108,7 +115,8 @@ describe('/c/:code working copy', () => {
   }
 
   const draft = () => JSON.parse(storage.getItem(DRAFT_KEY) ?? 'null');
-  const settleDraft = () => tick(350);
+  // Exactly the designer's draft debounce: one millisecond less fails the draft checks (the NEG).
+  const settleDraft = () => tick(DRAFT_DEBOUNCE_MS);
 
   it('clean draft: exactly one GET, then / with replaceUrl; the copy loads dirty with its source (5d.1–5d.3)', async () => {
     seedDraft({ shellDirty: false, skyDirty: false, sky: { gravity: 300, wind: 40 } });

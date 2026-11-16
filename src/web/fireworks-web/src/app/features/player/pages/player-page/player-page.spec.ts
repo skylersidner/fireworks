@@ -29,6 +29,7 @@ import {
 } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../../../testing/stage-clock';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { DRAFT_KEY, editableFrom, serializeDraft } from '../../../designer/shared/designer-draft';
 
@@ -58,6 +59,7 @@ describe('Player /s/:code', () => {
         provideHttpClientTesting(),
         provideRouter(routes),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
+        provideStepClock(),
         { provide: MATCH_MEDIA, useValue: media.fn },
         { provide: BROWSER_STORAGE, useValue: storage },
       ],

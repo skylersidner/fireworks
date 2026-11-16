@@ -7,7 +7,7 @@ import { DEFAULT_QUALITY, type QualitySettings } from '../../../engine/model/she
 import type { ShowDocument } from '../../../engine/model/show';
 import { FireworksSim } from '../../../engine/sim/simulation';
 import { FakeStageRenderers } from '../../testing/fake-stage-renderer';
-import { doneWhenShow } from '../../testing/show-fixtures';
+import { doneWhenShow, shortShow } from '../../testing/show-fixtures';
 import { ClientConfigStore, DEFAULT_PLAYBACK } from '../../core/client-config';
 import {
   FireworksStageComponent,
@@ -19,15 +19,10 @@ import {
 
 const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve));
 
-/** A short show: the Done-when shells, cues in the first 3 s, so a run to the end is quick. */
-function shortShow(): ShowDocument {
-  const show = doneWhenShow();
-  show.duration = 3;
-  show.cues = show.cues
-    .slice(0, 12)
-    .map((c, i) => ({ ...c, t: [0, 0.4, 0.4, 1, 1.3, 2, 2.2, 2.5, 3, 3, 1.7, 0.9][i] }));
-  return show;
-}
+// Every case here already runs on the fake per-step STAGE_CLOCK below; the time is sim work
+// (6a.5 and 6a.6 run shortShow to its end twice). They timed out at the 5 s default under load
+// (regular tier, testing interlude); 30 s keeps a real hang visible, as in the other stage specs.
+vi.setConfig({ testTimeout: 30_000 });
 
 @Component({
   imports: [FireworksStageComponent],

@@ -21,11 +21,16 @@ import { SHARE_COPIED, SHARE_COPIED_UNSAVED } from '../../../../shared/save-copy
 import { EMPTY_SAVE_NOTE, formatTime } from '../../shared/show-copy';
 import { SHOW_DRAFT_KEY } from '../../shared/show-draft';
 import { embeddable } from '../../shared/show-edit';
-import { ShowBuilderStore } from './show-builder.store';
+import { SHOW_DRAFT_DEBOUNCE_MS, ShowBuilderStore } from './show-builder.store';
 import { MY_SHELLS_PAGE_SIZE, ShowLibraryFlow } from './show-library';
 import { ShowSaveFlow } from './show-save';
 
-const flush = () => new Promise<void>((r) => setTimeout(r));
+/**
+ * `setTimeout` is faked for every test here (testing strategy §3 item 9), so waits cost no real
+ * time: `wait(ms)` advances the fake clock, running microtasks between timers.
+ */
+const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms).then(() => undefined);
+const flush = () => wait(0);
 const OWNED = {
   shareCode: CODE_A,
   kind: 'show' as const,
@@ -45,6 +50,7 @@ describe('Show save and library flows', () => {
   let ledger: string[];
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     storage = new MemoryStorage();
     ledger = [];
@@ -68,6 +74,7 @@ describe('Show save and library flows', () => {
     } finally {
       vi.restoreAllMocks();
       TestBed.resetTestingModule();
+      vi.useRealTimers();
     }
   });
 
@@ -183,8 +190,10 @@ describe('Show save and library flows', () => {
       const { store, save } = setup();
       store.edit(doneWhenShow());
       TestBed.tick();
-      await new Promise((r) => setTimeout(r, 600));
+      await wait(SHOW_DRAFT_DEBOUNCE_MS);
       const before = storage.getItem(SHOW_DRAFT_KEY);
+      // The debounced draft was written, so the byte-identical check below compares a real draft.
+      expect(before).not.toBeNull();
       save.save('save');
       http.expectOne('/api/creations').flush(
         {
@@ -205,7 +214,7 @@ describe('Show save and library flows', () => {
       expect(text).toContain('Stars (⁨Crossette⁩, Break 1) must be a whole number');
       expect(text).toContain('Your show is kept in this browser.');
       expect(text).not.toMatch(/cues\[|shells\./);
-      await new Promise((r) => setTimeout(r, 600));
+      await wait(SHOW_DRAFT_DEBOUNCE_MS);
       expect(storage.getItem(SHOW_DRAFT_KEY)).toBe(before);
       expect(TestBed.inject(NotificationService).notifications()).toEqual([]);
     });

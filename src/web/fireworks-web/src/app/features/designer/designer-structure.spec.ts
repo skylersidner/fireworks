@@ -448,17 +448,22 @@ describe('designer structure', () => {
     pin('validateShow callers', callers(/\bvalidateShow\(/, /export function validateShow\(/), [
       SAVE,
     ]);
-    // FIXTURES is test-only (never imported by app code): Toad's shared Done-when fixture, opened
+    // FIXTURES is test-only (never imported by shipped code; enforced in engine-boundary.spec.ts,
+    // Boo F6): Toad's shared Done-when fixture, opened
     // like any document (Luigi B2, Phase 7).
     const FIXTURES = 'app/testing/show-fixtures.ts';
     // Show JSON Apply (Luigi B3, Phase 7; acceptance 7b.9): the one new show entry. It parses the
     // pasted text once and passes the parsed value straight to openShow.
     const JSON_APPLY = 'app/features/show/shared/show-json.ts';
+    // Test-only too (same rule, Boo F6): the T2 fingerprint harness opens committed
+    // schema fixtures and generated shows like any document (Yoshi, testing interlude T2).
+    const FINGERPRINT = 'engine/loop/golden/show-fingerprint.ts';
     pin('openShow callers', callers(/\bopenShow\(/, /export function openShow\(/), [
       OPEN,
       DRAFT,
       JSON_APPLY,
       FIXTURES,
+      FINGERPRINT,
     ]);
     pin('Show JSON parses once', calls(JSON_APPLY, /\bJSON\.parse\([^)]*\)/), ['JSON.parse(text)']);
     pin('Show JSON opens the parsed value', calls(JSON_APPLY, /\bopenShow\([^)]*\)/), [

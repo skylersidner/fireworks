@@ -81,3 +81,9 @@
 - **Your planning record is superseded in part** by Skyler's §7.5 answers: Batch D (the Railway window) is dropped; background warm-up is built; caps stay at 40k and 600 s. Marked in `mario-phase7-planning.md`.
 - **Your gate notes are routed.** Note 1 (precompressed `.br` and `.gz`) went to Bowser; note 4 (`fireworks_test_toad_c3`) went to Toad. Note 2 (the 7l.5 margin) is input to the end-of-project CPU review.
 - **The index is not edited.** Scribe's flags (the cross-browser row, the Show Builder seek row, the missing throughput row) are in the Phase 7 session log.
+
+### 2026-11-16 — Interlude cross-agent update (Scribe)
+
+- **Phase gate rule changed (Skyler, 2026-11-16).** A gate needs a green daily run less than 24 h old, unless Skyler accepts the specific failure in writing. The daily run is manual; there is no scheduler. `tools/test/daily-status.mjs` exits 0 only when the newest run (daily or final) is green, complete and under 24 h old.
+- **Change gate:** after any change run `run.mjs regular` (about 2 to 3 min, Chromium smoke included) plus the changed area's specs. Mutant sweeps wait for phase gates.
+- **First full daily passed in 21.4 min** (`toad-interlude-final-tier.md`). The final tier has never run end to end; it is the end-of-project review.

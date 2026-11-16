@@ -68,3 +68,7 @@
 - **Your C2 rulings are in code.** Copy copies the textarea; the wheel scroll stops Follow; the designer note re-announces. C2-1 to C2-4 are verified on the image. The K9 settle guard is in §3.2.
 - **Your 10 s is canonical.** It supersedes Yoshi's 5000 ms (Yoshi's record is marked in place).
 - **Carried for you:** the keyboard, reduced-motion and touch checks ran in Chromium at the gate. Their Firefox and WebKit runs are the daily run, not a gate criterion.
+
+### 2026-11-16 — Interlude cross-agent update (Scribe)
+
+- **Open decision with Luigi (7g.2).** Firefox makes the scrollable `designer-panel` and `builder-panel` asides tab stops before the skip link. This is engine behavior, not a product defect (`toad-interlude-final-tier.md` point 3). The question is whether the panels get `tabindex="-1"`, or whether `gate-keyboard` should expect the stop. Toad fixes the script side; the decision is yours with Luigi.

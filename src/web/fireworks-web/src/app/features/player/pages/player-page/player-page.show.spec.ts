@@ -26,6 +26,7 @@ import {
 } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../../../testing/stage-clock';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { doneWhenShow } from '../../../../testing/show-fixtures';
 import { DRAFT_KEY } from '../../../designer/shared/designer-draft';
@@ -63,6 +64,7 @@ describe('Player /s/:code with a show', () => {
         provideHttpClientTesting(),
         provideRouter(routes),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
+        provideStepClock(),
         { provide: MATCH_MEDIA, useValue: media.fn },
         { provide: BROWSER_STORAGE, useValue: storage },
       ],

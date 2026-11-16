@@ -1,0 +1,30 @@
+{
+  "description": "Headers gate shell B (Mario Phase 7 gate, scratchpad gate7/shellB.json). The put phase renames it.",
+  "kind": "shell",
+  "document": {
+    "version": 1,
+    "name": "Gate7 B",
+    "burstHeight": 0.6,
+    "angleJitter": 6,
+    "sky": {
+      "gravity": 160,
+      "wind": -20
+    },
+    "breaks": [
+      {
+        "pattern": "ring",
+        "stars": 90,
+        "speed": 200,
+        "color1": "rainbow",
+        "color2": "none",
+        "changeAt": 0.6,
+        "burn": 1.4,
+        "drag": 0.9,
+        "size": 1,
+        "trail": "glitter",
+        "effect": "crackle",
+        "delay": 0.6
+      }
+    ]
+  }
+}

@@ -10,6 +10,7 @@ import { MOTION_BLUR_KEY } from '../../../../core/device-preferences';
 import { CODE_A } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { MemoryStorage } from '../../../../testing/memory-storage';
+import { scheduledLedger } from '../../../../testing/scheduled-ledger';
 import { doneWhenShow } from '../../../../testing/show-fixtures';
 import { DRAFT_KEY, editableFrom, serializeDraft } from '../../../designer/shared/designer-draft';
 import { CUE_CAP, SHELL_CAP } from '../../shared/show-copy';
@@ -27,7 +28,6 @@ const SOURCE = {
   updatedAt: '2026-11-14T10:00:00Z',
   name: 'Saved show',
 };
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const peony = () => embeddable(PRESETS[0])!;
 
 describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)', () => {
@@ -48,7 +48,10 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
   beforeEach(() => {
     storage = new MemoryStorage();
   });
-  afterEach(() => TestBed.resetTestingModule());
+  afterEach(() => {
+    vi.useRealTimers();
+    TestBed.resetTestingModule();
+  });
 
   it('first visit: New show, 60 s, default sky, no shells or cues, clean', () => {
     const store = make();
@@ -186,18 +189,13 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
     expect(store.undo()).toBe(false);
   });
 
-  // Toad, Phase 6 review-fix (Peach 6c.3, 6c.4): ledger diffs over the whole show, run to its end.
-  // Four (6c.3) and six (6c.4) full Done-when runs: 4.7 s and 6.6 s alone, 24.8 s for 6c.3 in the
-  // full suite at load 12 (Toad, Phase 7 C3). Load-only; 60 s keeps a real hang visible.
+  // Toad, Phase 6 review-fix (Peach 6c.3, 6c.4): ledger diffs over the whole show. The ledger
+  // comes from the cue schedule alone (`scheduledLedger`, pinned against a full run in
+  // `testing/scheduled-ledger.spec.ts`), so no show is simulated past its last cue. The original
+  // ten full Done-when runs are in `show-builder.store.daily.spec.ts` (testing strategy §3 item 3).
   describe('ledger diffs: an edit to cue A leaves every other row unchanged', () => {
-    const fullLedger = (show: ReturnType<ShowBuilderStore['show']>) => {
-      const d = new TimelineDriver(show);
-      d.runToEnd(
-        new EngineLoop(new FireworksSim(), undefined, { worldWidth: () => 1280, driver: d }),
-      );
-      return d.ledger;
-    };
-    const without = (rows: ReturnType<typeof fullLedger>, id: string) =>
+    const ledgerOf = (show: ReturnType<ShowBuilderStore['show']>) => scheduledLedger(show);
+    const without = (rows: ReturnType<typeof ledgerOf>, id: string) =>
       rows.filter((r) => r.id !== id);
 
     it('moving cue A in t and x changes only A’s row; its id, seed and shell stay (6c.3)', () => {
@@ -207,7 +205,7 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
         ['c7', 40.25, 0.125],
         ['c2', 12.5, 0.875],
       ] as const) {
-        const before = fullLedger(store.show());
+        const before = ledgerOf(store.show());
         expect(before).toHaveLength(50);
         const a = before.find((r) => r.id === id)!;
         const seedOf = () => store.show().cues.find((c) => c.id === id)!.seed;
@@ -215,7 +213,7 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
         expect(seedOf()).toBe(a.seed);
         store.updateCue(id, { x });
         expect(seedOf()).toBe(a.seed);
-        const after = fullLedger(store.show());
+        const after = ledgerOf(store.show());
         expect(after).toHaveLength(50);
         expect(without(after, id)).toEqual(without(before, id));
         const moved = after.find((r) => r.id === id)!;
@@ -229,19 +227,19 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
         expect([moved.step, moved.tx]).toEqual([t * 120, x * 1280]);
         expect(moved.step).not.toBe(a.step);
       }
-    }, 60_000);
+    });
 
     it('deleting cue A: the ledger is the old one minus A’s row (6c.4)', () => {
       const store = make({ ...readShowDraftOf(doneWhenShow()) });
-      const before = fullLedger(store.show());
+      const before = ledgerOf(store.show());
       // c2 shares its step with c10: the same-step neighbour must keep its row too.
       for (const id of ['c2', 'c33']) {
-        const ref = fullLedger(store.show());
+        const ref = ledgerOf(store.show());
         store.deleteCue(id);
-        expect(fullLedger(store.show())).toEqual(without(ref, id));
+        expect(ledgerOf(store.show())).toEqual(without(ref, id));
       }
-      expect(fullLedger(store.show())).toEqual(without(without(before, 'c2'), 'c33'));
-    }, 60_000);
+      expect(ledgerOf(store.show())).toEqual(without(without(before, 'c2'), 'c33'));
+    });
   });
 
   it('an undone add frees nothing: the next add gets a new id (Peach N4)', () => {
@@ -399,7 +397,8 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
       expect(make().quality().persistence).toBe(0.3);
     });
 
-    it('a change is stored on the device; the designer draft stays byte-identical (6c.1)', async () => {
+    it('a change is stored on the device; the designer draft stays byte-identical (6c.1)', () => {
+      vi.useFakeTimers();
       storage.setItem(DRAFT_KEY, designerDraft(0.3));
       const before = storage.getItem(DRAFT_KEY);
       const store = make();
@@ -407,19 +406,23 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
       TestBed.tick();
       expect(store.quality().persistence).toBe(0.5);
       expect(storage.getItem(MOTION_BLUR_KEY)).toBe('0.5');
-      await wait(SHOW_DRAFT_DEBOUNCE_MS + 50);
+      vi.advanceTimersByTime(SHOW_DRAFT_DEBOUNCE_MS);
       expect(storage.getItem(DRAFT_KEY)).toBe(before);
       expect(storage.getItem(SHOW_DRAFT_KEY) ?? '').not.toContain('persistence');
     });
   });
 
-  it('writes its own draft debounced and never the designer draft (6c.1)', async () => {
+  // Fake timers (testing strategy §3 item 9, risk 5.9): both sides of the debounce edge.
+  it('writes its own draft debounced and never the designer draft (6c.1)', () => {
+    vi.useFakeTimers();
     storage.setItem(DRAFT_KEY, '{"designer":true}');
     const store = make();
     store.addCue(peony(), 1, 0.5);
     TestBed.tick();
     expect(storage.getItem(SHOW_DRAFT_KEY)).toBeNull();
-    await wait(SHOW_DRAFT_DEBOUNCE_MS + 50);
+    vi.advanceTimersByTime(SHOW_DRAFT_DEBOUNCE_MS - 1);
+    expect(storage.getItem(SHOW_DRAFT_KEY)).toBeNull();
+    vi.advanceTimersByTime(1);
     expect(readShowDraft(storage)?.show.cues).toHaveLength(1);
     expect(storage.getItem(DRAFT_KEY)).toBe('{"designer":true}');
   });

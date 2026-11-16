@@ -11,7 +11,11 @@
  *    value imports (a dynamic `import()` is the one legal edge: it is the lazy chunk; a type-only
  *    import loads nothing);
  *  - a file under engine/ has a dynamic `import()` or `require()` whose argument isn't a plain
- *    string literal (fail closed: an import the spec can't read is an offense).
+ *    string literal (fail closed: an import the spec can't read is an offense);
+ *  - shipped code imports test support (Boo F6, testing interlude): no non-spec file outside the
+ *    test-support folders (`app/testing/`, `engine/<layer>/golden/`, `engine/<layer>/testing/`)
+ *    imports into one of them, in any form (type-only included). Specs, `tools/` and the
+ *    test-support folders themselves may.
  * There is no allow-list. Every form is parsed: static, `import type`, side-effect,
  * `export … from`, dynamic with quotes or a plain template literal, with an options bag, and
  * `require`.
@@ -154,6 +158,30 @@ export function firstImportIsUnsafeEvalPolyfill(source: string): boolean {
   return new RegExp(`^import\\s*['"]pixi\\.js/unsafe-eval['"];$`).test(first);
 }
 
+/** Test-support folders: specs and tools only, never a shipped import (Boo F6). */
+const isTestSupport = (rel: string) =>
+  rel.startsWith('app/testing/') || /^engine\/[^/]+\/(golden|testing)\//.test(rel);
+
+/**
+ * Shipped files (not a spec, not in a test-support folder) that import test support, as
+ * `from -> spec (kind)`. `exists` as in `resolve`; the control passes its own graph.
+ */
+export function testSupportImports(
+  files: readonly FileInfo[],
+  exists?: (rel: string) => boolean,
+): string[] {
+  return files
+    .filter((f) => !f.path.endsWith('.spec.ts') && !isTestSupport(f.path))
+    .flatMap((f) =>
+      f.imports
+        .filter((imp) => {
+          const target = resolve(f.path, imp.spec, exists);
+          return target !== null && isTestSupport(target);
+        })
+        .map((imp) => `${f.path} -> ${imp.spec} (${imp.kind})`),
+    );
+}
+
 /** Files that load `pixi.js`/`@pixi/*` through static value imports (direct or transitive). */
 export function pixiReach(files: readonly FileInfo[]): Map<string, string[]> {
   const byPath = new Map(files.map((f) => [f.path, f]));
@@ -276,6 +304,17 @@ describe('engine import boundary', () => {
     expect(reach.has('engine/render/pixi-renderer.ts')).toBe(true);
   });
 
+  it('shipped code never imports app/testing, engine/*/golden or engine/*/testing (Boo F6)', () => {
+    expect(testSupportImports(files)).toEqual([]);
+    // Positive control on the real tree: specs do import test support, and the resolver sees it.
+    const specEdges = files
+      .filter((f) => f.path.endsWith('.spec.ts'))
+      .flatMap((f) => f.imports.map((i) => resolve(f.path, i.spec)))
+      .filter((t): t is string => t !== null && isTestSupport(t));
+    expect(specEdges.some((t) => t.startsWith('app/testing/'))).toBe(true);
+    expect(specEdges.some((t) => /^engine\/[^/]+\/golden\//.test(t))).toBe(true);
+  });
+
   it('pixi-renderer.ts imports the CSP-safe polyfill first (Boo P7-S10: no unsafe-eval)', () => {
     const source = fs.readFileSync(`${SRC}/engine/render/pixi-renderer.ts`, 'utf8');
     expect(firstImportIsUnsafeEvalPolyfill(source)).toBe(true);
@@ -344,6 +383,39 @@ describe('engine import boundary', () => {
           source,
         ).toEqual(['unparseable']);
       }
+    });
+
+    it('the test-support rule catches every form from app/ and engine/, and allows specs and support', () => {
+      const graph: FileInfo[] = [
+        {
+          path: 'app/testing/fake.ts',
+          imports: [{ spec: '../../engine/loop/golden/g', kind: 'static' }],
+        },
+        { path: 'engine/loop/golden/g.ts', imports: [] },
+        { path: 'engine/loop/testing/h.ts', imports: [{ spec: '../golden/g', kind: 'static' }] },
+        {
+          path: 'app/features/x/page.ts',
+          imports: [{ spec: '../../testing/fake', kind: 'static' }],
+        },
+        { path: 'app/core/typed.ts', imports: [{ spec: '../testing/fake', kind: 'type' }] },
+        {
+          path: 'app/shared/lazy.ts',
+          imports: [{ spec: '../../engine/loop/golden/g', kind: 'dynamic' }],
+        },
+        { path: 'engine/loop/driver.ts', imports: [{ spec: './testing/h', kind: 'static' }] },
+        {
+          path: 'app/features/x/page.spec.ts',
+          imports: [{ spec: '../../testing/fake', kind: 'static' }],
+        },
+        { path: 'app/core/fine.ts', imports: [{ spec: '../features/x/page', kind: 'static' }] },
+      ];
+      const byPath = new Set(graph.map((f) => f.path));
+      expect(testSupportImports(graph, (rel) => byPath.has(rel))).toEqual([
+        'app/features/x/page.ts -> ../../testing/fake (static)',
+        'app/core/typed.ts -> ../testing/fake (type)',
+        'app/shared/lazy.ts -> ../../engine/loop/golden/g (dynamic)',
+        'engine/loop/driver.ts -> ./testing/h (static)',
+      ]);
     });
 
     it('the reach check follows static chains and stops at dynamic and type-only edges', () => {

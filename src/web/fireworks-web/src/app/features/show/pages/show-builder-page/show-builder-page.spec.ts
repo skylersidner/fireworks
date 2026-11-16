@@ -21,6 +21,7 @@ import {
 } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../../../testing/stage-clock';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { doneWhenShow } from '../../../../testing/show-fixtures';
 import { PRESETS } from '../../../../../engine/model/presets';
@@ -51,6 +52,7 @@ describe('Show Builder /show', () => {
         provideHttpClientTesting(),
         provideRouter(routes),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
+        provideStepClock(),
         { provide: MATCH_MEDIA, useValue: new FakeMatchMedia().fn },
         { provide: BROWSER_STORAGE, useValue: storage },
       ],
@@ -119,9 +121,9 @@ describe('Show Builder /show', () => {
     expect(stage!.sim.particles.n).toBe(0);
     expect(byTest('play')!.textContent!.trim()).toBe('Play');
     expect(byTest('time')!.textContent).toMatch(/^0:00\.0 \/ about \d:\d\d$/);
-    // 2.0 s alone: the first test pays the lazy route, and the builder's warm-up spends up to
-    // WARM_UP_IDLE_MS of real clock in each of the 120 frames. Timed out at 5 s under the full
-    // suite's load (Toad, Phase 7 C3); load-only.
+    // The first test pays the lazy route. Warm-up no longer spends real clock here: the step
+    // clock (`provideStepClock`) charges 6 ms per shadow step, so each of the 120 frames runs 2.
+    // Timed out at 5 s under the full suite's load before that (Toad, Phase 7 C3); load-only.
   }, 20_000);
 
   it('the notice holds Play and sky clicks; Continue moves focus to Play (§14.1)', async () => {

@@ -21,6 +21,7 @@ import {
 } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../../../testing/stage-clock';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { doneWhenShow } from '../../../../testing/show-fixtures';
 import { ANNOUNCE_REPEAT_MS } from '../../../../shared/announcer';
@@ -63,6 +64,7 @@ describe('Show Builder Phase 7', () => {
         provideHttpClientTesting(),
         provideRouter(routes),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
+        provideStepClock(),
         { provide: MATCH_MEDIA, useValue: new FakeMatchMedia().fn },
         { provide: BROWSER_STORAGE, useValue: storage },
       ],

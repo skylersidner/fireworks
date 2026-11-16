@@ -17,6 +17,7 @@ import {
 import { ME_TEST_WINDOW, settleSession } from '../../../../testing/creation-fixtures';
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../../../testing/stage-clock';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { API_BANNER_DESIGNER, ApiBannerComponent } from '../../../../shared/api-banner/api-banner';
 import { ShowBuilderStore } from './show-builder.store';
@@ -47,6 +48,7 @@ describe('Show Builder review fixes (phase-6.md §19.2)', () => {
         provideHttpClientTesting(),
         provideRouter(routes),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
+        provideStepClock(),
         { provide: MATCH_MEDIA, useValue: new FakeMatchMedia().fn },
         { provide: BROWSER_STORAGE, useValue: storage },
       ],

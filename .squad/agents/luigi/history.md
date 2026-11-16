@@ -8,7 +8,7 @@
 - **Plan:** `plans/initial-implementation.md`. Phases 0–8. Identity model in §3.4: anonymous play, persistence owned by a user ID, and a configured default user until the Phase 8 auth pass.
 - **Architecture reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular`. Mirror its structure and conventions; never its domain.
 - **Prototype:** `prototypes/fireworks-prototype.html` is the visual and behavioral parity oracle. Background is in `docs/fireworks-app/context.md`.
-- **Your focus here:** Phases 0 to 7 are built. Open: the coarse-pointer clamp on warm-up memory (Yoshi's trigger: `ClientPlayback__CheckpointMemoryMiB` above 128); the Phase 8 client work.
+- **Your focus here:** Phases 0 to 7 are built. Interlude batch 1 is in: regular `ng test` about 33 to 53 s, down from 90 to 126 s. Open: the coarse-pointer clamp on warm-up memory (Yoshi's trigger: `ClientPlayback__CheckpointMemoryMiB` above 128); the Firefox aside tab-stop question (7g.2, with Rosalina); the Phase 8 client work.
 - Carried over from the previous project: the role only. No history was copied. General lessons from that project are seeded as standing decisions in `.squad/decisions/README.md`.
 ### Folded from Phases 0 to 4 (summarized 2026-11-13 and 2026-11-14; compacted 2026-11-15)
 
@@ -33,30 +33,32 @@
 - **Client config (point 13):** `core/client-config.ts` (values, `PLAYBACK_LIMITS`, `clampPlayback`); `core/client-config-loader.ts` is the only HTTP, a non-blocking initializer that keeps defaults silently on failure. Drivers read the config at construction, so a late config never swaps a playing driver. `TimelineDriver.inherit` copies `from.cpSteps`.
 - **Guard specs pin this code:** `unsafe-sinks.spec.ts` (`SHIPPED_URL_BINDINGS`, 8 navigation calls), `designer-structure.spec.ts` (`showEntryViolations()`), and `core/client-config.contract.spec.ts` (`PLAYBACK_LIMITS` against the `[Range]` attributes). A new URL binding, navigation call or range changes the ledger in the same change.
 
+### Folded from Phase 7 B2, B3 and the post-gate update (summarized 2026-11-16)
+
+- **B2 (`luigi-phase7-client-hardening.md`):** CSP: `pixi.js/unsafe-eval` first in `pixi-renderer.ts` (pinned by `engine-boundary.spec.ts`); `inlineCritical: false` in `angular.json` production. Playwright's `waitForFunction` is blocked by that CSP, so measurement contexts use `bypassCSP: true`. A comment that says `new Function` trips the C1 sink ban. Context loss: `StageRenderer.onContextChange`; statuses `starting|running|lost|failed`; `lostNotice` 1 s; fail at 10 s, renderer destroyed, a later restore ignored. DPR: `core/browser.ts` `canvasResolution` and `CANVAS_RESOLUTION`. Warm-up: `TimelineDriver.twin()` and `adoptCheckpoints()` share `divergeStep`; stage input `warmUp` (builder only); skill `checkpoint-warm-up`. Realistic 600 s cold p95 3.7 s, to 0.49–0.63 s after about 10 s of warm-up. Moves: save-bar, save-status, hud, api-banner, save-copy and formats to `app/shared`; `MAX_BODY_BYTES` to `core/creation-save.ts`; F3 closed by `embeddedShell` and `src/app/embedded-shell-reads.spec.ts`; `doneWhenShow()` reads Toad's fixture.
+- **B3 (`luigi-phase7-ux-accessibility.md`):** `shared/announcer.ts` (a repeat goes empty, then the text after 100 ms; `liveNote()` is keyed by `seq`); `shared/save-shortcut.ts`; `BannerFocus` and `ToastFocus` track focus by `focusin`. Builder: `historyStep()` for all undo and redo; `store.applyJson` and `applyShow` are one `edit()`; a wheel scroll stops Follow through `emitManual`. Touch sizes are raw px (the root font is 13 px; `touch-px-utilities.spec.ts` fails rem coarse utilities). Tailwind utilities beat `@layer components`, so the coarse block is unlayered.
+- **Post-gate (Rosalina's rulings, Bowser's fix round):** Show JSON Copy writes `jsonValue()`; the Shell JSON note is keyed by `seq`.
+- **Guard specs pin your code:** `unsafe-sinks.spec.ts`, `designer-structure.spec.ts` (`showEntryViolations`), `embedded-shell-reads.spec.ts` and `core/client-config.contract.spec.ts`. A new URL binding, navigation call or shell read changes them in the same change.
+
 ## Learnings
 
-### 2026-11-15 — Phase 7 B2: client hardening (record `luigi-phase7-client-hardening.md`)
+### 2026-11-15 — Testing interlude batch 1: daily split and test seams (record `luigi-interlude-spec-split.md`)
 
-- **CSP:** `pixi.js/unsafe-eval` first in `pixi-renderer.ts` (pinned in `engine-boundary.spec.ts`); `inlineCritical: false` in `angular.json` production. Verified 0 violations in Chromium against a clean publish of the API (Bowser's real header) on 5197 with `--webroot <scratch>/build/browser`. Playwright's `waitForFunction` is blocked by that CSP; measurement contexts use `bypassCSP: true`. A comment that says `new Function` trips the C1 sink ban (`unsafe-sinks.spec.ts`).
-- **Context loss:** `StageRenderer.onContextChange`; host statuses `starting|running|lost|failed`, `failure: 'start'|'lost'`, `lostNotice` (1 s), fail at 10 s with renderer destroyed and later restore ignored (coordinator N1). Tokens `STAGE_TIMERS`, `PAGE_RELOAD`; stage input `surface`; copy in `app/shared/fireworks-stage/stage-copy.ts`. Fake renderer has `loseContext()`/`restoreContext()`.
-- **DPR:** `core/browser.ts` `canvasResolution` + `CANVAS_RESOLUTION` (+ `DEVICE_PIXEL_RATIO` token); stage passes `resolution` to the factory, timeline reads it per draw and redraws on `contextrestored`.
-- **Warm-up:** `TimelineDriver.twin()` / `adoptCheckpoints()` (shared `divergeStep`), stage input `warmUp` (builder only), `data-warm-up`. Realistic 600 s cold p95 3.7 s → 0.49–0.63 s after a ~10 s warm-up on prod; idle cap 12 ms / playing 6 ms keeps frames at 17 ms. The 6c.3 store spec times out at 20 s in the full suite under load (4.5 s alone, same as before B2). Skill `checkpoint-warm-up`.
-- **Moves:** save-bar, save-status, hud, api-banner, save-copy, formats → `app/shared`; `reasonOf` required (moved before defaulted params); `MAX_BODY_BYTES` → `core/creation-save.ts` (the new layering rule caught `show-save` importing it from `designer-save`). F3: `embeddedShell` + `src/app/embedded-shell-reads.spec.ts`. `doneWhenShow()` reads Toad's fixture via fs + `openShow`.
-- **Traps:** mutants in a copied tree need the repo layout (`mutroot/src/web/fireworks-web` + `mutroot/schema` symlink) or every fixture spec "fails" with ENOENT; always run an unchanged baseline mutant first. The builder opens paused, so a "canvas changes after restore" screenshot check is only meaningful on `/` and `/s/`.
+- **Files:** `*.daily.spec.ts` for timeline-driver (15), stage phase7 (11), the store's 6c.3/6c.4 (2) and the 40k load test (1), all verbatim. Helpers: `engine/loop/testing/timeline-spec-helpers.ts` (`smallShow`, `SMALL_CP` 120, `SMALL_CAP` 2500, `straight`, `referenceRun`), `app/testing/scheduled-ledger.ts`, `app/testing/stage-clock.ts` (`provideStepClock`), and `shortShow()` in `show-fixtures.ts`. `timeline-driver.spec.ts` is split, with `.checkpoints.spec.ts` as the new half. Skill `daily-spec-split`.
+- **Results:** `ng test` regular 53 s (from 90–126 s); daily alone 61 s. Counts 1,640 → 1,647 regular + 29 daily.
+- **Lessons:**
+  - Cost is particle-steps. Compressing a show doesn't save anything; fewer cues or a lower capacity does.
+  - A small equivalent must keep the mechanism the mutant needs: the digest case first missed "restore wrong digest" because it never restored a checkpoint.
+  - Fake `setTimeout` only (`toFake: ['setTimeout', 'clearTimeout']`) keeps `whenStable` and `RouterTestingHarness` working, and the +1 ms debounce mutants that real sleeps can't see are now killed.
+- **Traps:**
+  - Background `python &` ignores SIGINT, so a mutant runner can't be interrupted cleanly. Restore its tree from git or the repo.
+  - A mutant whose replacement is a substring of its original fails the uniqueness check. Add a marker comment.
+  - Mutant rigs also need `docs` and `src/api` symlinked, or `limits`, `schema-fixtures-format` and `client-config.contract` "fail".
+  - Moving verbatim makes the daily kill set the old one, so for a moved test the proof only needs regular ⊇ daily.
+- **Open gaps (old and new alike):** T22, T23, T32, T35, T36 and T38 on the driver, and death at `age > life`. These are candidates for Toad's T3.
 
-### 2026-11-15 — Phase 7 B3: UX and accessibility (record `luigi-phase7-ux-accessibility.md`)
+### 2026-11-16 — Interlude cross-agent update (Scribe)
 
-- **Helpers:** `shared/announcer.ts` (`announcement()`: a repeat goes `''` then the text after 100 ms; `liveNote()`: keyed `@for (track seq)` so a visible note re-announces), `shared/save-shortcut.ts` (§3.3 table), `core/browser.ts` `isApplePlatform`/`isSaveShortcut`. `BannerFocus` (api-banner) and `ToastFocus` (app.ts) track focus by `focusin` and forget it only when `relatedTarget` is a connected node, because a removed node's `focusout` has none.
-- **Builder:** `historyStep()` for all undo/redo (B5); `capNoteFor`; `onLibDown` (window listeners, 4 px, Escape); `onManualView` stops Follow; `seekTo(t, reveal)`; Show JSON state in the page (`jsonText` computed only inside the open `<details>`); `store.applyJson`/`applyShow` = one `edit()`. `saveDocumentOf` in show-save keeps the pinned `normalizeShow(sent.show)`.
-- **Timeline:** `manualView` output, touch pan/tap/drag, pinch via a box-level `touches` map with a `Gesture.cancel`, proportional wheel, Safari `gesture*`, badges with `t0/t1/firstHiddenId/box`, `labelPlacement`, `revealView`, `dropAt`/`showDrop`. `scrub-overview.ts` is a separate component.
-- **Traps:** Tailwind utilities (`min-w-0`, `text-caption`) beat `@layer components`, so the coarse block must be unlayered (found only in a real browser). A spec that uses the function under test as its oracle is vacuous: the "text is the save document" mutant survived until the spec compared with `normalizeShow`. jsdom has `PointerEvent` with `pointerId`/`pointerType`; mock `getBoundingClientRect` on the box and lane. Configure TestBed in `beforeEach`, not in a `make()` called twice. Fake-timer toasts work with `fixture.detectChanges()`.
-- **Rules for the rest of Phase 7 (coordinator; now standing):** mutants only on engine, save-path and security code; at most two agents; no three-browser or long runs.
-
-### 2026-11-15 — Phase 7 post-gate cross-agent update (Scribe)
-
-- **Yoshi's D1 fix is in `timeline-driver.ts`, not in your B2 code.** The coordinator authorized Yoshi to change that file and its spec only. Your warm-up API uses the fixed `divergeStep`.
-- **Rosalina's rulings changed three of your B3 deviations.** Show JSON Copy writes the textarea (`jsonValue()`); a wheel scroll stops Follow through `emitManual`; the designer's Shell JSON note is keyed by `seq`. Bowser made these under lockout. Your B3 record's deviation list is marked in place.
-- **Touch sizes are raw px now.** The root font is 13px, so rem utilities like `size-11` and `gap-2` came out at 35.75 and 6.5 px. Use px classes (`pointer-coarse:min-h-[44px]`, `size-[44px]`, `gap-[8px]`). `src/app/touch-px-utilities.spec.ts` fails any rem-number coarse utility.
-- **Your Phase 6 "not built" and "stand-in" statements are marked in place**, and your B2 work closed them.
-- **Open for you:** the coarse-pointer memory clamp for warm-up. It fires only if `ClientPlayback__CheckpointMemoryMiB` goes above 128 (Yoshi's trigger; not fired at 64).
-- **Guard specs pin your code:** `unsafe-sinks.spec.ts`, `designer-structure.spec.ts` (`showEntryViolations`) and `embedded-shell-reads.spec.ts` change in the same PR as any new URL binding, navigation call or shell read.
+- **Yoshi's F1 fix changes seek cost after a mixed run** (`yoshi-phase6-timeline-driver.md` addendum, 2026-11-16). `TimelineDriver.beforeStep` clears the run key on any step under another width, starBudget or capacity, and a null key takes no checkpoints until reset or restore. The stage still does not re-seek on resize. A seek after a resize and back may now run from 0 or from an exact checkpoint. Check the warm-up expectations in `fireworks-stage.phase7.spec.ts` if you touch that path.
+- **Your record's kill count needs correcting** (Toad's F4, `toad-interlude-t3-property-tests.md`). `luigi-interlude-spec-split.md` counts T21 and T27 as killed by regular, but your `results-new-reg.jsonl` shows both SURVIVED (88/88). Correct it in place with an addendum.
+- **Open decision with Rosalina (7g.2):** Firefox makes the scrollable `designer-panel` and `builder-panel` asides tab stops before the skip link. This is engine behavior, not a product defect. Whether the panel gets `tabindex="-1"` or the gate expects the stop is yours and Rosalina's (`toad-interlude-final-tier.md` point 3).

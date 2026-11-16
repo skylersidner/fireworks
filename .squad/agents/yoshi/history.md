@@ -8,7 +8,7 @@
 - **Plan:** `plans/initial-implementation.md`. Phases 0–8. Identity model in §3.4: anonymous play, persistence owned by a user ID, and a configured default user until the Phase 8 auth pass.
 - **Architecture reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular`. Mirror its structure and conventions; never its domain.
 - **Prototype:** `prototypes/fireworks-prototype.html` is the visual and behavioral parity oracle. Background is in `docs/fireworks-app/context.md`.
-- **Your focus here:** Phases 0 to 7 are built. Open: the post-Phase-7 interlude (fast show-testing strategy, with Toad); the Phase 8 identity seam and the `-p` ETag tag; the coarse-pointer warm-up memory clamp (trigger: `CheckpointMemoryMiB` above 128).
+- **Your focus here:** Phases 0 to 7 are built. The interlude's engine side is in (T2 fingerprints and the F1 fix; T3 by Toad; the final tier). Open: F3 (`reset` keeps `simTime`, minor); the Phase 8 identity seam and the `-p` ETag tag; the coarse-pointer warm-up memory clamp (trigger: `CheckpointMemoryMiB` above 128).
 - Carried over from the previous project: the role only. No history was copied. General lessons from that project are seeded as standing decisions in `.squad/decisions/README.md`.
 
 ### Folded from Phase 0 to 2a (summarized 2026-11-13, compacted 2026-11-15)
@@ -30,34 +30,27 @@
 - **Phase 6 TimelineDriver (`engine/loop/timeline-driver.ts`, `yoshi-phase6-timeline-driver.md`):** the driver owns the show clock (it counts `beforeStep` calls). Measured pure re-run: 0.12 ms/step (Done-when), 0.28 (600 s, 1000 presets), 1.6 at the 40k cap. So exact checkpoints every 1200 steps, keyed by width, starBudget and capacity, with a 64 MiB cap that doubles the spacing; edits inherit checkpoints up to the first differing cue (`options.from`). `cueTimes` lives in `sim/lifetime.ts`. A late config does not reset the grid (`TimelineDriver.inherit` copies `from.cpSteps`).
 - **Lesson (all phases):** trace a new writer of a contract state through every path that reaches it, and every fallback through the endpoint it calls.
 
+### Folded from Phase 7 and the interlude proposal (summarized 2026-11-16)
+
+- **Phase 7 rulings (`yoshi-phase7-architecture-rulings.md`):** the renderer detects context loss (`onContextChange`); the host rebuilds through the factory after `restored`, and a loss acts as an implicit pause. `FlashSpacing` and the last width live on the host. Clamps stay out of the driver: the stage reports `endStep`. The context-loss failure is 10 s (`rosalina-phase-7-design-review.md` point 11). Skill `pixi-host-lifecycle` has a context-loss section. Shared files live in `app/shared` and never import features.
+- **ETag and F3:** strong `"<updatedAt>"`, serialized with the body's converter (`ToString("O")` pads to 7 digits, a trap). Phase 8: the owner keeps the token, a non-owner gets `"<updatedAt>-p"`. F3 uses `embeddedShell()` plus a `.shells[` grep guard, which must exclude `this.shells[s]`.
+- **Driver (`timeline-driver.ts`):** D1 (2026-11-15, coordinator-authorized): a strict-prefix receiver caps at its last `fireStep`, so `endStep` is 1113 after a last-cue deletion. Argument order in `divergeStep(a, b)` is load-bearing (N4, N5). Lesson: "exact up to the first differing cue" covers the world, not derived state that depends on absent later cues; check prefix, suffix and empty. Checkpoints share snapshots by reference (no 2x cap). Trigger for a coarse-pointer warm-up memory clamp: `ClientPlayback__CheckpointMemoryMiB` above 128 (not fired at 64). A late interval does not reset the grid.
+- **Traps:** never run mutants and the full suite at once (contention reads as kills and timeouts). Vitest hides `console.log` from passing tests: put values in a failing `expect([...]).toEqual([])`. `ng test` has no `-t`.
+- **Interlude, engine side (`yoshi-interlude-show-testing.md`):** the ledger is schedule-only, so use `advance(lastFireStep + 1)` on a capacity-1 sim, not `runToEnd`. Under a frozen clock `runSlice`'s `left` never reaches 0, so budget checks stay in jsdom. Golden fingerprints are integer only (counts, ledger, end). Float64 `tx`/`ty` bits agreed across Node, Chromium, Firefox and WebKit.
+
 ## Learnings
 
-### 2026-11-15 — Phase 7 A4 architecture rulings
+### 2026-11-15 — Interlude batch 2: T2 show fingerprints built
 
-- **Record:** `yoshi-phase7-architecture-rulings.md`. schema.md gained §2.1.1 (ETag), a sentence in §11.4 and a Phase 7 block in §15. Skill `pixi-host-lifecycle` gained a context-loss section, and its stale stage path is fixed (`app/shared/fireworks-stage/`).
-- **Context loss:** the renderer detects (`onContextChange`), the host rebuilds through the factory after `restored`. Pixi 8.23 already calls preventDefault and restores in place, but a rebuild re-probes the trail format and reuses the proven destroy path. Trap: `app.destroy()` itself fires `webglcontextlost`. `FlashSpacing` and the last width move to the host so they survive a rebuild, and loss acts as an implicit pause.
-- **Clamps stay out of the driver:** the stage reports `endStep` after playback crosses it. A driver that stopped counting at `done` would make a seek past the end never arrive. A late config doesn't reset the grid, because checkpoints are exact on any grid. Trigger: the first deployed `ClientPlayback__CheckpointIntervalSeconds` override.
-- **ETag:** strong `"<updatedAt>"`, serialized with the body's converter (`ToString("O")` pads to 7 digits, a trap). Phase 8: owner keeps the token, non-owner gets `"<updatedAt>-p"`.
-- **F3:** use an `embeddedShell()` helper plus a `.shells[` grep guard rather than null-prototype end to end; spreads and structuredClone drop the null prototype silently. A grep guard must exclude the sim's own `this.shells[s]`. Check what a regex matches before you name it as a guard.
-- **Shared move:** save-bar, save-status, hud, api-banner, save-copy and formats go to `app/shared`; `save-copy`'s `reasonOf` becomes required; a new rule says shared files never import features.
+- **Where things are:** `engine/loop/golden/show-fingerprint.ts` (single source: cases, fingerprint, diff, `realisticShow`), goldens in `engine/loop/golden/fingerprints/<case>.json`, specs `show-fingerprint{,.daily}.spec.ts`, recorder `tools/fingerprints/record.mjs` (refuses without `--reason`, appends to `header.history`, `--check`), browser harness `tools/browser-gates/fingerprints.mjs` (about:blank, no CSP needed), proof sets `tools/mutants/sets/t2-{fingerprint,today}.mjs`. Record `yoshi-interlude-t2-fingerprints.md`.
+- **Measured:** Chromium 157, Firefox 159 and WebKit 27.2 reproduce every Node golden exactly, including the float64 bits of the ledger's `tx`/`ty`. Regular cases cost about 5 s alone; `at-maximums` about 160 s in Node.
+- **Death equality is hit:** `age > life` (P02) changes counts in dense shows (Done-when, realistic, cap 2500), so the golden kills what run-vs-run can't. Wind-only changes are the integer fingerprint's blind spot (F6).
+- **Traps:** an esbuild IIFE's export object has getter-only properties, so assigning to one silently does nothing (my first crash control didn't fire; replace the whole global). `designer-structure.spec.ts` pins every `openShow` caller, and a new test-only caller must be added there. `ng test` keeps a structural guard on new engine files, so run the full regular suite once before claiming green.
+- 2026-11-16 F1: run-key staleness belongs in `TimelineDriver.beforeStep` (null `runKey` on any step under another key, cleared only by reset/restore); checking only at reset/restore misses "changed and back". Lean-mode rules: affected specs only, at most 2 targeted mutants (`tools/mutants/sets/f1-fix.mjs`), one `tools/test/run.mjs regular`.
 
-### 2026-11-15 — Phase 7 B2 review (Luigi's `twin` / `adoptCheckpoints`)
+### 2026-11-16 — Interlude cross-agent update (Scribe)
 
-- **PASS for B2, plus one Phase 6 defect of mine (D1):** when the new schedule is a strict prefix of the old one (the last cue removed), `divergeStep` keeps checkpoints from the gap after the new show's real end, and `restore` then reports the end at the checkpoint (4800 instead of 1113). Fix: cap at the receiver's last `fireStep` when it is a strict prefix. Verified in a copy; `timeline-driver.spec.ts:582` asserts the defect. Addendum 1 in `yoshi-phase7-architecture-rulings.md`.
-- **Lesson:** "exact up to the first differing cue" covers the world, not derived state that depends on the *absence* of later cues (`endStep`). Check derived fields at every boundary case: prefix, suffix and empty.
-- **Memory:** checkpoints move by reference, so the shadow and the visible driver share snapshots. The measured union equals the larger list, so there is no 2× cap. Warm-up makes the cap the steady state, so the trigger is a deployment setting `CheckpointMemoryMiB` above 128, which needs a coarse-pointer clamp.
-- **Probe trick:** vitest under `ng test` hides `console.log` from passing tests. Put the values in a failing `expect([...]).toEqual([])` to read them. `ng test` has no `-t`. Probe specs over about 5 s time out when run alongside the stage spec.
-
-### 2026-11-15 — D1 fix (prefix cap in `divergeStep`)
-
-- **Fixed my Phase 6 defect** in `src/web/fireworks-web/src/engine/loop/timeline-driver.ts` (coordinator authorized that file and its spec only; Luigi under lockout). `divergeStep(a, b)` treats `b` as the receiver; a strict-prefix receiver caps at `b.at(-1).fireStep`. Specs added for last-cue deletion (`endStep` 1113, both inherit and adopt) and the M8 off-interval pin; `:582`'s removal row is now `[1200, 2400]`.
-- **Mutants:** six targeted ones (N1-N5 plus M8), all killed. Argument order at both call sites is now load-bearing and pinned (N4, N5).
-- **Lesson:** never run mutants and the full suite at the same time. Contention made heavy stage and store specs time out (5-30 s) in both runs, which looked like real failures and kills. Run them one after the other, or the result reads nothing.
-
-### 2026-11-15 — Phase 7 post-gate cross-agent update (Scribe)
-
-- **Your §1 timeout is superseded.** Rosalina's design sets the failure block after 10 s (`rosalina-phase-7-design-review.md` point 11), and Luigi built 10 s (`luigi-phase7-client-hardening.md` point 2). Your 5000 ms is marked in place. The rule that a restore after the failure is ignored stands.
-- **D1 is in, with your fix.** `timeline-driver.spec.ts` now expects `[1200, 2400]` for the removal row, and a last-cue deletion spec pins `endStep` 1113. Mutants N1 to N5 and M8 are killed.
-- **Built as you ruled:** `fail()` sets `data-warm-up` to `off` (Luigi B3 point 11). Bowser's `ResponseHeaders` and 304 path (B1) match §4.
-- **Open for you:** the coarse-pointer memory clamp (trigger: `CheckpointMemoryMiB` above 128; not fired). A late checkpoint interval still doesn't reset the grid (your §2 rule).
-- **Interlude:** the fast show-testing strategy is yours with Toad, after Phase 7.
+- **Final tier moves `at-maximums` out of daily.** `toad-interlude-final-tier.md` (2026-11-16): the `at-maximums` fingerprints run in the final tier only, selected by name in `FINAL_ONLY_CASES`. Your T2 record's "Daily (2)" line and the daily row of `yoshi-interlude-show-testing.md` are marked in place.
+- **Open minor finding for you, F3** (`toad-interlude-t3-property-tests.md`): `reset` keeps `sim.simTime`, so a seek that re-runs from 0 ends with a later `simTime` than a straight run. Only Reduce-flashing spacing reads it. The F1 addendum did not touch it.
+- **F2 is closed** by your F1 addendum (the `traceDigest` comment now says steps 0..step − 2).
+- **Standing lean process (Skyler, 2026-11-16):** after a change, run `run.mjs regular` and the changed area's specs. Mutant sweeps wait for phase gates.

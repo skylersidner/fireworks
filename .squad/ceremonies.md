@@ -22,7 +22,7 @@
 - **When:** after (condition: a phase's implementation is reported complete)
 - **Facilitator:** Mario
 - **Participants:** Toad, Peach
-- **Purpose:** Check every "Done when" item against the code and a running app, not against the plan. If work is rejected, a different agent revises it (strict lockout).
+- **Purpose:** Check every "Done when" item against the code and a running app, not against the plan. Before the gate, `node tools/test/daily-status.mjs` must report a green daily or final run less than 24 h old (or Skyler's written acceptance of the failure); the gate itself runs the regular tier in Chromium. If work is rejected, a different agent revises it (strict lockout).
 
 ## retrospective
 - **When:** manual (suggested after each phase-gate passes)

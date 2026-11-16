@@ -238,8 +238,9 @@ export class TimelineDriver implements PlaybackDriver {
   }
 
   /**
-   * FNV-1a over `countByKind()` after every step so far (steps `0..step − 1`), as uint32. At
-   * `endStep` it covers the whole show through its first empty step. Null unless
+   * FNV-1a over `countByKind()` after steps `0..step − 2` (each step's counts are folded at
+   * the next `beforeStep`), as uint32. At `endStep` it covers the whole show
+   * through its first empty step. Null unless
    * `traceDigest` was set. Equal digests and ledgers in two browsers mean the same show (6a.2).
    */
   get traceDigest(): number | null {
@@ -272,6 +273,16 @@ export class TimelineDriver implements PlaybackDriver {
   /** §4.4 rule 3, then advance the clock. The loop calls this before every `sim.step`. */
   beforeStep(ctx: PlaybackContext): void {
     if (!this.started) this.reset(ctx);
+    // F1: a step under another width, budget or capacity makes this run a straight run at no key,
+    // even if the key later comes back. Null runKey: no checkpoints, and the next seek re-runs.
+    const rk = this.runKey;
+    if (
+      rk &&
+      (rk.width !== ctx.worldWidth() ||
+        rk.starBudget !== ctx.sim.starBudget ||
+        rk.capacity !== ctx.sim.particles.capacity)
+    )
+      this.runKey = null;
     const k = this.k;
     if (k > 0) {
       if (this.cpSteps > 0 && k % this.cpSteps === 0) this.takeCheckpoint(ctx);

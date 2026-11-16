@@ -78,8 +78,16 @@ describe('ParticleStore', () => {
     expect([P.c1[0], P.c2[0], P.seed[0]]).toEqual([0xffffff, 0xffffff, 1]);
   });
 
-  it('a sim under sustained load never exceeds 40,000, and every live index has age < life', () => {
-    const sim = new FireworksSim();
+  // T7.3 (testing strategy §3 item 7): the property doesn't depend on capacity, so regular runs it
+  // at 2,500; the 40k run is in simulation.daily.spec.ts, and the 40k default is pinned here.
+  it('the default capacity is 40,000 (CAP)', () => {
+    expect(CAP).toBe(40_000);
+    expect(new FireworksSim().particles.capacity).toBe(CAP);
+  });
+
+  it('a sim under sustained load never exceeds its capacity, and every live index has age < life', () => {
+    const cap = 2500;
+    const sim = new FireworksSim({ capacity: cap });
     const willow = newShell('w', {
       breaks: [{ stars: 400, trail: 'glitter', burn: 5, drag: 1.5 }],
     });
@@ -88,17 +96,15 @@ describe('ParticleStore', () => {
       if (s % 10 === 0) sim.launch(willow, 200 + (s % 800), 300, s);
       sim.step(STEP);
       peak = Math.max(peak, sim.particles.n);
-      expect(sim.particles.n).toBeLessThanOrEqual(CAP);
+      expect(sim.particles.n).toBeLessThanOrEqual(cap);
     }
-    expect(peak).toBe(CAP);
+    expect(peak).toBe(cap);
     const P = sim.particles;
     for (let i = 0; i < P.n; i++) {
       if (!(P.age[i] < P.life[i]))
         throw new Error(`index ${i}: age ${P.age[i]} >= life ${P.life[i]}`);
     }
-    // Explicit timeout (Yoshi L7): 1,200 steps at the 40k cap take ~1-2 s on this machine; the
-    // default 5 s is too close on a slow runner, and a hang should fail, not stall.
-  }, 30_000);
+  });
 });
 
 describe('star effects on death', () => {

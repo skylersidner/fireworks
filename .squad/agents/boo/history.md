@@ -40,29 +40,22 @@
 - **Tooling:** Node 26 via `PATH=~/.nvm/versions/node/v26.5.0/bin:$PATH`. Single spec: `npx ng test --watch=false --include <path>`. zsh has no `timeout`; long runs go to the background. Check mtimes before trusting a red run.
 - **Memory probes:** read `driver.checkpointBytes` (typed-array buffers are invisible to `Runtime.getHeapUsage`); `schema/fixtures/valid/show/at-maximums.json` works as a draft; `JSON.parse('1e999')` is Infinity.
 
+### Folded from Phase 7 A1, C1 and the post-gate update (summarized 2026-11-16)
+
+- **CSP (`boo-phase7-security-requirements.md`, P7-S1 to S18):** `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`. `style-src 'unsafe-inline'` is an accepted residual (Skyler, 2026-11-15). Pixi's `pixi.js/unsafe-eval` no-ops both probes and costs +1.6 KB gzip. A bundle grep is never a valid CSP check; only runtime `securitypolicyviolation` is. Beasties' inline media-swap needs `inlineCritical: false`.
+- **Cache-Control:** the share-code GET is `private, no-cache` with an ETag; everything else under `/api` is `no-store`. `ResponseHeaders` (replacing `ApiResponseHeaders`) normalizes a handled exception to `no-store` (the F1 ledger row, fixed by Bowser). Phase 8 needs `Vary: Cookie` on that GET (S18). Run a baseline before any mutant: `CacheControlTests.Every_hashed_file_in_the_built_wwwroot_matches` fails on a copy as well.
+- **Findings:** F2 (info, closed): the `javascript:` and `ping` bypasses are blocked while `script-src` and `connect-src` stay `'self'`; reopen if either widens. F3 (info, closed by Luigi's `embeddedShell()`): the re-check is still open with Boo.
+- **Probing:** probe a clean publish (skill `probe-the-published-build`). Use `curl -I` (`-X HEAD` hangs). Kestrel answers 400 and 431 itself, so only `AddServerHeader=false` reaches them. Hung-DB rig: a Python TCP proxy in front of 5433 with a `hang` flag (`scratchpad/boo-c1/proxy.py`); watch sockets with `lsof -p <pid> -a -i tcp:<port>`.
+- **Traps:** zsh refuses a function named `g`. A single Playwright page across many paths stalled, so use one page per path, with timeouts.
+- **Requirements:** S13 is narrowed (Skyler, 2026-11-15): gates run in Chromium; Firefox and WebKit moved to the daily run. S18 and the [R] items (S3, S8, C18, C20) stay open.
+
 ## Learnings
 
-### 2026-11-15 — Phase 7 A1 security-review (CSP and headers)
+### 2026-11-16 — Interlude T2 fingerprint exception check
 
-- **Record:** `records/boo-phase7-security-requirements.md`, P7-S1 to S18. CSP: `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`. The `style-src 'unsafe-inline'` residual is a question for Skyler.
-- **Pixi 8.23.0:** `import 'pixi.js/unsafe-eval'` no-ops both probes (`AbstractRenderer._unsafeEvalCheck`, `UboSystem._systemCheck`) and polyfills all four generators. It costs +1.6 KB gzip. The `new Function` text stays in the chunks, so a bundle grep is never a valid check; only runtime `securitypolicyviolation` is.
-- **Beasties' inline media-swap `<script>`:** under a strict CSP it's blocked and the stylesheet stays `media="print"`. Fix with `inlineCritical: false`. Angular runtime `<style>` elements and static `style=` attributes (written via `setAttribute`) need `'unsafe-inline'` or a nonce.
-- **Pre-implementation CSP probe** (skill `csp-feasibility-probe`): inject the header via Playwright `page.route` and build a scratch copy of the web app (symlink node_modules, `ng build --output-path`). Serve it from a clean publish with `--webroot`. Measured zero violations in Chromium on every surface.
-- **Cache-Control:** the share-code GET becomes `private, no-cache` + ETag; everything else under /api stays `no-store`. `ApiResponseHeaders` must stop overwriting. Phase 8 needs `Vary: Cookie` on that GET (S18).
-- **Baseline traps:** `curl -X HEAD` hangs waiting for the body (use `-I`). Kestrel's own 400/431 bypass middleware, so only `AddServerHeader=false` reaches them. The scratchpad Playwright has no Firefox/WebKit builds for its version.
-- F2/F5 closures hold. The C2 exact ledger is the real closure (`CODE_EXPR` accepts `p.name.code`). F3 is still open in code (S15).
+- Yoshi's F5 caller-pin exception (`engine/loop/golden/show-fingerprint.ts`) is safe: the module itself calls `openShow`. Its importers are only specs and `tools/`. Production `wwwroot` is clean (grep for `inputDigest` and `populationDigest`; `traceDigest` is legitimately in the driver). New F6 (low): "test-only" for `app/testing/` and `engine/*/golden/` is comment-only, so Toad should add an import ban with a negative control. `fingerprints.mjs` bundles in memory into `about:blank`; `tools/` is dockerignored. Addendum is in `boo-phase7-security-verification.md`.
 
-### 2026-11-15 — Phase 7 C1 security verification
+### 2026-11-16 — Interlude cross-agent update (Scribe)
 
-- **Record:** `records/boo-phase7-security-verification.md`. S1–S12 and S14–S17 PASS. S13 is DEFERRED to Mario's three-engine gate (Chromium alone was clean, including a hostile Show JSON Apply). S3 and S8 at the edge are [R]. S18 is Phase 8.
-- **Findings:** F1 (low) is an `/api` 500 that carries `no-cache,no-store` from `UseExceptionHandler`: a fifth Cache-Control writer the ledger misses. F2 (info): orphaned readiness probes are bounded by Npgsql's `Timeout`, and I measured no leak. F3 (info): `embedded-shell-reads.spec.ts` matches only `.shells[`, so alias reads slip past it.
-- **Hung-DB rig:** a Python TCP proxy in front of 5433 with a `hang` flag file. Run a published instance through it, and flip the flag after startup (migrations need the DB). Watch the sockets with `lsof -p <pid> -a -i tcp:<proxyport>`. Script: `scratchpad/boo-c1/proxy.py`.
-- **F2 bypass list accepted:** CSP `script-src 'self'` blocks `javascript:` navigation, and `connect-src` governs `ping`. Reopen the list only if either directive widens.
-- **Traps:** zsh refuses a function named `g` (it's an alias), so use another name. A mutant run in a scratch copy of `src/api` fails `CacheControlTests.Every_hashed_file_in_the_built_wwwroot_matches` on the baseline as well, so run a baseline first. Fixtures under `schema/fixtures/valid/*` are already `{description, kind, document}` envelopes. Playwright on a single page across many paths once stalled; use one page per path, with timeouts.
-
-### 2026-11-15 — Phase 7 post-gate cross-agent update (Scribe)
-
-- **F1 and F3 are fixed; the re-check is yours.** F1 (the `/api` 500 ledger row) is fixed by Bowser's fix round: `ResponseHeaders.Apply` normalizes a handled exception to `no-store`, with a `GET api/me 500` ledger row. F3 (alias reads of `shells[`) is closed by Luigi's `embeddedShell()` and `src/app/embedded-shell-reads.spec.ts`. You have not re-checked either since.
-- **S13 is narrowed by Skyler.** Gates run in Chromium only. Mario's gate ran the CSP check there: 0 violations on every stage page class, and the `MODE=none` control fails. Firefox and WebKit move to the daily run. Your requirement record is marked in place.
-- **Still yours:** S18 `Vary` (Phase 8), and the [R] items S3, S8, C18 and C20 at the edge (Railway stays deferred).
-- **Accepted residuals stand:** `style-src 'unsafe-inline'` (Skyler, 2026-11-15). The F2 bypass acceptance holds only while `script-src` and `connect-src` stay `'self'`.
+- **F6 is fixed; your re-check is open.** Toad added an import rule to `engine-boundary.spec.ts`: no shipped file outside `app/testing/`, `engine/*/golden/` and `engine/*/testing/` may import into those folders, type-only included. It has a synthetic-graph control and a positive check on the real tree. A mutant (`open-link-page.ts` importing `app/testing/show-fixtures`) was caught and reverted (`toad-interlude-final-tier.md`). Please re-check it against your F6 wording.
+- **Daily carries the Firefox and WebKit CSP gates** (`toad-interlude-tooling-batch1.md` point 6): `gate-csp` in each engine fails the daily run if a page does not load clean and the stage does not run. The daily run is manual, and a gate needs a green daily under 24 h old.

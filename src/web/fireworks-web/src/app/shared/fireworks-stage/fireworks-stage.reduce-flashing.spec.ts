@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { PRESETS } from '../../../engine/model/presets';
 import type { QualitySettings, ShellDocument } from '../../../engine/model/shell';
 import { FakeStageRenderers } from '../../testing/fake-stage-renderer';
+import { provideStepClock } from '../../testing/stage-clock';
 import { FireworksStageComponent, STAGE_RENDERER_FACTORY } from './fireworks-stage';
 
 /**
@@ -38,7 +39,7 @@ describe('Reduce flashing leaves the simulation unchanged', () => {
     fakes = new FakeStageRenderers();
     TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [{ provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory }],
+      providers: [{ provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory }, provideStepClock()],
     });
   });
 

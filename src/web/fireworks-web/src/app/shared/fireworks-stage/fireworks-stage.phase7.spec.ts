@@ -12,7 +12,7 @@ import { CANVAS_RESOLUTION, DEVICE_PIXEL_RATIO, MATCH_MEDIA } from '../../core/b
 import { ClientConfigStore, DEFAULT_PLAYBACK } from '../../core/client-config';
 import { FakeMatchMedia } from '../../testing/fake-match-media';
 import { FakeStageRenderers, type FakeStageRenderer } from '../../testing/fake-stage-renderer';
-import { doneWhenShow } from '../../testing/show-fixtures';
+import { doneWhenShow, shortShow } from '../../testing/show-fixtures';
 import {
   CONTEXT_LOST_NOTICE_MS,
   CONTEXT_RESTORE_TIMEOUT_MS,
@@ -473,26 +473,28 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     }
   });
 
+  // On `shortShow()` (3 s, 12 cues): the clamp is "reported step == endStep", which doesn't
+  // depend on length (Yoshi T1). The Done-when runs are in fireworks-stage.phase7.daily.spec.ts.
   describe('end clamp (Y§2)', () => {
     for (const fps of [60, 10]) {
       it(`at ${fps} fps the reported step and the hook stop at endStep exactly`, async () => {
-        const driver = new TimelineDriver(doneWhenShow());
+        const driver = new TimelineDriver(shortShow());
         const { renderer, stage, host } = await mount((h) => h.driver.set(driver));
-        for (let i = 0; i < 20000 && !driver.done; i++) renderer.frame(1000 / fps);
+        for (let i = 0; i < 2000 && !driver.done; i++) renderer.frame(1000 / fps);
         renderer.frame(1000 / fps, 3);
         expect(driver.done).toBe(true);
         expect(driver.step).toBeGreaterThan(driver.endStep!); // the loop overshoots...
         expect(stage.currentStep()).toBe(driver.endStep); // ...the stage reports the end
         expect(host.hookSteps.at(-1)).toBe(driver.endStep);
         expect(Math.max(...host.hookSteps)).toBe(driver.endStep);
-      }, 60_000);
+      });
     }
 
     it('an edit after the end re-seeks to the end; a seek past the end reports its target', async () => {
-      const show = doneWhenShow();
+      const show = shortShow();
       const driver = new TimelineDriver(show);
       const { fixture, renderer, stage, host } = await mount((h) => h.driver.set(driver));
-      for (let i = 0; i < 20000 && !driver.done; i++) renderer.frame(1000 / 30);
+      for (let i = 0; i < 2000 && !driver.done; i++) renderer.frame(1000 / 30);
       const end = driver.endStep!;
       const next = new TimelineDriver({ ...show, name: 'edited' }, { from: driver });
       host.driver.set(next);
@@ -504,7 +506,7 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       for (let i = 0; i < 400 && stage.seeking(); i++) renderer.frame(16);
       renderer.frame(16, 5);
       expect(stage.currentStep()).toBe(end + 500);
-    }, 60_000);
+    });
   });
 
   describe('background warm-up (acceptance 7l.4–7l.9)', () => {
@@ -513,12 +515,25 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       const show = doneWhenShow();
       return { ...show, duration: 30, cues: show.cues.filter((c) => c.t <= 30) };
     }
+    /**
+     * The cases that warm a show up to its end run on a 4 s slice (2 cues, ends on step 1063) with
+     * 120-step checkpoints (Yoshi T1): the handoff, run key, edit restart and budget rules are the
+     * same at any spacing. Their show30 versions at 1200 steps are in the daily file.
+     */
+    function show4(): ShowDocument {
+      const show = doneWhenShow();
+      return { ...show, duration: 4, cues: show.cues.filter((c) => c.t <= 4) };
+    }
+    const CP4 = { checkpointSteps: 120 };
     const attr = (el: HTMLElement) =>
       el.querySelector('app-fireworks-stage')!.getAttribute('data-warm-up');
 
-    async function warmed(show = show30(), opts: { paused?: boolean } = {}) {
+    async function warmed(
+      show = show30(),
+      opts: { paused?: boolean; checkpointSteps?: number } = {},
+    ) {
       config.setPlayback({ ...DEFAULT_PLAYBACK, seekBudgetMs: 25 });
-      const driver = new TimelineDriver(show);
+      const driver = new TimelineDriver(show, { checkpointSteps: opts.checkpointSteps });
       const m = await mount((h) => {
         h.driver.set(driver);
         h.warmUp.set(true);
@@ -535,7 +550,7 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     }
 
     it('finishes and says so on the host (data-warm-up), without moving the visible show', async () => {
-      const m = await warmed();
+      const m = await warmed(show4(), CP4);
       expect(attr(m.el)).toBe('off');
       m.renderer.frame(16);
       await m.fixture.whenStable();
@@ -544,7 +559,8 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       expect(attr(m.el)).toBe('finished');
       expect(m.driver.step).toBe(0);
       expect(liveSteps).toBe(0);
-      expect(m.driver.checkpointSteps).toEqual([1200, 2400, 3600]);
+      // The show ends on 1063; the last slice's chunk ran past 1080 before it saw the end.
+      expect(m.driver.checkpointSteps).toEqual([120, 240, 360, 480, 600, 720, 840, 960, 1080]);
       // Finished: later frames run no warm-up.
       const before = otherSteps;
       m.renderer.frame(16, 10);
@@ -552,13 +568,13 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     });
 
     it('a far seek after warm-up restores a checkpoint and lands exactly on a straight run (7l.7)', async () => {
-      const m = await warmed();
+      const m = await warmed(show4(), CP4);
       await runUntilWarm(m);
-      const target = 3600 + 517;
+      const target = 840 + 51;
       m.stage.seek(target);
       liveSteps = 0;
       for (let i = 0; i < 400 && m.stage.seeking(); i++) m.renderer.frame(16);
-      expect(liveSteps).toBe(517); // from the warmed checkpoint at 3600, not from 0
+      expect(liveSteps).toBe(51); // from the warmed checkpoint at 840, not from 0
       const oracle = straight(m.show, target);
       expect(m.driver.ledger).toEqual(oracle.driver.ledger);
       expect(snapshot(m.stage.sim)).toEqual(snapshot(oracle.sim));
@@ -569,8 +585,8 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     // another run key, `seek` would skip every one, and warm-up would silently do nothing.
     it('at starBudget 0.5 the warmed checkpoints are used, and the seek is a straight run at 0.5', async () => {
       config.setPlayback({ ...DEFAULT_PLAYBACK, seekBudgetMs: 25 });
-      const show = show30();
-      const driver = new TimelineDriver(show);
+      const show = show4();
+      const driver = new TimelineDriver(show, CP4);
       const m = await mount((h) => {
         h.driver.set(driver);
         h.warmUp.set(true);
@@ -580,11 +596,11 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       expect(m.stage.sim.starBudget).toBe(0.5);
       await runUntilWarm({ ...m, driver, show });
       expect(m.stage.warmUpState()).toBe('finished');
-      const target = 3600 + 517;
+      const target = 840 + 51;
       m.stage.seek(target);
       liveSteps = 0;
       for (let i = 0; i < 400 && m.stage.seeking(); i++) m.renderer.frame(16);
-      expect(liveSteps).toBe(517); // from the warmed checkpoint at 3600, not from 0
+      expect(liveSteps).toBe(51); // from the warmed checkpoint at 840, not from 0
       const sim = new FireworksSim({ starBudget: 0.5 });
       const oracle = new TimelineDriver(show, { checkpointSteps: 0 });
       oracle.seek(
@@ -601,29 +617,29 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     // default) a shadow fixed at 1280 is invisible; at any real window width its checkpoints carry
     // another run key, `seek` skips them all, and warm-up silently does nothing.
     it('at a world width other than 1280 the warmed checkpoints are used, and the seek is exact', async () => {
-      const m = await warmed();
+      const m = await warmed(show4(), CP4);
       m.renderer.width = 1620;
       await runUntilWarm(m);
       expect(m.stage.warmUpState()).toBe('finished');
-      const target = 3600 + 517;
+      const target = 840 + 51;
       m.stage.seek(target);
       liveSteps = 0;
       for (let i = 0; i < 400 && m.stage.seeking(); i++) m.renderer.frame(16);
-      expect(liveSteps).toBe(517);
+      expect(liveSteps).toBe(51);
       const oracle = straight(m.show, target, 1620);
       expect(m.driver.ledger).toEqual(oracle.driver.ledger);
       expect(snapshot(m.stage.sim)).toEqual(snapshot(oracle.sim));
     });
 
     it('checkpoints warmed at another width are not used: the seek stays exact (7l.7 negative)', async () => {
-      const m = await warmed();
+      const m = await warmed(show4(), CP4);
       await runUntilWarm(m);
       m.renderer.width = 1281;
-      m.stage.seek(2500);
+      m.stage.seek(500);
       liveSteps = 0;
       for (let i = 0; i < 400 && m.stage.seeking(); i++) m.renderer.frame(16);
-      expect(liveSteps).toBe(2500); // re-ran from 0: nothing at width 1280 was trusted
-      expect(snapshot(m.stage.sim)).toEqual(snapshot(straight(m.show, 2500, 1281).sim));
+      expect(liveSteps).toBe(500); // re-ran from 0: nothing at width 1280 was trusted
+      expect(snapshot(m.stage.sim)).toEqual(snapshot(straight(m.show, 500, 1281).sim));
       // And warm-up starts again for the new width.
       m.renderer.frame(16);
       await m.fixture.whenStable();
@@ -661,17 +677,18 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     });
 
     it('a scrub before warm-up finishes lands exactly, and warm-up then finishes', async () => {
-      const m = await warmed();
-      m.renderer.frame(16, 4); // part way
-      m.stage.seek(3333);
+      const m = await warmed(show4(), CP4);
+      m.renderer.frame(16, 2); // part way
+      expect(m.stage.warmUpState()).toBe('running');
+      m.stage.seek(777);
       for (let i = 0; i < 400 && m.stage.seeking(); i++) m.renderer.frame(16);
-      expect(snapshot(m.stage.sim)).toEqual(snapshot(straight(m.show, 3333).sim));
+      expect(snapshot(m.stage.sim)).toEqual(snapshot(straight(m.show, 777).sim));
       await runUntilWarm(m);
       expect(m.stage.warmUpState()).toBe('finished');
     });
 
     it('an edit restarts warm-up from the edit point, and a seek past it is the edited show exactly (7l.8)', async () => {
-      const m = await warmed();
+      const m = await warmed(show4(), CP4);
       await runUntilWarm(m);
       const late = [...m.show.cues].sort((a, b) => b.t - a.t)[0];
       const edited: ShowDocument = {
@@ -689,8 +706,8 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       for (let i = 0; i < 5000 && m.stage.warmUpState() !== 'finished'; i++) m.renderer.frame(16);
       // It resumed near the edit, not from 0: far fewer shadow steps than the edit's own step.
       const editStep = Math.round(late.t * 120);
-      expect(otherSteps).toBeLessThan(next.endBoundStep - editStep + 2400);
-      const target = editStep + 700;
+      expect(otherSteps).toBeLessThan(next.endBoundStep - editStep + 240);
+      const target = editStep + 70;
       m.stage.seek(target);
       for (let i = 0; i < 400 && m.stage.seeking(); i++) m.renderer.frame(16);
       expect(next.ledger).toEqual(straight(edited, target).driver.ledger);
@@ -699,13 +716,14 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
 
     it('keeps checkpoint memory under the configured cap (7l.8)', async () => {
       config.setPlayback({ ...DEFAULT_PLAYBACK, checkpointMemoryMiB: 8 });
-      const driver = new TimelineDriver(show30(), { checkpointBytes: 1 });
+      const driver = new TimelineDriver(show4(), { ...CP4, checkpointBytes: 1 });
       const m = await mount((h) => {
         h.driver.set(driver);
         h.warmUp.set(true);
         h.paused.set(true);
       });
       for (let i = 0; i < 5000 && m.stage.warmUpState() !== 'finished'; i++) m.renderer.frame(16);
+      expect(m.stage.warmUpState()).toBe('finished');
       expect(driver.checkpointSteps.length).toBeLessThanOrEqual(1);
     });
 

@@ -1,0 +1,45 @@
+{
+  "header": {
+    "generated": "tools/fingerprints/record.mjs from engine/loop/golden/show-fingerprint.ts. Do not edit by hand.",
+    "rule": "Updated only by reviewed change (schema.md §8.1). Every re-record appends its --reason here; the diff is the review.",
+    "history": [
+      {
+        "date": "2026-11-16",
+        "reason": "First record (testing interlude T2). The Phase 7 engine as shipped; no oracle exists for shows, so these pin the port, and self-consistency stays with the run-vs-run and property specs.",
+        "node": "v26.5.0",
+        "changed": ["first record"]
+      }
+    ]
+  },
+  "case": {
+    "name": "same-step-cues",
+    "tier": "regular",
+    "input": {
+      "fixture": "same-step-cues"
+    },
+    "run": {
+      "width": 1280,
+      "capacity": 40000,
+      "starBudget": 1
+    }
+  },
+  "inputDigest": 2859417654,
+  "fingerprint": {
+    "endStep": 634,
+    "lastFireStep": 120,
+    "launches": 2,
+    "ledgerHash": 1829656049,
+    "traceDigest": 542188996,
+    "populationDigest": 935577756,
+    "peakN": 370,
+    "peakStep": 419,
+    "samples": [
+      {
+        "step": 600,
+        "n": 166,
+        "shells": 0,
+        "kinds": [166, 0, 0, 0, 0, 0]
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "_comment": "Flake quarantine (Skyler, 2026-11-16; testing-strategy.md §4.4). A test that fails and then passes on an unchanged tree is logged here: { test, file, owner, date, cause, seen }. There are no automatic retries anywhere. Quarantined tests keep running in the daily tier, and each one is fixed or deleted within one phase. Editing this file is a reviewed change.",
+  "tests": []
+}

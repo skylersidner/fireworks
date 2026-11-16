@@ -24,9 +24,14 @@ import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { DRAFT_KEY, editableFrom, serializeDraft } from '../../shared/designer-draft';
 import { DesignerPageComponent } from './designer-page';
-import { ShellDesignerStore } from './shell-designer.store';
+import { DRAFT_DEBOUNCE_MS, ShellDesignerStore } from './shell-designer.store';
 
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve));
+/**
+ * `setTimeout` is faked for every test here (testing strategy §3 item 9), so waits cost no real
+ * time: `wait(ms)` advances the fake clock, running microtasks between timers.
+ */
+const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms).then(() => undefined);
+const flush = () => wait(0);
 
 const OWNED: CreationSource = {
   shareCode: CODE_A,
@@ -48,6 +53,7 @@ describe('Designer Save and Share', () => {
   let toasts: NotificationService;
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     fakes = new FakeStageRenderers();
     storage = new MemoryStorage();
@@ -75,6 +81,7 @@ describe('Designer Save and Share', () => {
     } finally {
       vi.restoreAllMocks();
       TestBed.resetTestingModule();
+      vi.useRealTimers();
     }
   });
 
@@ -114,8 +121,9 @@ describe('Designer Save and Share', () => {
       await fixture.whenStable();
     };
     const draft = () => JSON.parse(storage.getItem(DRAFT_KEY) ?? 'null');
+    // Exactly the draft debounce: one millisecond less fails the draft checks (the NEG).
     const settleDraft = async () => {
-      await new Promise((r) => setTimeout(r, 350));
+      await wait(DRAFT_DEBOUNCE_MS);
       await stable();
     };
     const editName = async (value: string) => {
@@ -534,13 +542,13 @@ describe('Designer Save and Share', () => {
       '%s: inline copy, no toast, draft byte-identical, Save usable',
       async (_n, status, body, headers, text, actions) => {
         const { byTest, stable, el } = await mount(ME_TEST_WINDOW, OWNED);
-        await new Promise((r) => setTimeout(r, 350));
+        await wait(DRAFT_DEBOUNCE_MS);
         const before = storage.getItem(DRAFT_KEY);
         byTest('save-update')!.click();
         await stable();
         fail(`/api/creations/${CODE_A}`, status, body, headers);
         await stable();
-        await new Promise((r) => setTimeout(r, 350));
+        await wait(DRAFT_DEBOUNCE_MS);
         expect(byTest('save-status-text')?.textContent?.trim()).toBe(text);
         expect(
           [...el.querySelectorAll('[data-testid^="save-status-"]')]

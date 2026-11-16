@@ -1,0 +1,45 @@
+{
+  "header": {
+    "generated": "tools/fingerprints/record.mjs from engine/loop/golden/show-fingerprint.ts. Do not edit by hand.",
+    "rule": "Updated only by reviewed change (schema.md §8.1). Every re-record appends its --reason here; the diff is the review.",
+    "history": [
+      {
+        "date": "2026-11-16",
+        "reason": "First record (testing interlude T2). The Phase 7 engine as shipped; no oracle exists for shows, so these pin the port, and self-consistency stays with the run-vs-run and property specs.",
+        "node": "v26.5.0",
+        "changed": ["first record"]
+      }
+    ]
+  },
+  "case": {
+    "name": "seed-extremes",
+    "tier": "regular",
+    "input": {
+      "fixture": "seed-extremes"
+    },
+    "run": {
+      "width": 1280,
+      "capacity": 40000,
+      "starBudget": 1
+    }
+  },
+  "inputDigest": 1270085749,
+  "fingerprint": {
+    "endStep": 874,
+    "lastFireStep": 360,
+    "launches": 3,
+    "ledgerHash": 2122223819,
+    "traceDigest": 3850182823,
+    "populationDigest": 4221182067,
+    "peakN": 376,
+    "peakStep": 539,
+    "samples": [
+      {
+        "step": 600,
+        "n": 268,
+        "shells": 1,
+        "kinds": [202, 65, 0, 0, 0, 1]
+      }
+    ]
+  }
+}

@@ -12,3 +12,7 @@ src/api/Fireworks.Api/wwwroot/
 # only per-machine Claude Code settings are ignored.
 .DS_Store
 .claude/settings.local.json
+
+# Test-tier output (tools/test/run.mjs): per-step logs, summary.json, the daily results that
+# daily-status.mjs reads for the 24-hour gate rule, browser-gate JSON and mutant rigs. Local only.
+test-results/

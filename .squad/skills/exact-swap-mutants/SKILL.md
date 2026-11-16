@@ -28,3 +28,10 @@ Script template: `scratchpad/toad-p5/mut.py` (MUTANTS dict of `(file, old, new, 
 - **A cap needs its empty and boundary inputs.** D1's prefix cap (`?? 0`) had no spec for an empty receiver; `?? Infinity` survived until one was added.
 - **"Overwrite" promises need a pre-set value.** A middleware that overwrites headers is indistinguishable from `TryAdd` until something writes a weaker value first. Use a minimal app whose endpoint pre-sets each header.
 - **Drop a test that can't fail on its mutant.** If two attempts at a test both pass under the mutant, read the callee for equivalence (EF `CanConnectAsync` swallows provider exceptions, so the readiness probe's `catch` is unreachable) and record it as equivalent, not tested.
+
+## Added in the interlude tooling batch (2026-11-15)
+- **Use `tools/mutants/run.mjs`, not a scratchpad script.** Sets live in `tools/mutants/sets/<name>.mjs` as `{ kind: 'web' | 'api', mutants: [{ id, name, file, old, new | append, specs | filter }] }`.
+- It works on a private copy of the repo (`test-results/mutants/…/repo`, with schema and `src/api` included, so specs that read `../../../` still resolve). So the shared tree is never mutated, and restoring from the copy's own original is safe *there*.
+- It runs a baseline first, then the verdicts (TIMEOUT is separate from KILLED). For web it reads vitest's JSON reporter (`failureMessages` matching "Test timed out"); for API it reads `.trx` (`outcome="Timeout"` or a timeout message). Don't count failures from the console text.
+- `--check <set>` lists STALE mutants (old text not exactly once) without running anything. Run it before any mutant proof, and refresh stale ones from the current code.
+- TRX trap: passed results are self-closing `<UnitTestResult … />`. Match the self-closing form first. Otherwise a lazy `<UnitTestResult …>…</UnitTestResult>` match swallows every passed row up to the next failure, and the counts come out wrong (my first parse said 23 tests where there were 78).
