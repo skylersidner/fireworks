@@ -51,3 +51,10 @@
 - **Plan and index differ.** The 2026-11-15 rulings (seek budget 25 ms, `ClientPlayback` in appsettings, ranges as built, Boo's tightening declined) are in plan §Phase 6 but are not index rows in `decisions/README.md` §5. Flagged in the session log; promotion is Skyler's call.
 - **Supersessions are marked in the records, not the index:** Luigi's point 13 (partial; 8 ms is now 25 ms) and two bullets in `mario-phase6-gate.md`.
 - **Folding:** Boo, Bowser, Luigi and Toad were over 12 KB and are folded. Yoshi is checked against the same rule.
+
+### 2026-11-15 — Phase 7 logging (Scribe)
+
+- **Batch:** 14 orchestration entries (one per agent per batch; a batch's name is its record's UTC write time, since several agents ran two batches), one session log, 14 supersession marks in place, 8 cross-agent notes and 7 history folds.
+- **Index:** not edited. Session log flags: the cross-browser row (narrowed by the Chromium-only amendment), the Show Builder seek row (basis stale after the cold-seek ruling), the Phase 7 scope row (overtaken), the throughput rule (not indexed), and the "public" wording on the share-code GET.
+- **Pattern:** a supersession mark goes on the exact anchor sentence, and the script asserts one match per anchor. A fold is applied by heading prefix with one match asserted, and the size is checked after each file. Bowser and Luigi finished 50 to 60 bytes under the 12 KB limit, so the next append on either needs a fold.
+- **Commits:** none. Commits were not authorized.

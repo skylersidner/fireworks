@@ -83,7 +83,7 @@ public sealed class FormBodyGateTests
     /// <summary>
     /// An unread body over the endpoint's limit can't be drained, so the connection ends with the
     /// response; the response says so. Mutant: drop the <c>Connection: close</c> branch in
-    /// <c>ApiResponseHeaders</c>; this fails. The enumerated gate test may fail too, timing
+    /// <c>ResponseHeaders</c>; this fails. The enumerated gate test may fail too, timing
     /// permitting: its next request on the pooled connection gets "response ended prematurely"
     /// (failed 6 of 6 runs in isolation, passed in the full suite).
     /// </summary>

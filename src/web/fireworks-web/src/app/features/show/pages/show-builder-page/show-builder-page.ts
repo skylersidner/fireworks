@@ -26,15 +26,23 @@ import {
   SHOW_LIMITS,
   SKY_LIMITS,
 } from '../../../../../engine/model/limits';
+import { CUE_FIELD_LABELS } from '../../../../../engine/model/labels';
 import { PRESETS } from '../../../../../engine/model/presets';
 import {
+  embeddedShell,
   STEPS_PER_SECOND,
   type EmbeddedShell,
   type ShowCue,
 } from '../../../../../engine/model/show';
 import { GROUND, WORLD_H } from '../../../../../engine/sim/constants';
 import { ApiStatusService } from '../../../../core/api-status';
-import { BROWSER_STORAGE, COARSE_POINTER_QUERY, mediaQuery } from '../../../../core/browser';
+import {
+  BROWSER_STORAGE,
+  COARSE_POINTER_QUERY,
+  isApplePlatform,
+  isSaveShortcut,
+  mediaQuery,
+} from '../../../../core/browser';
 import type { SaveChoice } from '../../../../core/creation-save';
 import type { CreationError } from '../../../../core/creations';
 import type { CreationListItem } from '../../../../core/models';
@@ -48,13 +56,16 @@ import {
 } from '../../../../shared/fireworks-stage/fireworks-stage';
 import { RangeRowComponent } from '../../../../shared/range-row';
 import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
-import { ApiBannerComponent } from '../../../designer/shared/api-banner/api-banner';
+import { ApiBannerComponent, BannerFocus } from '../../../../shared/api-banner/api-banner';
 import { readDraft } from '../../../designer/shared/designer-draft';
-import { percent, percentText, plain, windText } from '../../../designer/shared/formats';
-import { HudComponent } from '../../../designer/shared/hud/hud';
-import { SaveBarComponent } from '../../../designer/shared/save-bar/save-bar';
-import { shareBlockedNote, type SaveStatusAction } from '../../../designer/shared/save-copy';
-import { SaveStatusComponent } from '../../../designer/shared/save-status/save-status';
+import { percent, percentText, plain, windText } from '../../../../shared/formats';
+import { HudComponent } from '../../../../shared/hud/hud';
+import { SaveBarComponent } from '../../../../shared/save-bar/save-bar';
+import { shareBlockedNote, type SaveStatusAction } from '../../../../shared/save-copy';
+import { SaveStatusComponent } from '../../../../shared/save-status/save-status';
+import { saveShortcut } from '../../../../shared/save-shortcut';
+import { liveNote, type LiveNoteEntry } from '../../../../shared/announcer';
+import { JSON_NOTE_COPIED, copyBlockedNote } from '../../../designer/shared/designer-copy';
 import {
   BUILDER_API_BANNER,
   BUILDER_NOTICE_OFF,
@@ -68,6 +79,9 @@ import {
   CONFIRM_REMOVE_KEEP,
   CUE_CAP,
   DURATION_NOTE,
+  DURATION_RANGE_NOTE,
+  DROP_LABEL_CUE_CAP,
+  DROP_LABEL_SHELL_CAP,
   HINT_COARSE,
   HINT_FINE,
   INSPECTOR_EMPTY,
@@ -77,6 +91,8 @@ import {
   NEW_SEED_TITLE,
   NOTICE_HOLDS_PLAY,
   PLAY_HELD_TITLE,
+  SHELL_CAP,
+  SKIP_TO_TRANSPORT,
   POSITION_NOTE,
   SHOW_ENDED,
   SKY_NOTE,
@@ -103,7 +119,7 @@ import {
   spokenClock,
   spokenTime,
 } from '../../shared/show-copy';
-import type { ActiveShell } from '../../shared/show-draft';
+import type { ActiveShell, TimelineView } from '../../shared/show-draft';
 import {
   cuesUsing,
   embeddable,
@@ -113,11 +129,21 @@ import {
   shellOptionLabels,
 } from '../../shared/show-edit';
 import { ShowWorkingCopyHandoff } from '../../shared/show-working-copy-handoff';
+import {
+  SHOW_JSON_CONFIRM_ACTION,
+  SHOW_JSON_CONFIRM_TITLE,
+  SHOW_JSON_NOTE_DEFAULT,
+  SHOW_JSON_NOTE_EDITED,
+  parseShowJson,
+  showJsonConfirmBody,
+  showJsonText,
+} from '../../shared/show-json';
+import { ScrubOverviewComponent } from '../../shared/timeline/scrub-overview';
 import { ShowTimelineComponent, type ZoomCommand } from '../../shared/timeline/timeline';
 import { viewRangeEnd } from '../../shared/timeline/timeline-layout';
 import { ShowBuilderStore } from './show-builder.store';
 import { ShowLibraryFlow } from './show-library';
-import { ShowSaveFlow } from './show-save';
+import { ShowSaveFlow, saveDocumentOf } from './show-save';
 
 export const BUILDER_TITLE = `Show Builder · ${SITE_TITLE}`;
 
@@ -158,6 +184,7 @@ interface LibraryItem {
     RouterLink,
     SaveBarComponent,
     SaveStatusComponent,
+    ScrubOverviewComponent,
     ShowTimelineComponent,
     TestModeBannerComponent,
   ],
@@ -194,6 +221,10 @@ export class ShowBuilderPageComponent {
   protected readonly percent = percent;
   protected readonly percentText = percentText;
   protected readonly fixed2 = (v: number) => v.toFixed(2);
+  /** Inspector row labels, from labels.ts with every other row label (phase-7.md §9.4). */
+  protected readonly cueLabels = CUE_FIELD_LABELS;
+  protected readonly skipText = SKIP_TO_TRANSPORT;
+  protected readonly shellCapText = SHELL_CAP;
   protected readonly copy = {
     subtitle: BUILDER_SUBTITLE,
     skyNote: SKY_NOTE,
@@ -228,8 +259,9 @@ export class ShowBuilderPageComponent {
   protected readonly stats = signal<StageStats | null>(null);
   protected readonly catchingUpText = signal<string | null>(null);
   protected readonly stageSize = signal({ w: 0, h: 0 });
-  protected readonly durationNote = signal<string | null>(null);
-  protected readonly launchNote = signal<string | null>(null);
+  /** Rejected-entry notes; visible live regions that re-announce a repeat (phase-7.md §10 B4, B7). */
+  protected readonly durationNote = liveNote();
+  protected readonly launchNote = liveNote();
   protected readonly cueListOpen = signal(false);
   protected readonly markerDrag = signal<{ x: number; bh: number | null } | null>(null);
   /** Paused playhead time, refreshed when paused and on seek (not per frame). */
@@ -246,6 +278,11 @@ export class ShowBuilderPageComponent {
       : `about ${formatClock(this.store.end())}`,
   );
 
+  /** The selected cue's embedded shell (an own key only, Boo F3), or null. */
+  protected readonly selectedShell = computed(() => {
+    const cue = this.store.selectedCue();
+    return cue ? (embeddedShell(this.store.show(), cue.shell) ?? null) : null;
+  });
   protected readonly selectedIndex = computed(() => {
     const id = this.store.selectedCueId();
     return id === null ? -1 : this.store.ordered().findIndex((c) => c.id === id);
@@ -279,14 +316,15 @@ export class ShowBuilderPageComponent {
     () => {
       const show = this.store.show();
       return Object.keys(show.shells).map((key) => {
+        const shell = embeddedShell(show, key)!;
         const used = cuesUsing(show, key);
         return {
           key,
           used,
           ref: { kind: 'embedded', key },
-          name: show.shells[key].name,
+          name: shell.name,
           meta: used === 0 ? 'Unused' : cueCount(used),
-          swatches: swatches(show.shells[key]),
+          swatches: swatches(shell),
           testId: `lib-embedded-${key}`,
         };
       });
@@ -319,9 +357,7 @@ export class ShowBuilderPageComponent {
       case 'designer':
         return this.designerShell()?.name ?? '';
       case 'embedded':
-        return Object.hasOwn(this.store.show().shells, ref.key)
-          ? this.store.show().shells[ref.key].name
-          : '';
+        return embeddedShell(this.store.show(), ref.key)?.name ?? '';
       case 'mine':
         return ref.name;
     }
@@ -351,6 +387,15 @@ export class ShowBuilderPageComponent {
         tone: 'primary' as const,
       };
     }
+    if (pending.kind === 'json') {
+      return {
+        title: SHOW_JSON_CONFIRM_TITLE,
+        body: showJsonConfirmBody(show.name),
+        confirm: SHOW_JSON_CONFIRM_ACTION,
+        cancel: CONFIRM_KEEP,
+        tone: 'primary' as const,
+      };
+    }
     if (pending.kind === 'new') {
       return {
         title: CONFIRM_NEW_TITLE,
@@ -361,7 +406,7 @@ export class ShowBuilderPageComponent {
       };
     }
     return {
-      title: confirmRemoveShellTitle(show.shells[pending.key]?.name ?? ''),
+      title: confirmRemoveShellTitle(embeddedShell(show, pending.key)?.name ?? ''),
       body: confirmRemoveShellBody(cuesUsing(show, pending.key)),
       confirm: CONFIRM_REMOVE_ACTION,
       cancel: CONFIRM_REMOVE_KEEP,
@@ -377,6 +422,51 @@ export class ShowBuilderPageComponent {
     if (f.failure === 'newer') return mineNewerNote(f.name);
     return mineServerNote(f.name);
   });
+
+  // ---- Show JSON (phase-7.md §9) -------------------------------------------------------------
+
+  /** The disclosure is closed by default; its text exists only while it's open. */
+  protected readonly jsonOpen = signal(false);
+  private readonly jsonEdits = signal<string | null>(null);
+  private readonly jsonNoteState = signal<{
+    text: string;
+    seq: number;
+    json: string;
+    edits: string | null;
+  } | null>(null);
+  private jsonNoteSeq = 0;
+  /** The save document as text. Read only inside the open disclosure, so it's computed only then. */
+  protected readonly jsonText = computed(() =>
+    showJsonText(saveDocumentOf({ show: this.store.show() })),
+  );
+  protected readonly jsonValue = computed(() => this.jsonEdits() ?? this.jsonText());
+  protected readonly jsonHasEdits = computed(() => {
+    const edits = this.jsonEdits();
+    return edits !== null && edits !== this.jsonText();
+  });
+  /** A set note holds until the next edit, Copy or Apply; else the edited or default note. */
+  protected readonly jsonNote = computed<LiveNoteEntry>(() => {
+    const note = this.jsonNoteState();
+    if (note && note.json === this.jsonText() && note.edits === this.jsonEdits()) {
+      return { text: note.text, seq: note.seq };
+    }
+    return this.jsonHasEdits()
+      ? { text: SHOW_JSON_NOTE_EDITED, seq: -2 }
+      : { text: SHOW_JSON_NOTE_DEFAULT, seq: -1 };
+  });
+
+  // ---- Library drag (phase-7.md §7.1) ---------------------------------------------------------
+
+  /** The drag ghost chip, or null when no library drag is in progress. */
+  protected readonly ghost = signal<{
+    x: number;
+    y: number;
+    name: string;
+    swatches: readonly { background: string; glow: string }[];
+  } | null>(null);
+  private endLibDrag: (() => void) | null = null;
+  /** Where focus goes once a `Remove…` confirmation removes its row (K4). */
+  private removeFocusTarget: string | null = null;
 
   private readonly mineCache = new Map<string, EmbeddedShell>();
   private mineRequest: Subscription | null = null;
@@ -413,8 +503,15 @@ export class ShowBuilderPageComponent {
     }
   };
 
+  /** Focus inside the API banner goes to the h1 when it unmounts (phase-7.md §10). */
+  protected readonly bannerFocus = new BannerFocus(() => this.byTest('panel-heading'));
+
   constructor() {
     inject(Title).setTitle(BUILDER_TITLE);
+    effect(() => {
+      if (this.showApiBanner()) return;
+      afterNextRender(() => this.bannerFocus.left(), { injector: this.injector });
+    });
     const copy = inject(ShowWorkingCopyHandoff).take();
     if (copy) {
       if (this.store.openWorkingCopy(copy)) this.focusHeading();
@@ -432,7 +529,10 @@ export class ShowBuilderPageComponent {
       this.store.driver();
       untracked(() => this.refreshPausedAt());
     });
-    inject(DestroyRef).onDestroy(() => this.mineRequest?.unsubscribe());
+    inject(DestroyRef).onDestroy(() => {
+      this.mineRequest?.unsubscribe();
+      this.endLibDrag?.();
+    });
     // The notice takes focus from body, to its first button (§14.1, §19.2 B3; player-notice.ts).
     effect(() => {
       if (!this.store.flashNoticeVisible()) return;
@@ -478,7 +578,14 @@ export class ShowBuilderPageComponent {
   }
 
   protected backToStart(): void {
-    this.seekTo(0);
+    this.seekTo(0, true);
+  }
+
+  /** K8 (phase-7.md §3.2): focuses Play (Back to start while the notice holds Play); no scroll. */
+  protected skipToTransport(event: Event): void {
+    event.preventDefault();
+    const target = this.store.flashNoticeVisible() ? 'back-to-start' : 'play';
+    this.byTest(target)?.focus({ preventScroll: true });
   }
 
   protected zoom(command: ZoomCommand, around: number | null = null): void {
@@ -498,15 +605,21 @@ export class ShowBuilderPageComponent {
     }
   }
 
-  protected onViewChange(view: { pxPerSecond: number | null; scroll: number }): void {
+  protected onViewChange(view: TimelineView): void {
     this.store.setView(view);
+  }
+
+  /** A pinch, pan, wheel scroll, trackpad zoom or badge zoom: stops Follow; never an Undo step (§6, §7.2). */
+  protected onManualView(view: TimelineView): void {
+    this.following = false;
+    this.store.setView({ pxPerSecond: view.pxPerSecond, scroll: view.scroll });
   }
 
   protected onScrubInput(event: Event): void {
     this.scrubbing = true;
     const t = Number((event.target as HTMLInputElement).value);
     this.timeline()?.setPlayhead(t);
-    this.seekTo(t);
+    this.seekTo(t, true);
   }
 
   protected onScrubEnd(): void {
@@ -514,10 +627,14 @@ export class ShowBuilderPageComponent {
   }
 
   /** Seeks the stage (spread over frames; "Catching up…" past the configured delay, default 300 ms). Sets no flag, no draft. */
-  protected seekTo(seconds: number): void {
+  protected seekTo(seconds: number, reveal = false): void {
     const t = Math.max(0, Math.min(seconds, this.viewEnd()));
     this.following = false;
     this.pausedAt.set(t);
+    // The seek-scroll rule (phase-7.md §7.3): a scrub-bar seek or Back to start that lands outside
+    // the lane's window scrolls it there. Ruler and lane seeks are always inside the window.
+    const view = reveal ? this.timeline()?.revealView(t) : null;
+    if (view) this.store.setView(view);
     if (this.store.flashNoticeVisible()) return;
     this.stage()?.seek(Math.round(t * STEPS_PER_SECOND));
   }
@@ -576,6 +693,11 @@ export class ShowBuilderPageComponent {
     return true;
   }
 
+  /** B6: the active item's `aria-describedby` → the 32-shell note under it, while blocked. */
+  protected capNoteFor(ref: ActiveShell): string | null {
+    return this.activeShellBlocked() && this.isActive(ref) ? 'lib-cap-note' : null;
+  }
+
   protected addAtPlayhead(): void {
     if (this.atCueCap()) {
       this.store.announcement.set(CUE_CAP);
@@ -589,8 +711,9 @@ export class ShowBuilderPageComponent {
     this.addCue(this.currentTime(), click.x);
   }
 
-  private addCue(at: number, x: number): void {
-    const t = roundUpTenth(at);
+  /** `snap` rounds up to a tenth (the playhead and sky adds); a library drop is already snapped. */
+  private addCue(at: number, x: number, snap = true): void {
+    const t = snap ? roundUpTenth(at) : at;
     const ref = this.store.activeShell();
     if (ref.kind === 'mine') {
       const cached = this.mineCache.get(ref.shareCode);
@@ -635,7 +758,7 @@ export class ShowBuilderPageComponent {
       }
       case 'embedded': {
         const show = this.store.show();
-        return Object.hasOwn(show.shells, ref.key) ? show.shells[ref.key] : null;
+        return embeddedShell(show, ref.key) ?? null;
       }
       default:
         return null;
@@ -663,7 +786,7 @@ export class ShowBuilderPageComponent {
       selectedAnnouncement(
         i + 1,
         order.length,
-        this.store.show().shells[cue.shell]?.name ?? '',
+        embeddedShell(this.store.show(), cue.shell)?.name ?? '',
         cue.t,
         times?.burst ?? cue.t,
         cue.x,
@@ -708,6 +831,19 @@ export class ShowBuilderPageComponent {
     this.byTest<HTMLInputElement>('inspector-t')?.focus();
   }
 
+  /**
+   * Edit cue (narrow dock, phase-7.md §5.4): scrolls the panel so the Cue section's heading is at
+   * its top and focuses Launch time, as Enter on the timeline does.
+   */
+  protected editCue(): void {
+    const panel = this.byTest('builder-panel');
+    const section = this.byTest('inspector');
+    if (panel && section) {
+      panel.scrollTop += section.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+    }
+    this.byTest<HTMLInputElement>('inspector-t')?.focus({ preventScroll: true });
+  }
+
   protected setCueShell(key: string): void {
     const id = this.store.selectedCueId();
     if (id && Object.hasOwn(this.store.show().shells, key))
@@ -739,7 +875,8 @@ export class ShowBuilderPageComponent {
   protected setOwnHeight(on: boolean): void {
     const cue = this.store.selectedCue();
     if (!cue) return;
-    const shell = this.store.show().shells[cue.shell];
+    const shell = embeddedShell(this.store.show(), cue.shell);
+    if (!shell) return;
     this.store.updateCue(cue.id, { burstHeight: on ? shell.burstHeight : undefined });
   }
 
@@ -790,20 +927,23 @@ export class ShowBuilderPageComponent {
     this.store.setName(value);
   }
 
+  /**
+   * Duration commits on change (§9.3). B7 (phase-7.md §10): every rejected entry leaves a note
+   * until the next valid one: below the last launch (with cues), the blocked note; otherwise a
+   * blank, non-number, below-1 or above-600 entry, the range note.
+   */
   protected commitDuration(input: HTMLInputElement): void {
     const show = this.store.show();
+    const blank = input.value.trim() === '';
     const v = Number(input.value);
-    if (
-      input.value.trim() !== '' &&
-      Number.isFinite(v) &&
-      v >= minDuration(show) &&
-      v <= 600 &&
-      v >= 1
-    ) {
+    const { min, max } = this.durationRange;
+    if (!blank && Number.isFinite(v) && v >= minDuration(show) && v >= min && v <= max) {
       this.store.setDuration(v);
       this.durationNote.set(null);
-    } else if (Number.isFinite(v) && v < minDuration(show) && show.cues.length) {
+    } else if (!blank && Number.isFinite(v) && show.cues.length && v < lastLaunch(show)) {
       this.durationNote.set(durationBlockedNote(lastLaunch(show)));
+    } else {
+      this.durationNote.set(DURATION_RANGE_NOTE);
     }
     input.value = String(this.store.show().duration);
     this.store.endCoalesce();
@@ -813,8 +953,180 @@ export class ShowBuilderPageComponent {
     if (this.store.newShow()) this.afterReplace();
   }
 
+  /**
+   * K4 (phase-7.md §3.2): the row goes, so focus goes to the next row's shell button in In this
+   * show, else the previous row's, else the first preset. After a `Remove…` confirmation too.
+   */
   protected removeShell(key: string): void {
+    const keys = this.embeddedItems().map((i) => i.key);
+    const at = keys.indexOf(key);
+    const neighbour = keys[at + 1] ?? keys[at - 1];
+    const target = neighbour !== undefined ? `lib-embedded-${neighbour}` : 'lib-preset-0';
     this.store.removeShell(key);
+    if (this.store.pending()?.kind === 'remove-shell') {
+      this.removeFocusTarget = target;
+      return;
+    }
+    this.focusAfterRender(target);
+  }
+
+  // ---- Show JSON ------------------------------------------------------------------------------
+
+  protected onJsonToggle(open: boolean): void {
+    this.jsonOpen.set(open);
+    if (!open) {
+      this.jsonEdits.set(null);
+      this.jsonNoteState.set(null);
+    }
+  }
+
+  protected onJsonEdit(text: string): void {
+    this.jsonEdits.set(text);
+  }
+
+  /** Revert removes itself, so focus goes to the textarea (as the designer's, K2). */
+  protected revertJson(): void {
+    this.jsonEdits.set(null);
+    this.byTest<HTMLTextAreaElement>('show-json-text')?.focus();
+  }
+
+  /**
+   * Copy copies the textarea's text, unapplied edits included, as the designer's Shell JSON does
+   * (phase-7.md §9.1, C2 ruling). With no edits that's the document, so a round trip deep-equals
+   * the source.
+   */
+  protected async copyJson(): Promise<void> {
+    const text = this.jsonValue();
+    try {
+      if (!navigator.clipboard) throw new Error('no clipboard');
+      await navigator.clipboard.writeText(text);
+      this.setJsonNote(JSON_NOTE_COPIED);
+    } catch {
+      const area = this.byTest<HTMLTextAreaElement>('show-json-text');
+      area?.focus();
+      area?.select();
+      this.setJsonNote(copyBlockedNote(isApplePlatform()));
+    }
+  }
+
+  /**
+   * Apply (phase-7.md §9.1): parse and `openShow` (parseShowJson), then replace the show as one
+   * Undo step, asking first over a dirty show. Focus stays on Apply; the note says what happened.
+   */
+  protected applyJson(): void {
+    const parsed = parseShowJson(this.jsonValue());
+    if (!parsed.ok) {
+      this.setJsonNote(parsed.note);
+      return;
+    }
+    if (this.store.applyJson(parsed.show, parsed.note)) this.afterJsonApplied(parsed.note);
+  }
+
+  private afterJsonApplied(note: string): void {
+    this.jsonEdits.set(null);
+    this.playing.set(false);
+    this.stage()?.seek(0);
+    this.pausedAt.set(0);
+    this.setJsonNote(note);
+  }
+
+  private setJsonNote(text: string): void {
+    this.jsonNoteState.set({
+      text,
+      seq: ++this.jsonNoteSeq,
+      json: this.jsonText(),
+      edits: this.jsonEdits(),
+    });
+  }
+
+  // ---- Library drag ---------------------------------------------------------------------------
+
+  /**
+   * A fine-pointer drag from a Library item onto the timeline (phase-7.md §7.1). Under 4 px it's a
+   * click (the button's own handler). Touch never drags: there a drag in the panel is its scroll.
+   */
+  protected onLibDown(
+    event: PointerEvent,
+    ref: ActiveShell,
+    name: string,
+    itemSwatches: readonly { background: string; glow: string }[],
+  ): void {
+    if (event.pointerType === 'touch' || event.button !== 0) return;
+    this.endLibDrag?.();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    const timeline = () => this.timeline();
+    const move = (e: PointerEvent) => {
+      if (!dragging) {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) < 4) return;
+        dragging = true;
+      }
+      this.ghost.set({ x: e.clientX, y: e.clientY, name, swatches: itemSwatches });
+      const drop = timeline()?.dropAt(e.clientX, e.clientY, e.altKey) ?? null;
+      timeline()?.showDrop(drop ? { t: drop.t, label: this.dropLabel(ref, drop) } : null);
+    };
+    const finish = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('keydown', key, true);
+      this.endLibDrag = null;
+      this.ghost.set(null);
+      timeline()?.showDrop(null);
+    };
+    const up = (e: PointerEvent) => {
+      const wasDragging = dragging;
+      finish();
+      if (!wasDragging) return;
+      const drop = timeline()?.dropAt(e.clientX, e.clientY, e.altKey) ?? null;
+      if (drop) this.dropLibrary(ref, drop.t);
+    };
+    const cancel = () => finish();
+    // Escape cancels: nothing changes and nothing is announced.
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !dragging) return;
+      e.preventDefault();
+      e.stopPropagation();
+      finish();
+    };
+    this.endLibDrag = finish;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('keydown', key, true);
+  }
+
+  /** The drag label: the time, `· window end` at the clamp, or why a drop would be blocked. */
+  private dropLabel(ref: ActiveShell, drop: { t: number; atEnd: boolean }): string {
+    const block = this.dropBlock(ref);
+    if (block === 'cue-cap') return DROP_LABEL_CUE_CAP;
+    if (block === 'shell-cap') return DROP_LABEL_SHELL_CAP;
+    return drop.atEnd ? `${formatTime(drop.t)} \u00b7 window end` : formatTime(drop.t);
+  }
+
+  private dropBlock(ref: ActiveShell): 'cue-cap' | 'shell-cap' | null {
+    if (this.atCueCap()) return 'cue-cap';
+    if (ref.kind === 'embedded') return null;
+    const shell =
+      ref.kind === 'mine' ? (this.mineCache.get(ref.shareCode) ?? null) : this.localShell(ref);
+    return shell && this.store.addBlock(0, shell) === 'shell-cap' ? 'shell-cap' : null;
+  }
+
+  /**
+   * A drop: the item becomes active (also when blocked, so B6's note shows under it), then the
+   * same add as Add cue at the drop time, x 0.5, no burstHeight. The new cue is selected and focus
+   * moves to the timeline. Blocked: nothing is added and the full sentence is announced.
+   */
+  private dropLibrary(ref: ActiveShell, t: number): void {
+    this.selectLibrary(ref);
+    const block = this.dropBlock(ref);
+    if (block) {
+      this.store.announcement.set(this.store.blockText(block));
+      return;
+    }
+    this.addCue(t, 0.5, false);
+    afterNextRender(() => this.timeline()?.focus(), { injector: this.injector });
   }
 
   // ---- Stage marker (§8.2) -----------------------------------------------------------------
@@ -824,7 +1136,7 @@ export class ShowBuilderPageComponent {
     const cue = this.store.selectedCue();
     const { w, h } = this.stageSize();
     if (!cue || w <= 0 || h <= 0) return null;
-    const shell = this.store.show().shells[cue.shell];
+    const shell = embeddedShell(this.store.show(), cue.shell);
     if (!shell) return null;
     const drag = this.markerDrag();
     const x = drag?.x ?? cue.x;
@@ -903,11 +1215,40 @@ export class ShowBuilderPageComponent {
 
   /** Undo and Redo are aria-disabled, so a press with no history is ignored here (§19.2 B2). */
   protected undo(): void {
-    if (this.store.canUndo()) this.store.undo();
+    if (this.store.canUndo()) this.historyStep(false);
   }
 
   protected redo(): void {
-    if (this.store.canRedo()) this.store.redo();
+    if (this.store.canRedo()) this.historyStep(true);
+  }
+
+  /**
+   * B5 (phase-7.md §10, K3): after an undo or redo, if focus is left on body, a disabled control or
+   * a removed node, it moves in the next render: from the inspector or the toolbar to the timeline,
+   * from the save bar or anywhere else to the panel h1.
+   */
+  private historyStep(redo: boolean): void {
+    const before = document.activeElement;
+    const fromEditor =
+      before instanceof Element &&
+      before.closest('[data-testid="inspector"], [data-testid="toolbar"]') !== null;
+    const done = redo ? this.store.redo() : this.store.undo();
+    if (!done) return;
+    afterNextRender(
+      () => {
+        const active = document.activeElement;
+        const lost =
+          active === null ||
+          active === document.body ||
+          !active.isConnected ||
+          (active instanceof HTMLButtonElement && active.disabled) ||
+          (active instanceof HTMLInputElement && active.disabled);
+        if (!lost) return;
+        if (fromEditor) this.timeline()?.focus();
+        else this.byTest('panel-heading')?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   protected dismissNotice(turnOn: boolean): void {
@@ -917,13 +1258,62 @@ export class ShowBuilderPageComponent {
 
   protected confirmDialog(): void {
     const done = this.store.confirmPending();
-    if (done && done.kind !== 'remove-shell') this.afterReplace();
+    if (done?.kind === 'json') {
+      this.afterJsonApplied(done.note);
+      this.focusAfterRender('show-json-apply');
+    } else if (done?.kind === 'remove-shell') {
+      this.focusAfterRender(this.removeFocusTarget ?? 'lib-preset-0');
+      this.removeFocusTarget = null;
+      this.afterDialog();
+    } else if (done) this.afterReplace();
     else this.afterDialog();
   }
 
   protected cancelDialog(): void {
+    const kind = this.store.pending()?.kind;
     this.store.cancelPending();
+    this.removeFocusTarget = null;
+    // Focus returns to Apply on close (phase-7.md §9.3).
+    if (kind === 'json') this.focusAfterRender('show-json-apply');
     this.afterDialog();
+  }
+
+  /**
+   * K9 (phase-7.md §3.2): Try again stays rendered and busy while the list loads. On success focus
+   * goes to the first My shells item, else the `My shells` heading; on failure it stays on Try again.
+   */
+  protected retryMine(): void {
+    const button = this.byTest('mine-retry');
+    this.library.retry((ok) => {
+      if (ok) this.focusMineAfterLoad(button, 0);
+    });
+  }
+
+  /** K9: Show more → the first newly loaded item (or stays on Show more if it still renders). */
+  protected showMoreMine(): void {
+    const button = this.byTest('mine-more');
+    this.library.showMore((ok, firstNew) => {
+      if (ok) this.focusMineAfterLoad(button, firstNew);
+    });
+  }
+
+  /** Moves focus only if it's still on the pressed button (or dropped), never away from elsewhere. */
+  private focusMineAfterLoad(pressed: HTMLElement | null, index: number): void {
+    afterNextRender(
+      () => {
+        const active = document.activeElement;
+        if (active !== pressed && active !== null && active !== document.body) return;
+        const items = this.byTest('lib-mine')?.querySelectorAll<HTMLElement>('ul > li > button');
+        const target =
+          items?.[index] ?? (pressed?.isConnected ? pressed : null) ?? this.byTest('mine-heading');
+        target?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private focusAfterRender(testId: string): void {
+    afterNextRender(() => this.byTest(testId)?.focus(), { injector: this.injector });
   }
 
   private afterDialog(): void {
@@ -949,13 +1339,16 @@ export class ShowBuilderPageComponent {
   protected onKeydown(event: KeyboardEvent): void {
     const target = event.target;
     const el = target instanceof Element ? target : null;
+    if (isSaveShortcut(event)) {
+      this.onSaveShortcut(event, el);
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'z') {
       // In a form control, the control's own key (Peach N6).
       if (el?.closest(FORM_FIELDS)) return;
       if (this.store.pending()) return;
       event.preventDefault();
-      if (event.shiftKey) this.store.redo();
-      else this.store.undo();
+      this.historyStep(event.shiftKey);
       return;
     }
     if (event.code !== 'Space' && event.key !== ' ') return;
@@ -965,6 +1358,36 @@ export class ShowBuilderPageComponent {
     event.preventDefault();
     if (event.repeat) return;
     this.togglePlay();
+  }
+
+  /**
+   * Ctrl/⌘+S (phase-7.md §3.3, R1), only while the save bar shows. The field being typed in
+   * commits first, through its own blur/change commit and notes, so its value is in the save.
+   */
+  private onSaveShortcut(event: KeyboardEvent, el: Element | null): void {
+    if (!this.saveFlow.canWrite()) return;
+    if (!this.store.pending() && this.saveFlow.saving() === null) {
+      const id = el instanceof HTMLInputElement ? el.dataset['testid'] : undefined;
+      if (id === 'show-duration') this.commitDuration(el as HTMLInputElement);
+      else if (id === 'inspector-t') this.commitLaunch(el as HTMLInputElement);
+      else if (id === 'show-name') this.store.endCoalesce();
+    }
+    const outcome = saveShortcut({
+      canWrite: this.saveFlow.canWrite(),
+      dialogOpen: this.store.pending() !== null,
+      saving: this.saveFlow.saving() !== null,
+      saved: this.store.saved(),
+      cannotSave: this.saveFlow.cannotSave(),
+      choices: this.saveFlow.choices(),
+    });
+    if (outcome.kind === 'pass') return;
+    event.preventDefault();
+    if (outcome.kind === 'save') this.save(outcome.choice);
+    else if (outcome.kind === 'announce') this.store.announcement.set(outcome.text);
+    else if (outcome.kind === 'choose') {
+      this.byTest('save-update')?.focus();
+      this.store.announcement.set(outcome.text);
+    }
   }
 
   private byTest<T extends HTMLElement = HTMLElement>(id: string): T | null {
@@ -985,9 +1408,4 @@ function swatches(shell: Pick<EmbeddedShell, 'breaks'>): { background: string; g
       : '#fff';
     return { background: hex, glow: hex };
   });
-}
-
-function isApplePlatform(): boolean {
-  const nav = typeof navigator === 'undefined' ? null : navigator;
-  return /Mac|iPhone|iPad|iPod/.test(nav?.platform || nav?.userAgent || '');
 }

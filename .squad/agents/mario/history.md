@@ -58,3 +58,26 @@
 - **Your two open questions are ruled and built** (banner on `api/me`; ⌘Z on select, range and checkbox). The gate record's two bullets are marked in place.
 - **Seek changed after the gate:** time-budgeted, 25 ms by default, configurable through appsettings `ClientPlayback` (plan §Phase 6, 2026-11-15). "Seek accepted as measured" still stands; the numbers in the gate do not.
 - **Phase 7 carry:** caps (particle cap for shows, max duration) wait for measured numbers.
+
+### 2026-11-15 — Phase 7 planning
+- Expanded plan §Phase 7 in place (7.1 scope, 7.2 Done-when ×13, 7.3 batches A–E, 7.4 parallelism, 7.5 Q7.1–Q7.5). Convention: phase scope lives in the plan file; `docs/fireworks-app/{design,acceptance}/` are companions; there is no `plan/` folder. Record: `records/mario-phase7-planning.md`.
+- Seam facts found for the CSP review: `wwwroot/index.html` has Beasties' inline critical `<style>` and an inline `<script>` media swap; three built chunks contain `new Function` (Pixi). Static files short-circuit before routing (Program.cs step 9), so static headers need `StaticFileOptions`/middleware, not endpoint metadata. `/api` is `no-store` everywhere (`ApiResponseHeaders.cs`), which collides with an ETag on the share-code GET.
+- DPR today: `Math.min(dpr, 2)` in `pixi-renderer.ts:96`; the timeline canvas uses raw `devicePixelRatio` (`timeline.ts:467`). No `webglcontextlost` handling anywhere.
+- F11 reconciled: closed in code; marked my Phase 5 gate carry as superseded in place.
+- Two standing-decision collisions raised as questions, not decided: Railway deferral (Q7.1) and the fps bench vs auto `starBudget` (Q7.2, OQ10 too).
+
+### 2026-11-15 — Phase 7 phase-gate
+- Verdict PASS WITH NOTES, Chromium only; [R] DEFERRED. Record: `.squad/decisions/records/mario-phase7-gate.md`.
+- Counts: web 1640/68 files, gated dotnet 673/673 (plain 661 + 12 skipped), fixtures 176.
+- Node: the default shell node is v21. Prefix `PATH=~/.nvm/versions/node/v26.5.0/bin:$PATH` for ng and the Playwright scripts.
+- Image `fireworks:phase7-gate` on 127.0.0.1:18097 against `fireworks_gate7`. Header checks are in `scratchpad/gate7/headers.py` (phases `main|put|burst|dbdown`, Python `http.client` plus raw sockets for 400 and 431). Do `burst` (429) mid-run, then wait about 60 s. Do `dbdown` last: `DROP DATABASE … WITH (FORCE)` gives both the 503 and a forced 500 on the share GET.
+- Combine the takedown runbook's "back up first" dump with the 7d.2 rehearsal: dump, record numbers, take down, restore the pre-takedown dump, compare.
+- `gate-csp MODE=none` is slow (each stage page waits 30 s). `gate-csp` skips the dotted not-found pages; `scratchpad/gate7/notfound.mjs` covers them, plus the taken-down code.
+- Not-found copy: the same h1 everywhere; the surface differs only in the button (`Make your own` / `Go to the designer`).
+- Image `wwwroot` carries `.br`/`.gz` siblings from publish. They aren't negotiated today; flagged to Bowser.
+
+### 2026-11-15 — Phase 7 post-gate cross-agent update (Scribe)
+
+- **Your planning record is superseded in part** by Skyler's §7.5 answers: Batch D (the Railway window) is dropped; background warm-up is built; caps stay at 40k and 600 s. Marked in `mario-phase7-planning.md`.
+- **Your gate notes are routed.** Note 1 (precompressed `.br` and `.gz`) went to Bowser; note 4 (`fireworks_test_toad_c3`) went to Toad. Note 2 (the 7l.5 margin) is input to the end-of-project CPU review.
+- **The index is not edited.** Scribe's flags (the cross-browser row, the Show Builder seek row, the missing throughput row) are in the Phase 7 session log.

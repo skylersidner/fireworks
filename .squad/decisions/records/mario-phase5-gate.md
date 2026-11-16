@@ -31,6 +31,7 @@ Also from my runs: `/mine` asks `?page=1&pageSize=24&kind=shell` and shows no ca
 
 - 5i.2–5i.5 (Railway deep links, round trip with writes on, switch-off, 413 through the edge, Boo S5), Boo C18 (Railway), S21: all in the Railway test window. Writes must be switched off afterward.
 - Plan-carried F11 (`type` copy for integer fields) is due by Phase 6.
+  > Superseded 2026-11-15 (Mario, `mario-phase7-planning.md` point 7): F11 was already closed in code (`designer-copy.ts:87`, Peach 5h). This carry was stale.
 
 ## Why
 

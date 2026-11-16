@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import type { TimelineDriverOptions } from '../../engine/loop/timeline-driver';
 import { STEPS_PER_SECOND } from '../../engine/model/show';
-import type { PlaybackClientConfig } from './models';
+import type { ClientPlaybackConfig } from './models';
 
 /**
  * The client's playback knobs as values only: signals plus defaults, no HTTP. The stage (in
@@ -19,7 +19,7 @@ interface Knob {
   readonly fallback: number;
 }
 
-export const PLAYBACK_LIMITS: Readonly<Record<keyof PlaybackClientConfig, Knob>> = {
+export const PLAYBACK_LIMITS: Readonly<Record<keyof ClientPlaybackConfig, Knob>> = {
   seekBudgetMs: { min: 4, max: 100, fallback: 25 },
   catchingUpDelayMs: { min: 0, max: 5000, fallback: 300 },
   checkpointIntervalSeconds: { min: 1, max: 60, fallback: 10 },
@@ -27,7 +27,7 @@ export const PLAYBACK_LIMITS: Readonly<Record<keyof PlaybackClientConfig, Knob>>
 };
 
 /** The defaults, identical to the server's appsettings (seek budget 25 ms, Skyler). */
-export const DEFAULT_PLAYBACK: Readonly<PlaybackClientConfig> = {
+export const DEFAULT_PLAYBACK: Readonly<ClientPlaybackConfig> = {
   seekBudgetMs: PLAYBACK_LIMITS.seekBudgetMs.fallback,
   catchingUpDelayMs: PLAYBACK_LIMITS.catchingUpDelayMs.fallback,
   checkpointIntervalSeconds: PLAYBACK_LIMITS.checkpointIntervalSeconds.fallback,
@@ -38,10 +38,10 @@ export const DEFAULT_PLAYBACK: Readonly<PlaybackClientConfig> = {
  * A served `playback` object made safe: each finite number is clamped to its range, and anything
  * else (missing, a string, NaN, Infinity, a non-object) takes the default.
  */
-export function clampPlayback(raw: unknown): PlaybackClientConfig {
+export function clampPlayback(raw: unknown): ClientPlaybackConfig {
   const src = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
   const out = { ...DEFAULT_PLAYBACK };
-  for (const key of Object.keys(PLAYBACK_LIMITS) as (keyof PlaybackClientConfig)[]) {
+  for (const key of Object.keys(PLAYBACK_LIMITS) as (keyof ClientPlaybackConfig)[]) {
     const { min, max } = PLAYBACK_LIMITS[key];
     const v = src[key];
     if (typeof v === 'number' && Number.isFinite(v)) out[key] = Math.min(max, Math.max(min, v));
@@ -51,7 +51,7 @@ export function clampPlayback(raw: unknown): PlaybackClientConfig {
 
 /** The TimelineDriver options the playback config implies (checkpoint spacing and memory cap). */
 export function checkpointOptions(
-  p: PlaybackClientConfig,
+  p: ClientPlaybackConfig,
 ): Pick<TimelineDriverOptions, 'checkpointSteps' | 'checkpointBytes'> {
   return {
     checkpointSteps: p.checkpointIntervalSeconds * STEPS_PER_SECOND,
@@ -61,7 +61,7 @@ export function checkpointOptions(
 
 @Injectable({ providedIn: 'root' })
 export class ClientConfigStore {
-  private readonly playbackState = signal<PlaybackClientConfig>(DEFAULT_PLAYBACK);
+  private readonly playbackState = signal<ClientPlaybackConfig>(DEFAULT_PLAYBACK);
   /** Always in range: `set` clamps. Read untracked from frame code (it is never written per frame). */
   readonly playback = this.playbackState.asReadonly();
 

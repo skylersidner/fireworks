@@ -7,6 +7,7 @@ import {
 import { openShell } from '../../../../engine/model/open';
 import { DEFAULT_SKY, type ShellDocument } from '../../../../engine/model/shell';
 import {
+  embeddedShell,
   orderCues,
   type EmbeddedShell,
   type ShowCue,
@@ -110,7 +111,7 @@ function canonical(s: EmbeddedShell): unknown {
 /** The key of an embedded shell deep-equal to `shell`, or null. */
 export function findEmbedded(show: ShowDocument, shell: EmbeddedShell): string | null {
   for (const key of Object.keys(show.shells)) {
-    if (sameShell(show.shells[key], shell)) return key;
+    if (sameShell(embeddedShell(show, key)!, shell)) return key;
   }
   return null;
 }
@@ -213,7 +214,7 @@ export function asShell(shell: EmbeddedShell): ShellDocument {
 export function shellOptionLabels(show: ShowDocument): { key: string; label: string }[] {
   const seen = new Map<string, number>();
   return Object.keys(show.shells).map((key) => {
-    const name = show.shells[key].name;
+    const name = embeddedShell(show, key)?.name ?? '';
     const n = (seen.get(name) ?? 0) + 1;
     seen.set(name, n);
     return { key, label: n === 1 ? name : `${name} · ${n}` };

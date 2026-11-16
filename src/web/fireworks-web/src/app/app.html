@@ -14,8 +14,11 @@
           <span>{{ notification.message }}</span>
           <button
             type="button"
-            class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit"
+            class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit pointer-coarse:size-[44px] pointer-coarse:touch-manipulation"
+            data-testid="toast-dismiss"
             (click)="notificationService.dismiss(notification.id)"
+            (focusin)="toastFocus.focusIn(notification.id)"
+            (focusout)="toastFocus.focusOut($event)"
             aria-label="Dismiss notification"
           >
             ×
@@ -38,8 +41,11 @@
         <span>{{ notification.message }}</span>
         <button
           type="button"
-          class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit"
+          class="cursor-pointer border-0 bg-transparent text-[1.1rem] text-inherit pointer-coarse:size-[44px] pointer-coarse:touch-manipulation"
+          data-testid="toast-dismiss"
           (click)="notificationService.dismiss(notification.id)"
+          (focusin)="toastFocus.focusIn(notification.id)"
+          (focusout)="toastFocus.focusOut($event)"
           aria-label="Dismiss notification"
         >
           ×

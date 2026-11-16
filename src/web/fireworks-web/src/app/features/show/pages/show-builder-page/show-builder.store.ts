@@ -18,7 +18,12 @@ import {
 } from '../../../../../engine/model/limits';
 import { normalizeQuality } from '../../../../../engine/model/normalize';
 import type { QualitySettings } from '../../../../../engine/model/shell';
-import type { EmbeddedShell, ShowCue, ShowDocument } from '../../../../../engine/model/show';
+import {
+  embeddedShell,
+  type EmbeddedShell,
+  type ShowCue,
+  type ShowDocument,
+} from '../../../../../engine/model/show';
 import { cueTimes, estimateShowEnd } from '../../../../../engine/sim/lifetime';
 import { BROWSER_STORAGE, REDUCED_MOTION_QUERY, mediaQuery } from '../../../../core/browser';
 import { ClientConfigStore, checkpointOptions } from '../../../../core/client-config';
@@ -60,6 +65,7 @@ import {
   withCue,
 } from '../../shared/show-edit';
 import type { ShowWorkingCopy } from '../../shared/show-working-copy-handoff';
+import { announcement } from '../../../../shared/announcer';
 
 /** Draft writes wait this long (phase-6.md §10.1: "at most every 500 ms"). */
 export const SHOW_DRAFT_DEBOUNCE_MS = 500;
@@ -70,7 +76,9 @@ export const UNDO_LIMIT = 50;
 export type ShowPending =
   | { readonly kind: 'link'; readonly copy: ShowWorkingCopy }
   | { readonly kind: 'new' }
-  | { readonly kind: 'remove-shell'; readonly key: string };
+  | { readonly kind: 'remove-shell'; readonly key: string }
+  /** Show JSON Apply over a dirty show (phase-7.md §9.3): the opened show and its note. */
+  | { readonly kind: 'json'; readonly show: ShowDocument; readonly note: string };
 
 /** Why an add did nothing (phase-6.md §9.2). */
 export type AddBlock = 'cue-cap' | 'shell-cap' | 'past-window';
@@ -170,7 +178,8 @@ export class ShowBuilderStore {
 
   readonly flashNoticeVisible = signal(!this.prefs.flashNoticeDismissed());
   readonly pending = signal<ShowPending | null>(null);
-  readonly announcement = signal('');
+  /** The dock's polite region; repeats re-announce (phase-7.md §10 B4). */
+  readonly announcement = announcement();
 
   private past: ShowDocument[] = [];
   private future: ShowDocument[] = [];
@@ -355,7 +364,9 @@ export class ShowBuilderStore {
     this.edit(withCue(embedded.show, cue));
     this.nextCueId.set(next);
     this.selectedId.set(id);
-    this.announcement.set(addedAnnouncement(embedded.show.shells[embedded.key].name, cue.t));
+    this.announcement.set(
+      addedAnnouncement(embeddedShell(embedded.show, embedded.key)?.name ?? '', cue.t),
+    );
     return { ok: true, cue };
   }
 
@@ -493,8 +504,43 @@ export class ShowBuilderStore {
     if (!pending) return null;
     if (pending.kind === 'link') this.loadCopy(pending.copy);
     else if (pending.kind === 'new') this.replaceWithEmpty();
+    else if (pending.kind === 'json') this.applyShow(pending.show);
     else this.doRemoveShell(pending.key);
     return pending;
+  }
+
+  /**
+   * Show JSON Apply (phase-7.md §9.1): asks first over a dirty show (`pending`), else applies.
+   * `show` comes from `parseShowJson` (openShow), never from raw text. True when applied now.
+   */
+  applyJson(show: ShowDocument, note: string): boolean {
+    if (untracked(this.dirty)) {
+      this.pending.set({ kind: 'json', show, note });
+      return false;
+    }
+    this.applyShow(show);
+    return true;
+  }
+
+  /**
+   * Replaces the show with an applied one as ONE Undo step (Skyler, 2026-11-15; phase-7.md §9.1):
+   * the previous show is pushed, Redo is cleared. Nothing selected, Fit, `nextCueId` past the
+   * largest `c{n}`. An embedded active shell that's gone falls back to the default (Peony); a
+   * preset, the designer item or My shells stay. Clears `dirty` and `saved`; `source` is unchanged,
+   * as the designer's Apply leaves it.
+   */
+  private applyShow(show: ShowDocument): void {
+    this.edit(show);
+    this.lastCoalesce = null;
+    this.nextCueId.set(nextCueIdAfter(show));
+    this.selectedId.set(null);
+    this.view.set(FIT_VIEW);
+    const active = untracked(this.activeShell);
+    if (active.kind === 'embedded' && !Object.hasOwn(show.shells, active.key)) {
+      this.activeShell.set(DEFAULT_ACTIVE);
+    }
+    this.dirty.set(false);
+    this.saved.set(false);
   }
 
   cancelPending(): void {
@@ -548,8 +594,9 @@ export class ShowBuilderStore {
   /** Burst and fade times for a cue (§8.1 note), under the show's gravity. */
   timesOf(cue: ShowCue): { burst: number; fade: number } | null {
     const show = this.show();
-    if (!Object.hasOwn(show.shells, cue.shell)) return null;
-    const times = cueTimes(cue, show.shells[cue.shell], show.sky.gravity);
+    const shell = embeddedShell(show, cue.shell);
+    if (!shell) return null;
+    const times = cueTimes(cue, shell, show.sky.gravity);
     return { burst: times.bursts[0], fade: times.endEstimate };
   }
 

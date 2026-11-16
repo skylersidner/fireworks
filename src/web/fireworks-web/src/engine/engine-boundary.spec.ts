@@ -144,6 +144,16 @@ interface FileInfo {
   readonly imports: readonly ImportRecord[];
 }
 
+/**
+ * Whether the first import statement in `source` is the side-effect `pixi.js/unsafe-eval`
+ * polyfill. Pixi's own modules run on import, so it must load before any of them (Boo P7-S10).
+ */
+export function firstImportIsUnsafeEvalPolyfill(source: string): boolean {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const first = /^\s*(?:import|export)\b[^;]*?;/m.exec(code)?.[0].trim() ?? '';
+  return new RegExp(`^import\\s*['"]pixi\\.js/unsafe-eval['"];$`).test(first);
+}
+
 /** Files that load `pixi.js`/`@pixi/*` through static value imports (direct or transitive). */
 export function pixiReach(files: readonly FileInfo[]): Map<string, string[]> {
   const byPath = new Map(files.map((f) => [f.path, f]));
@@ -266,6 +276,11 @@ describe('engine import boundary', () => {
     expect(reach.has('engine/render/pixi-renderer.ts')).toBe(true);
   });
 
+  it('pixi-renderer.ts imports the CSP-safe polyfill first (Boo P7-S10: no unsafe-eval)', () => {
+    const source = fs.readFileSync(`${SRC}/engine/render/pixi-renderer.ts`, 'utf8');
+    expect(firstImportIsUnsafeEvalPolyfill(source)).toBe(true);
+  });
+
   it('every model/sim/loop spec runs without a DOM (starts with @vitest-environment node)', () => {
     const missing = walk(SRC)
       .filter((p) => /\/engine\/(model|sim|loop)\/.*\.spec\.ts$/.test(p))
@@ -304,6 +319,17 @@ describe('engine import boundary', () => {
         expect(importRecords(source), source).toEqual(expected);
       expect(importSpecifiers(`// ${IMPORT} '${PIXI}';\n/* ${IMPORT} '${PIXI}' */`)).toEqual([]);
       expect(isPixi('@pixi/assets')).toBe(true);
+    });
+
+    it('the polyfill check fails when the import is missing, late or type-only', () => {
+      const polyfill = `${IMPORT} '${PIXI}/unsafe-eval';`;
+      const app = `${IMPORT} { Application } from '${PIXI}';`;
+      expect(firstImportIsUnsafeEvalPolyfill(`// note\n${polyfill}\n${app}`)).toBe(true);
+      expect(firstImportIsUnsafeEvalPolyfill(app)).toBe(false);
+      expect(firstImportIsUnsafeEvalPolyfill(`${app}\n${polyfill}`)).toBe(false);
+      expect(firstImportIsUnsafeEvalPolyfill(`// ${polyfill}\n${app}`)).toBe(false);
+      expect(firstImportIsUnsafeEvalPolyfill(`${IMPORT} '${PIXI}';\n${polyfill}`)).toBe(false);
+      expect(firstImportIsUnsafeEvalPolyfill('')).toBe(false);
     });
 
     it('fails closed on a computed import or require', () => {

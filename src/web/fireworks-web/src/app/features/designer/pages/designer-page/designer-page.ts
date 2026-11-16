@@ -16,8 +16,13 @@ import { RouterLink } from '@angular/router';
 import { ApiStatusService } from '../../../../core/api-status';
 import type { SaveChoice } from '../../../../core/creation-save';
 import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
-import { COARSE_POINTER_QUERY, mediaQuery } from '../../../../core/browser';
-import { ApiBannerComponent } from '../../shared/api-banner/api-banner';
+import {
+  COARSE_POINTER_QUERY,
+  isApplePlatform,
+  isSaveShortcut,
+  mediaQuery,
+} from '../../../../core/browser';
+import { ApiBannerComponent, BannerFocus } from '../../../../shared/api-banner/api-banner';
 import { BreakFieldsComponent } from '../../shared/break-fields/break-fields';
 import { BreakTabsComponent } from '../../shared/break-tabs/break-tabs';
 import { ConfirmDialogComponent } from '../../../../shared/confirm-dialog';
@@ -41,16 +46,17 @@ import {
   type StageStats,
 } from '../../../../shared/fireworks-stage/fireworks-stage';
 import { FlashNoticeComponent } from '../../shared/flash-notice/flash-notice';
-import { HudComponent } from '../../shared/hud/hud';
+import { HudComponent } from '../../../../shared/hud/hud';
 import { JsonPanelComponent } from '../../shared/json-panel/json-panel';
 import { PlaybackControlsComponent } from '../../shared/playback-controls/playback-controls';
 import { PresetBarComponent } from '../../shared/preset-bar/preset-bar';
 import { QualityFieldsComponent } from '../../shared/quality-fields/quality-fields';
 import { ShellFieldsComponent } from '../../shared/shell-fields/shell-fields';
 import { SkyFieldsComponent } from '../../shared/sky-fields/sky-fields';
-import { SaveBarComponent } from '../../shared/save-bar/save-bar';
-import { shareBlockedNote, type SaveStatusAction } from '../../shared/save-copy';
-import { SaveStatusComponent } from '../../shared/save-status/save-status';
+import { SaveBarComponent } from '../../../../shared/save-bar/save-bar';
+import { shareBlockedNote, type SaveStatusAction } from '../../../../shared/save-copy';
+import { saveShortcut } from '../../../../shared/save-shortcut';
+import { SaveStatusComponent } from '../../../../shared/save-status/save-status';
 import { WorkingCopyHandoff } from '../../shared/working-copy-handoff';
 import { DesignerSaveFlow } from './designer-save';
 import { ShellDesignerStore, type LoadOutcome } from './shell-designer.store';
@@ -174,8 +180,15 @@ export class DesignerPageComponent {
   /** After a link load or its Keep editing, focus goes to the panel h1 (§7.2, §12.1). */
   private focusHeadingAfterDialog = false;
 
+  /** Focus inside the API banner goes to the h1 when it unmounts (phase-7.md §10). */
+  protected readonly bannerFocus = new BannerFocus(() => this.byTest('panel-heading'));
+
   constructor() {
     const copy = inject(WorkingCopyHandoff).take();
+    effect(() => {
+      if (this.showApiBanner()) return;
+      afterNextRender(() => this.bannerFocus.left(), { injector: this.injector });
+    });
     if (copy) {
       const outcome = this.store.openWorkingCopy(copy);
       if (outcome.status === 'loaded') {
@@ -315,6 +328,10 @@ export class DesignerPageComponent {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    if (isSaveShortcut(event)) {
+      this.onSaveShortcut(event);
+      return;
+    }
     if (event.code !== 'Space' && event.key !== ' ') return;
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     if (this.store.pendingReplace()) return;
@@ -326,6 +343,26 @@ export class DesignerPageComponent {
     event.preventDefault();
     if (event.repeat) return;
     this.launch();
+  }
+
+  /** Ctrl/⌘+S (phase-7.md §3.3, R1): only while the save bar shows; never picks one of two choices. */
+  private onSaveShortcut(event: KeyboardEvent): void {
+    const outcome = saveShortcut({
+      canWrite: this.saveFlow.canWrite(),
+      dialogOpen: this.store.pendingReplace() !== null,
+      saving: this.saveFlow.saving() !== null,
+      saved: this.store.saved(),
+      cannotSave: null,
+      choices: this.saveFlow.choices(),
+    });
+    if (outcome.kind === 'pass') return;
+    event.preventDefault();
+    if (outcome.kind === 'save') this.save(outcome.choice);
+    else if (outcome.kind === 'announce') this.store.announcement.set(outcome.text);
+    else if (outcome.kind === 'choose') {
+      this.byTest('save-update')?.focus();
+      this.store.announcement.set(outcome.text);
+    }
   }
 
   /** Prototype `loadShell(s, true)`: fire the loaded shell now and hold the loop timer. */
@@ -350,9 +387,4 @@ export class DesignerPageComponent {
     this.returnFocus = null;
     if (el?.isConnected) queueMicrotask(() => el.focus());
   }
-}
-
-function isApplePlatform(): boolean {
-  const nav = typeof navigator === 'undefined' ? null : navigator;
-  return /Mac|iPhone|iPad|iPod/.test(nav?.platform || nav?.userAgent || '');
 }

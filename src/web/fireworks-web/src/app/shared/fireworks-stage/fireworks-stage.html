@@ -5,9 +5,20 @@
   aria-label="Fireworks sky"
   (pointerdown)="onPointerDown($event)"
 ></div>
+@if (lostNotice()) {
+  <p class="stage-lost" role="status" data-testid="stage-lost">{{ lostNoticeText }}</p>
+}
 @if (status() === 'failed') {
-  <div class="stage-error" role="alert" data-testid="stage-error">
-    Fireworks can't start in this browser: {{ error() }}. The controls still work, and your shell is
-    kept in this browser.
-  </div>
+  @if (failure() === 'lost') {
+    <div class="stage-error" role="alert" data-testid="stage-error">
+      <p class="m-0">{{ failedHead }} {{ failedLine[surface()] }}</p>
+      <button type="button" class="btn" data-testid="stage-reload" (click)="reload()">
+        {{ reloadLabel }}
+      </button>
+    </div>
+  } @else {
+    <div class="stage-error" role="alert" data-testid="stage-error">
+      {{ startFailureText(surface(), error() ?? '') }}
+    </div>
+  }
 }

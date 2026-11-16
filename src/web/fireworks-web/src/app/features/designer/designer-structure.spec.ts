@@ -70,6 +70,89 @@ describe('designer structure', () => {
   });
 
   /**
+   * Feature layering (yoshi-phase7-architecture-rulings.md point 3): `app/shared` never value-imports
+   * a feature, so a shared component can't reach a feature store; the builder may read only the
+   * designer's draft (its storage) and copy (shell wording) from the designer.
+   */
+  const SHOW_MAY_IMPORT_FROM_DESIGNER = [
+    'features/designer/shared/designer-draft',
+    'features/designer/shared/designer-copy',
+  ];
+  function resolve(from: string, spec: string): string | null {
+    if (!spec.startsWith('.')) return null;
+    const parts = from.split('/').slice(0, -1);
+    for (const seg of spec.split('/')) {
+      if (seg === '..') parts.pop();
+      else if (seg !== '.') parts.push(seg);
+    }
+    return parts.join('/');
+  }
+  function layeringOffenses(list: readonly { path: string; text: string }[]): string[] {
+    const out: string[] = [];
+    for (const f of list) {
+      for (const spec of valueImports(f.text)) {
+        const target = resolve(f.path, spec);
+        if (target === null) continue;
+        if (f.path.startsWith('shared/') && target.startsWith('features/')) {
+          out.push(`${f.path} -> ${target}`);
+        }
+        if (
+          f.path.startsWith('features/show/') &&
+          target.startsWith('features/designer/') &&
+          !SHOW_MAY_IMPORT_FROM_DESIGNER.includes(target)
+        ) {
+          out.push(`${f.path} -> ${target}`);
+        }
+      }
+    }
+    return out;
+  }
+
+  it('app/shared imports no feature; the builder reads only the designer draft and copy', () => {
+    const list = [...controls, ...builder]
+      .filter((p) => p.endsWith('.ts'))
+      .map((p) => ({ path: rel(p), text: read(p) }));
+    expect(list.some((f) => f.path === 'shared/save-copy.ts')).toBe(true);
+    expect(list.some((f) => f.path === 'shared/save-bar/save-bar.ts')).toBe(true);
+    expect(layeringOffenses(list)).toEqual([]);
+  });
+
+  it('the layering rule catches each crossing (negative controls)', () => {
+    const imp = (from: string) => `import { x } from '${from}';`;
+    expect(
+      layeringOffenses([
+        { path: 'shared/save-copy.ts', text: imp('../features/designer/shared/designer-copy') },
+        {
+          path: 'shared/hud/hud.ts',
+          text: imp('../../features/designer/pages/designer-page/shell-designer.store'),
+        },
+        {
+          path: 'features/show/pages/show-builder-page/show-builder-page.ts',
+          text: imp('../../../designer/shared/save-bar/save-bar'),
+        },
+      ]),
+    ).toHaveLength(3);
+    expect(
+      layeringOffenses([
+        // A type-only import is erased; the two designer reads the builder may make; core.
+        {
+          path: 'shared/x.ts',
+          text: `import type { X } from '../features/show/shared/show-edit';`,
+        },
+        {
+          path: 'features/show/shared/show-copy.ts',
+          text: imp('../../designer/shared/designer-copy'),
+        },
+        {
+          path: 'features/show/pages/show-builder-page/show-builder.store.ts',
+          text: imp('../../../designer/shared/designer-draft'),
+        },
+        { path: 'shared/save-bar/save-bar.ts', text: imp('../../core/creation-save') },
+      ]),
+    ).toEqual([]);
+  });
+
+  /**
    * 2c.8, narrowed for Phase 5 (record luigi-phase5-save-share-player.md, "Final 2c.8 rule").
    * The banned core modules aren't hand-listed: they are every `core/*.ts` that injects HttpClient
    * or ApiService (or calls fetch, XMLHttpRequest or httpResource), closed over value imports
@@ -365,7 +448,27 @@ describe('designer structure', () => {
     pin('validateShow callers', callers(/\bvalidateShow\(/, /export function validateShow\(/), [
       SAVE,
     ]);
-    pin('openShow callers', callers(/\bopenShow\(/, /export function openShow\(/), [OPEN, DRAFT]);
+    // FIXTURES is test-only (never imported by app code): Toad's shared Done-when fixture, opened
+    // like any document (Luigi B2, Phase 7).
+    const FIXTURES = 'app/testing/show-fixtures.ts';
+    // Show JSON Apply (Luigi B3, Phase 7; acceptance 7b.9): the one new show entry. It parses the
+    // pasted text once and passes the parsed value straight to openShow.
+    const JSON_APPLY = 'app/features/show/shared/show-json.ts';
+    pin('openShow callers', callers(/\bopenShow\(/, /export function openShow\(/), [
+      OPEN,
+      DRAFT,
+      JSON_APPLY,
+      FIXTURES,
+    ]);
+    pin('Show JSON parses once', calls(JSON_APPLY, /\bJSON\.parse\([^)]*\)/), ['JSON.parse(text)']);
+    pin('Show JSON opens the parsed value', calls(JSON_APPLY, /\bopenShow\([^)]*\)/), [
+      'openShow(parsed)',
+    ]);
+    pin(
+      'Show JSON Apply goes through parseShowJson',
+      callers(/\bparseShowJson\(/, /export function parseShowJson\(/),
+      ['app/features/show/pages/show-builder-page/show-builder-page.ts'],
+    );
     pin('openCreation opens a show with openShow', calls(OPEN, /\bopenShow\([^)]*\)/), [
       'openShow(r.document)',
     ]);
@@ -393,7 +496,7 @@ describe('designer structure', () => {
     pin(
       'JSON.parse under features/show',
       callers(/\bJSON\.parse\(/).filter((p) => p.startsWith('app/features/show/')),
-      [DRAFT],
+      [DRAFT, JSON_APPLY],
     );
     pin('casts to ShowDocument', callers(/\bas\s+ShowDocument\b/), []);
     // Network: only `/c/` offers a show, and only what openCreation returned.
@@ -465,12 +568,41 @@ describe('designer structure', () => {
         'a new show surface normalizes directly',
         {
           ...showSources,
-          'app/features/show/shared/show-json.ts': 'const r = normalizeShow(JSON.parse(t));',
+          'app/features/show/shared/show-other.ts': 'const r = normalizeShow(JSON.parse(t));',
         },
       ],
       [
         'a new show surface upgrades on its own',
-        { ...showSources, 'app/features/show/shared/show-json.ts': 'const u = upgradeShow(raw);' },
+        { ...showSources, 'app/features/show/shared/show-other.ts': 'const u = upgradeShow(raw);' },
+      ],
+      // Show JSON Apply (Luigi B3): every way around openShow fails the rule.
+      [
+        'Show JSON normalizes without upgrade',
+        swap('app/features/show/shared/show-json.ts', 'openShow(parsed)', 'normalizeShow(parsed)'),
+      ],
+      [
+        'Show JSON casts the parsed value',
+        swap(
+          'app/features/show/shared/show-json.ts',
+          'const result = openShow(parsed);',
+          'const result = { ok: true, show: parsed as ShowDocument, adjustments: [] };',
+        ),
+      ],
+      [
+        'Show JSON parses twice',
+        swap(
+          'app/features/show/shared/show-json.ts',
+          'parsed = JSON.parse(text);',
+          'parsed = JSON.parse(text);\n    JSON.parse(JSON.stringify(parsed));',
+        ),
+      ],
+      [
+        'the page opens pasted text itself',
+        swap(
+          'app/features/show/pages/show-builder-page/show-builder-page.ts',
+          'const parsed = parseShowJson(this.jsonValue());',
+          'const parsed = openShow(JSON.parse(this.jsonValue()));',
+        ),
       ],
     ] as const) {
       expect(showEntryViolations(mutated), label).not.toEqual([]);

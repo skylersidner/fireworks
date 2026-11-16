@@ -29,6 +29,11 @@ const FIXTURES = `${process.cwd()}/../../../schema/fixtures`;
 
 const WIDTH = 1280;
 
+// Toad, Phase 7 C3: every spec here runs the engine (1-3 s each alone, node). The full suite's
+// own workers slow this file 5-6x (75 s for 49 tests at load 12), so the 5 s default timed out
+// specs that pass alone in under 1 s. A real hang still fails, at 30 s.
+vi.setConfig({ testTimeout: 30_000 });
+
 function embed(shell: ShellDocument): EmbeddedShell {
   const { sky: _sky, ...rest } = structuredClone(shell);
   return rest;
@@ -485,6 +490,84 @@ describe('TimelineDriver checkpoints (exact; acceptance 6i.2)', () => {
     expect(snapshot(visible.sim)).toEqual(snapshot(straight(doc, 6500).sim));
   });
 
+  describe('warm-up handoff: twin and adoptCheckpoints (Phase 7)', () => {
+    it('a twin runs on its own sim; adopting its checkpoints changes nothing but the start of a seek', () => {
+      const doc = doneWhenShow();
+      const live = makeLoop(doc);
+      live.driver.seek(live.loop, 300);
+      const before = snapshot(live.sim);
+      const shadowSim = new FireworksSim();
+      const twin = live.driver.twin();
+      const shadowLoop = new EngineLoop(shadowSim, undefined, {
+        worldWidth: () => WIDTH,
+        driver: twin,
+      });
+      while (!twin.seek(shadowLoop, 7000, 700));
+      expect(live.driver.step).toBe(300);
+      expect(snapshot(live.sim)).toEqual(before);
+      expect(live.driver.adoptCheckpoints(twin)).toBe(5);
+      expect(live.driver.checkpointSteps).toEqual([1200, 2400, 3600, 4800, 6000]);
+      expect(live.driver.step).toBe(300);
+      expect(snapshot(live.sim)).toEqual(before);
+      const step = vi.spyOn(live.sim, 'step');
+      live.driver.seek(live.loop, 6100);
+      expect(step).toHaveBeenCalledTimes(100);
+      const ref = straight(doc, 6100);
+      expect(snapshot(live.sim)).toEqual(snapshot(ref.sim));
+      expect(live.driver.ledger).toEqual(ref.driver.ledger);
+      expect(live.driver.adoptCheckpoints(twin)).toBe(0); // already held
+    });
+
+    it('takes only checkpoints before the first step where the schedules differ', () => {
+      const doc = doneWhenShow();
+      const a = makeLoop(doc);
+      a.driver.seek(a.loop, 6001);
+      const next = { ...doc, cues: doc.cues.map((c) => (c.id === 'c30' ? { ...c, seed: 1 } : c)) };
+      const b = makeLoop(next);
+      expect(b.driver.adoptCheckpoints(a.driver)).toBe(3); // c30 fires at 4371
+      expect(b.driver.checkpointSteps).toEqual([1200, 2400, 3600]);
+      b.driver.seek(b.loop, 5000);
+      expect(snapshot(b.sim)).toEqual(snapshot(straight(next, 5000).sim));
+    });
+
+    it('refuses another sky, and keeps the memory cap (spacing doubles)', () => {
+      const doc = doneWhenShow();
+      const a = makeLoop(doc);
+      a.driver.seek(a.loop, 6001);
+      const windy = makeLoop({ ...doc, sky: { gravity: 160, wind: 3 } });
+      expect(windy.driver.adoptCheckpoints(a.driver)).toBe(0);
+      const capped = makeLoop(doc, undefined, { checkpointBytes: 1 });
+      capped.driver.adoptCheckpoints(a.driver);
+      expect(capped.driver.checkpointSteps.length).toBeLessThanOrEqual(1);
+      capped.driver.seek(capped.loop, 5500);
+      expect(snapshot(capped.sim)).toEqual(snapshot(straight(doc, 5500).sim));
+    });
+
+    // Yoshi addendum 1, gap M9 (Toad, Phase 7 C3): `compatible` must compare the digest flag.
+    // A checkpoint from a digest-off run carries the unfolded seed digest, so a digest-on driver
+    // that restored it would report a different digest than a straight run (6a.2 would lie).
+    it('refuses checkpoints across different traceDigest settings, both ways and through { from }', () => {
+      const doc = doneWhenShow();
+      const off = makeLoop(doc);
+      off.driver.seek(off.loop, 4900);
+      const on = makeLoop(doc, undefined, { traceDigest: true });
+      on.driver.seek(on.loop, 4900);
+      expect(off.driver.checkpointSteps).toEqual([1200, 2400, 3600, 4800]);
+
+      const adopter = makeLoop(doc, undefined, { traceDigest: true });
+      expect(adopter.driver.adoptCheckpoints(off.driver)).toBe(0);
+      expect(adopter.driver.checkpointSteps).toEqual([]);
+      expect(off.driver.adoptCheckpoints(on.driver)).toBe(0);
+
+      const inherited = makeLoop(doc, undefined, { traceDigest: true, from: off.driver });
+      expect(inherited.driver.checkpointSteps).toEqual([]);
+      inherited.driver.seek(inherited.loop, 4900);
+      expect(inherited.driver.traceDigest).toBe(on.driver.traceDigest);
+      adopter.driver.seek(adopter.loop, 4900);
+      expect(adopter.driver.traceDigest).toBe(on.driver.traceDigest);
+    });
+  });
+
   describe('inherited after an edit (options.from)', () => {
     function edited(doc: ShowDocument, id: string, change: Partial<ShowCue>): ShowDocument {
       return { ...doc, cues: doc.cues.map((c) => (c.id === id ? { ...c, ...change } : c)) };
@@ -525,9 +608,8 @@ describe('TimelineDriver checkpoints (exact; acceptance 6i.2)', () => {
       a.driver.seek(a.loop, 5000);
       const cps = (d: ShowDocument) => new TimelineDriver(d, { from: a.driver }).checkpointSteps;
       expect(cps({ ...doc, cues: [...doc.cues, cue('d', 15)] })).toEqual([1200]);
-      expect(cps({ ...doc, cues: doc.cues.filter((c) => c.id !== 'c') })).toEqual([
-        1200, 2400, 3600, 4800,
-      ]);
+      // A strict prefix (last cue removed) caps at its own last cue (b on 3000): D1.
+      expect(cps({ ...doc, cues: doc.cues.filter((c) => c.id !== 'c') })).toEqual([1200, 2400]);
       expect(cps(edited(doc, 'c', { t: 12 }))).toEqual([1200]); // now fires on 1440, before b
       expect(cps(edited(doc, 'b', { t: 25.001 }))).toEqual([1200, 2400, 3600, 4800]); // same step
       expect(cps({ ...doc, sky: { gravity: 161, wind: 0 } })).toEqual([]);
@@ -545,6 +627,63 @@ describe('TimelineDriver checkpoints (exact; acceptance 6i.2)', () => {
       b.seek(a.loop, 2500);
       expect([b.done, b.endStep]).toEqual([false, null]);
       expect(b.runToEnd(a.loop)).toBeGreaterThan(3600);
+    });
+
+    it('deleting the last cue past the new end: the end equals a straight run’s (D1)', () => {
+      const doc = show([cue('a', 1), cue('b', 5), cue('c', 40)]);
+      const next = { ...doc, cues: doc.cues.filter((c) => c.id !== 'c') };
+      const ref = straight(next, 4900);
+      expect(ref.driver.endStep).toBe(1113);
+      const a = makeLoop(doc);
+      a.driver.seek(a.loop, 4900);
+      const b = new TimelineDriver(next, { from: a.driver });
+      expect(b.checkpointSteps).toEqual([]); // b fires on 600, before the first checkpoint
+      a.loop.setDriver(b);
+      b.seek(a.loop, 4900);
+      expect([b.done, b.endStep]).toEqual([true, 1113]);
+      expect(snapshot(a.sim)).toEqual(snapshot(ref.sim));
+      expect(b.ledger).toEqual(ref.driver.ledger);
+      const adopted = makeLoop(next);
+      adopted.driver.adoptCheckpoints(a.driver);
+      adopted.driver.seek(adopted.loop, 4900);
+      expect([adopted.driver.done, adopted.driver.endStep]).toEqual([true, 1113]);
+    });
+
+    // Toad, Phase 7 C3: D1's cap also covers the empty receiver (every cue deleted). The cap is
+    // `?? 0`; with `?? Infinity` an empty show kept every checkpoint before the old first cue,
+    // each with `next === 0 === length` and the old show's unended `endStep`, so the end was
+    // dated at the restored checkpoint instead of a straight run's.
+    it('deleting every cue past the old first launch: nothing is kept, the end is a straight run’s', () => {
+      const doc = show([cue('a', 15), cue('b', 30)]);
+      const empty = { ...doc, cues: [] };
+      const ref = straight(empty, 3000);
+      const a = makeLoop(doc);
+      a.driver.seek(a.loop, 3000);
+      expect(a.driver.checkpointSteps).toEqual([1200, 2400]);
+      const b = new TimelineDriver(empty, { from: a.driver });
+      expect(b.checkpointSteps).toEqual([]);
+      a.loop.setDriver(b);
+      b.seek(a.loop, 3000);
+      expect([b.done, b.endStep]).toEqual([ref.driver.done, ref.driver.endStep]);
+      expect(snapshot(a.sim)).toEqual(snapshot(ref.sim));
+      const adopted = makeLoop(empty);
+      expect(adopted.driver.adoptCheckpoints(a.driver)).toBe(0);
+      adopted.driver.seek(adopted.loop, 3000);
+      expect([adopted.driver.done, adopted.driver.endStep]).toEqual([
+        ref.driver.done,
+        ref.driver.endStep,
+      ]);
+    });
+
+    it('built from a driver with checkpoints off, keeps its own interval; off stays off', () => {
+      const doc = doneWhenShow();
+      const off = makeLoop(doc, undefined, { checkpointSteps: 0 });
+      off.driver.seek(off.loop, 3000);
+      expect(new TimelineDriver(doc, { from: off.driver }).checkpointInterval).toBe(1200);
+      const on = makeLoop(doc);
+      on.driver.seek(on.loop, 3000);
+      const z = new TimelineDriver(doc, { from: on.driver, checkpointSteps: 0 });
+      expect([z.checkpointInterval, z.checkpointSteps]).toEqual([0, []]);
     });
 
     it('an embedded shell edit diverges at the first cue that uses it', () => {
@@ -578,8 +717,9 @@ describe('TimelineDriver trace digest (acceptance 6a.2)', () => {
     c.driver.advance(c.loop, 3000);
     expect(b.driver.traceDigest).toBe(c.driver.traceDigest);
     // Three full runs of the Done-when show; under the full suite's parallel load it can exceed
-    // the default 5 s (2.4 s alone; Toad, Phase 6 review).
-  }, 20_000);
+    // the default 5 s (2.4 s alone; Toad, Phase 6 review). 20 s timed out under a mutant run's
+    // load in Phase 7 C3; 30 s matches the file's setting.
+  }, 30_000);
 
   it('negative control: one seed changed by 1 changes the digest and the ledger', () => {
     const doc = doneWhenShow();

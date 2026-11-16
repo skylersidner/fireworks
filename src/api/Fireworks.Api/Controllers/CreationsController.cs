@@ -2,8 +2,11 @@ using Fireworks.Api.Contracts;
 using Fireworks.Api.Services;
 using Fireworks.Api.Services.Creations;
 using Fireworks.Api.Services.RateLimiting;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace Fireworks.Api.Controllers;
 
@@ -30,10 +33,25 @@ namespace Fireworks.Api.Controllers;
 /// policy would have nothing to Forbid with and would throw. The service's <c>CanWrite</c> check is
 /// the gate.
 /// </para>
+///
+/// <para>
+/// <b>ETag</b> (schema.md §2.1.1, Yoshi A4 §4): every response carrying a
+/// <see cref="CreationResponse"/> (GET, POST, PUT, remix) sends the strong tag
+/// <c>"&lt;updatedAt&gt;"</c>, the body's <c>updatedAt</c> string exactly as the body's own JSON
+/// options serialize it. The GET also answers <c>If-None-Match</c> (weak comparison, lists and
+/// <c>*</c>) with a bodiless 304 carrying the same <c>ETag</c> and <c>Cache-Control</c>, and its
+/// 200 and 304 are <c>private, no-cache</c> (Boo P7-S5): kept out of shared caches, revalidated on
+/// every view, so a PUT is seen on the next load. Every other <c>/api</c> response, this GET's
+/// errors included, keeps <see cref="ResponseHeaders"/>'s <c>no-store</c>. <c>If-Match</c> is not
+/// read before Phase 8 (§11.4).
+/// </para>
 /// </summary>
 [ApiController]
-public sealed class CreationsController(ICreationService creationService) : ControllerBase
+public sealed class CreationsController(ICreationService creationService, IOptions<JsonOptions> jsonOptions) : ControllerBase
 {
+    /// <summary>The share-code GET's 200 and 304: the only <c>/api</c> responses that aren't <c>no-store</c>.</summary>
+    public const string ShareCodeGetCacheControl = "private, no-cache";
+
     /// <summary>
     /// <see cref="ShareCodeRouteConstraint"/>, an ordinal per-character check. Not
     /// <c>regex(...)</c>: the built-in regex constraint is case-insensitive, so <c>abcdefgl</c> and
@@ -51,7 +69,7 @@ public sealed class CreationsController(ICreationService creationService) : Cont
     {
         var result = await creationService.CreateAsync(new HttpCreationRequestBody(Request), cancellationToken);
         return result.IsSuccess
-            ? CreatedAtAction(nameof(Get), new { shareCode = result.Value!.ShareCode }, result.Value)
+            ? CreatedAtAction(nameof(Get), new { shareCode = result.Value!.ShareCode }, Tagged(result.Value))
             : ToErrorResult(result.Error!);
     }
 
@@ -59,8 +77,18 @@ public sealed class CreationsController(ICreationService creationService) : Cont
     [EnableRateLimiting(FireworksRateLimiting.ReadPolicy)]
     public async Task<ActionResult<CreationResponse>> Get(string shareCode, CancellationToken cancellationToken)
     {
+        // The lookup (404) and the read limit come first; only an existing creation can be 304.
         var result = await creationService.GetAsync(shareCode, cancellationToken);
-        return ToActionResult(result);
+        if (!result.IsSuccess)
+        {
+            return ToErrorResult(result.Error!);
+        }
+
+        var etag = Tag(result.Value!);
+        Response.Headers.CacheControl = ShareCodeGetCacheControl;
+        return MatchesIfNoneMatch(etag)
+            ? StatusCode(StatusCodes.Status304NotModified)
+            : Ok(result.Value);
     }
 
     [HttpPut(ItemRoute)]
@@ -69,7 +97,7 @@ public sealed class CreationsController(ICreationService creationService) : Cont
     public async Task<ActionResult<CreationResponse>> Update(string shareCode, CancellationToken cancellationToken)
     {
         var result = await creationService.UpdateOwnedAsync(shareCode, new HttpCreationRequestBody(Request), cancellationToken);
-        return ToActionResult(result);
+        return result.IsSuccess ? Ok(Tagged(result.Value!)) : ToErrorResult(result.Error!);
     }
 
     [HttpDelete(ItemRoute)]
@@ -87,7 +115,7 @@ public sealed class CreationsController(ICreationService creationService) : Cont
     {
         var result = await creationService.RemixAsync(shareCode, new HttpCreationRequestBody(Request), cancellationToken);
         return result.IsSuccess
-            ? CreatedAtAction(nameof(Get), new { shareCode = result.Value!.ShareCode }, result.Value)
+            ? CreatedAtAction(nameof(Get), new { shareCode = result.Value!.ShareCode }, Tagged(result.Value))
             : ToErrorResult(result.Error!);
     }
 
@@ -109,6 +137,36 @@ public sealed class CreationsController(ICreationService creationService) : Cont
     /// <summary>Null when the parameter is absent; otherwise every value given (an empty <c>kind=</c> is one empty value).</summary>
     private string?[]? Raw(string name) =>
         Request.Query.TryGetValue(name, out var values) ? values.ToArray() : null;
+
+    /// <summary>
+    /// <c>"</c> + <c>updatedAt</c> as the body serializes it + <c>"</c>. Through the body's own
+    /// options and converter, never <c>ToString("O")</c>: that pads to seven fractional digits, while
+    /// STJ trims trailing zeros, so the tag would differ from the body (schema.md §2.1.1). Every
+    /// character it can produce (<c>0-9 - : T . +</c>) is legal in an entity tag.
+    /// </summary>
+    internal static EntityTagHeaderValue EntityTagFor(DateTimeOffset updatedAt, JsonSerializerOptions options) =>
+        new('"' + JsonSerializer.SerializeToElement(updatedAt, options).GetString() + '"');
+
+    private EntityTagHeaderValue Tag(CreationResponse creation)
+    {
+        var etag = EntityTagFor(creation.UpdatedAt, jsonOptions.Value.JsonSerializerOptions);
+        Response.Headers.ETag = etag.ToString();
+        return etag;
+    }
+
+    private CreationResponse Tagged(CreationResponse creation)
+    {
+        Tag(creation);
+        return creation;
+    }
+
+    /// <summary>
+    /// RFC 9110 §13.1.2: weak comparison, any listed tag, or <c>*</c>. A header that doesn't parse
+    /// matches nothing, so the answer is a full 200, which is always safe.
+    /// </summary>
+    private bool MatchesIfNoneMatch(EntityTagHeaderValue etag) =>
+        EntityTagHeaderValue.TryParseList(Request.Headers.IfNoneMatch, out var candidates)
+        && candidates.Any(candidate => candidate.Equals(EntityTagHeaderValue.Any) || candidate.Compare(etag, useStrongComparison: false));
 
     private ActionResult<T> ToActionResult<T>(ServiceResult<T> result) =>
         result.IsSuccess ? Ok(result.Value) : ToErrorResult(result.Error!);

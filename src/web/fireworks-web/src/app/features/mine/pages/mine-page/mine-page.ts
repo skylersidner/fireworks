@@ -27,6 +27,7 @@ import { SITE_TITLE, retryWhen } from '../../../../shared/link-copy';
 import { MessagePageComponent } from '../../../../shared/message-page/message-page';
 import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
 import { MINE_PAGE_SIZE, MineStore, type DeleteOutcome } from './mine.store';
+import { announcement } from '../../../../shared/announcer';
 
 /** The `Loading…` line waits this long (phase-5.md §10.1). */
 export const MINE_LOADING_DELAY_MS = 300;
@@ -114,7 +115,8 @@ export class MinePageComponent {
 
   protected readonly pendingDelete = signal<CreationListItem | null>(null);
   protected readonly blockedShare = signal<{ code: string; link: string } | null>(null);
-  protected readonly pageAnnouncement = signal('');
+  /** Repeats re-announce (phase-7.md §10 B4). */
+  protected readonly pageAnnouncement = announcement();
   protected readonly skeletons = [0, 1, 2, 3, 4, 5];
   protected readonly unavailableBody = [
     "Saving is turned off on this site right now, so there's nothing to list here. You can still design shells and build shows, and your work is kept in this browser.",
@@ -173,8 +175,10 @@ export class MinePageComponent {
     this.session.load().subscribe();
   }
 
+  /** K6 (phase-7.md §3.2): the error card leaves with its button, so focus goes to the h1. */
   protected retryList(): void {
     this.store.load(this.page());
+    this.focusHeading();
   }
 
   protected changePage(page: number): void {

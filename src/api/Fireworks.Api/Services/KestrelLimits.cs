@@ -7,11 +7,20 @@ namespace Fireworks.Api.Services;
 /// but the three creation writes reads a body, and those raise it to 256 KiB with
 /// <c>[RequestSizeLimit]</c>, so this is defense in depth for every future endpoint. 64 KiB still
 /// fits a Phase 8 OIDC <c>form_post</c> callback. Program.cs and the harnesses both call this.
+///
+/// <para>
+/// <b>No <c>Server</c> header</b> (Boo P7-S2). Set here rather than in the response-header middleware
+/// because Kestrel writes its own 400 and 431 responses (a malformed request line, a 40 KB header)
+/// before any middleware runs; this is the only switch that reaches them.
+/// </para>
 /// </summary>
 public static class KestrelLimits
 {
     public const long GlobalMaxRequestBodyBytes = 65_536;
 
-    public static void Apply(KestrelServerOptions options) =>
+    public static void Apply(KestrelServerOptions options)
+    {
         options.Limits.MaxRequestBodySize = GlobalMaxRequestBodyBytes;
+        options.AddServerHeader = false;
+    }
 }

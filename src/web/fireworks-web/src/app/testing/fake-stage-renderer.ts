@@ -47,6 +47,7 @@ export class FakeStageRenderer implements StageRenderer {
   /** World point the next `screenToWorld` returns. */
   nextWorldPoint = { x: 640, y: 300 };
   private onFrame: ((deltaMS: number) => void) | null = null;
+  contextListener: ((state: 'lost' | 'restored') => void) | null = null;
 
   constructor(
     readonly name: RendererName = 'webgl',
@@ -71,7 +72,7 @@ export class FakeStageRenderer implements StageRenderer {
 
   /** Drives `count` animation frames of `deltaMS` each (no-op once destroyed). */
   frame(deltaMS: number, count = 1): void {
-    for (let k = 0; k < count && this.onFrame; k++) this.onFrame(deltaMS);
+    for (let k = 0; k < count && this.onFrame && !this.lost; k++) this.onFrame(deltaMS);
   }
 
   render(_sim: FireworksSim, persistence: number, reduceFlashing = false): void {
@@ -80,9 +81,30 @@ export class FakeStageRenderer implements StageRenderer {
     this.lastReduceFlashing = reduceFlashing;
   }
 
+  onContextChange(listener: (state: 'lost' | 'restored') => void): void {
+    this.contextListener = listener;
+  }
+
+  /** Simulates the browser losing the context: frames stop, then the host hears `lost`. */
+  loseContext(): void {
+    this.lost = true;
+    this.contextListener?.('lost');
+  }
+
+  /** Simulates the browser restoring the context. */
+  restoreContext(): void {
+    this.lost = false;
+    this.contextListener?.('restored');
+  }
+
+  /** While lost, `frame` runs nothing (the real renderer stops its ticker). */
+  lost = false;
+
   destroy(): void {
     this.destroyCalls++;
     this.onFrame = null;
+    // Like the real renderer: the listener is gone before the context is released.
+    this.contextListener = null;
     this.canvas.remove();
   }
 }

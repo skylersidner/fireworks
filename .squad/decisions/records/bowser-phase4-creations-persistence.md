@@ -1,5 +1,7 @@
 # Phase 4: creations persistence, as built
 
+> **Superseded in part by `bowser-phase7-server-hardening.md` on 2026-11-15:** `Services/ApiResponseHeaders.cs` is deleted and replaced by `Services/ResponseHeaders.cs` (one header middleware at step 6a, one writer per class). `Connection: close` now also covers chunked bodies (P7-S8). The caching question left open at the end of this record is decided there.
+
 **Author:** Bowser · **Date:** 2026-11-13 · **Status:** proposed (for Skyler to promote, or not)
 **Implements:** plan Phase 4; `docs/fireworks-app/schema.md` §2 (incl. §2.2.1, §2.4 cap, §2.6 order, §2.7), §6, §9, §10; Boo's `boo-phase4-security-requirements.md` S1–S29 (S13 as Skyler ruled: `isOwner ? source : null`, no `CanWrite` term).
 **Code:** `src/api/Fireworks.Api/{Controllers/CreationsController.cs, Services/Creations/*, Services/RateLimiting/FireworksRateLimiting.cs, Services/{KestrelLimits,ApiResponseHeaders}.cs, Repositories/CreationRepository.cs, Data/Entities/Creation.cs, Data/Migrations/*_AddCreations.cs}`.

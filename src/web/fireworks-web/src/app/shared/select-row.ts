@@ -18,7 +18,9 @@ let nextId = 0;
 @Component({
   selector: 'app-select-row',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'my-1.5 grid grid-cols-[96px_1fr] items-center gap-2 pointer-coarse:min-h-9' },
+  host: {
+    class: 'my-1.5 grid grid-cols-[96px_1fr] items-center gap-2 pointer-coarse:min-h-[44px]',
+  },
   template: `
     <label [for]="id" class="text-muted">{{ label() }}</label>
     <div class="flex items-center gap-1.5">

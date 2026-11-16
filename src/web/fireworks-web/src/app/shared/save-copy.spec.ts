@@ -1,6 +1,6 @@
-import type { ShellIssue } from '../../../../engine/model/normalize';
-import { retryWhen } from '../../../shared/link-copy';
-import { issueReason, unknownKeyName } from './designer-copy';
+import type { ShellIssue } from '../../engine/model/normalize';
+import { retryWhen } from './link-copy';
+import { issueReason, unknownKeyName } from '../features/designer/shared/designer-copy';
 import { invalidStatus, ownerNote, reasons, saveFailureStatus, savedToast } from './save-copy';
 
 const issue = (
@@ -82,19 +82,19 @@ describe('issueReason for Save-time codes (phase-5.md §11.2; F11)', () => {
 describe('Save copy (phase-5.md §2, §3.2, §6)', () => {
   it('reasons: three, then "and k more", or "and more" when truncated', () => {
     const four = ['name', 'burstHeight', 'angleJitter', 'version'].map((p) => issue(p, 'missing'));
-    expect(reasons(four.slice(0, 3))).toBe(
+    expect(reasons(four.slice(0, 3), issueReason)).toBe(
       'Name is blank; Burst height is missing; Angle jitter is missing',
     );
-    expect(reasons(four)).toBe(
+    expect(reasons(four, issueReason)).toBe(
       'Name is blank; Burst height is missing; Angle jitter is missing, and 1 more',
     );
-    expect(reasons(four.slice(0, 2), true)).toBe(
+    expect(reasons(four.slice(0, 2), issueReason, true)).toBe(
       'Name is blank; Burst height is missing, and more',
     );
   });
 
   it('the client strict check reads as row 400b with a Reload button', () => {
-    expect(invalidStatus([issue('name', 'too-long')])).toEqual({
+    expect(invalidStatus([issue('name', 'too-long')], issueReason)).toEqual({
       tone: 'error',
       text: "Couldn't save: the server didn't accept this shell (Name is longer than 80 characters). Reloading the page usually fixes this. Your shell is kept in this browser.",
       actions: ['reload'],
@@ -112,14 +112,15 @@ describe('Save copy (phase-5.md §2, §3.2, §6)', () => {
       },
       'create',
       '',
+      issueReason,
     );
     expect(s.text).not.toContain('evil.example');
   });
 
   it('a 404 on a create (never expected) reads as a server fault', () => {
-    expect(saveFailureStatus({ kind: 'not-found', status: 404 }, 'create', '').actions).toEqual([
-      'retry',
-    ]);
+    expect(
+      saveFailureStatus({ kind: 'not-found', status: 404 }, 'create', '', issueReason).actions,
+    ).toEqual(['retry']);
   });
 
   it('owner note falls back when the saved name is unknown', () => {

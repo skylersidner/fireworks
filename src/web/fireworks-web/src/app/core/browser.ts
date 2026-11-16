@@ -29,6 +29,34 @@ export const MATCH_MEDIA = new InjectionToken<(query: string) => MediaQueryList 
 export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 export const COARSE_POINTER_QUERY = '(pointer: coarse)';
 
+/** `window.devicePixelRatio`, read on each call (it changes with zoom and between screens). */
+export const DEVICE_PIXEL_RATIO = new InjectionToken<() => number>('DEVICE_PIXEL_RATIO', {
+  factory: () => () => (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1),
+});
+
+/**
+ * The canvas resolution rule (phase-7.md §5.1, R2): the device pixel ratio, capped at 1.5 when the
+ * primary pointer is coarse (a phone or tablet GPU) and at 2 otherwise. Width plays no part. The
+ * one function for the Pixi stage and every timeline canvas.
+ */
+export function canvasResolution(dpr: number, coarse: boolean): number {
+  const ratio = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  return Math.min(ratio, coarse ? 1.5 : 2);
+}
+
+/**
+ * `canvasResolution` for this device now: reads the ratio and `(pointer: coarse)` on each call, so
+ * a redraw (or a renderer rebuild) picks up a change. Hosts pass the value into the engine, which
+ * never calls matchMedia. Call in an injection context.
+ */
+export const CANVAS_RESOLUTION = new InjectionToken<() => number>('CANVAS_RESOLUTION', {
+  factory: () => {
+    const match = inject(MATCH_MEDIA);
+    const dpr = inject(DEVICE_PIXEL_RATIO);
+    return () => canvasResolution(dpr(), match(COARSE_POINTER_QUERY)?.matches ?? false);
+  },
+});
+
 /**
  * A media query as a signal that follows changes, unsubscribed with the injection context's
  * DestroyRef. False when matchMedia is unavailable. Call in an injection context.
@@ -62,4 +90,23 @@ export function writeStorage(storage: Storage | null, key: string, value: string
   } catch {
     return false;
   }
+}
+
+/** macOS and iOS: ⌘ rather than Ctrl in copy and `aria-keyshortcuts`. */
+export function isApplePlatform(): boolean {
+  const nav = typeof navigator === 'undefined' ? null : navigator;
+  return /Mac|iPhone|iPad|iPod/.test(nav?.platform || nav?.userAgent || '');
+}
+
+/**
+ * Ctrl/⌘+S (phase-7.md §3.3, R1): either modifier on any platform, never with Alt or Shift (Shift+⌘S
+ * isn't Save as new: one shortcut, one meaning).
+ */
+export function isSaveShortcut(event: KeyboardEvent): boolean {
+  return (
+    (event.metaKey || event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    event.key.toLowerCase() === 's'
+  );
 }

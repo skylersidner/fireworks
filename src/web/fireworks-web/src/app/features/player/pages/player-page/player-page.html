@@ -22,6 +22,7 @@
         [quality]="quality()"
         [paused]="paused()"
         [clickToFire]="false"
+        surface="player"
       />
 
       <div
@@ -30,15 +31,16 @@
         <div class="min-w-0 max-w-full">
           <h1
             class="m-0 line-clamp-2 text-heading break-words [text-shadow:0_1px_2px_#000]"
+            tabindex="-1"
             data-testid="player-name"
           >
             <bdi>{{ p.name }}</bdi>
           </h1>
           <p class="m-0 text-small text-muted">
-            <a routerLink="/" class="text-muted">Fireworks Sandbox</a>
+            <a routerLink="/" class="touch-link text-muted">Fireworks Sandbox</a>
           </p>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-1.5">
+        <div class="flex flex-wrap items-center justify-end gap-1.5 pointer-coarse:gap-[8px]">
           <button
             type="button"
             class="btn border-accent text-accent"
@@ -66,7 +68,7 @@
           >
             Replay
           </button>
-          <label class="inline-flex items-center gap-1.5 text-small text-muted">
+          <label class="touch-row inline-flex items-center gap-1.5 text-small text-muted">
             Reduce flashing
             <input
               type="checkbox"
@@ -120,6 +122,7 @@
         [quality]="quality()"
         [paused]="paused()"
         [clickToFire]="false"
+        surface="player"
         [timeline]="driver()"
         [frameHook]="frameHook"
         (ended)="onShowEnded()"
@@ -131,18 +134,19 @@
         <div class="min-w-0 max-w-full">
           <h1
             class="m-0 line-clamp-2 text-heading break-words [text-shadow:0_1px_2px_#000]"
+            tabindex="-1"
             data-testid="player-name"
           >
             <bdi>{{ p.name }}</bdi>
           </h1>
           <p class="m-0 text-small text-muted">
-            <a routerLink="/" class="text-muted">Fireworks Sandbox</a> ·
+            <a routerLink="/" class="touch-link text-muted">Fireworks Sandbox</a> ·
             <span #metaTime class="tabular-nums" data-testid="player-time"
               >0:00 / about {{ metaClock(p.estimate) }}</span
             >
           </p>
         </div>
-        <div class="flex flex-wrap items-center justify-end gap-1.5">
+        <div class="flex flex-wrap items-center justify-end gap-1.5 pointer-coarse:gap-[8px]">
           <button
             type="button"
             class="btn border-accent text-accent"
@@ -171,7 +175,7 @@
           >
             Replay
           </button>
-          <label class="inline-flex items-center gap-1.5 text-small text-muted">
+          <label class="touch-row inline-flex items-center gap-1.5 text-small text-muted">
             Reduce flashing
             <input
               type="checkbox"

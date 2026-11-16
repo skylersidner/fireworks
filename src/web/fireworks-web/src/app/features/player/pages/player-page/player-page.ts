@@ -18,7 +18,11 @@ import { Subscription } from 'rxjs';
 import { TimelineDriver } from '../../../../../engine/loop/timeline-driver';
 import { DEFAULT_QUALITY, type ShellDocument } from '../../../../../engine/model/shell';
 import { PRESETS } from '../../../../../engine/model/presets';
-import { STEPS_PER_SECOND, type ShowDocument } from '../../../../../engine/model/show';
+import {
+  embeddedShell,
+  STEPS_PER_SECOND,
+  type ShowDocument,
+} from '../../../../../engine/model/show';
 import { estimateShowEnd } from '../../../../../engine/sim/lifetime';
 import { REDUCED_MOTION_QUERY, mediaQuery } from '../../../../core/browser';
 import { ClientConfigStore, checkpointOptions } from '../../../../core/client-config';
@@ -45,6 +49,7 @@ import { MessagePageComponent } from '../../../../shared/message-page/message-pa
 import { StaticSkylineComponent } from '../../../../shared/static-skyline';
 import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
 import { PlayerNoticeComponent } from '../../shared/player-notice';
+import { announcement } from '../../../../shared/announcer';
 
 /** The `Loading…` line waits this long (phase-5.md §8.4). */
 export const LOADING_DELAY_MS = 300;
@@ -163,7 +168,9 @@ export class PlayerPageComponent {
       shareCode: opened.response.shareCode,
       name: show.name,
       // Only shells a cue uses ever play, so only they can strobe (§11.3).
-      strobe: [...used].some((k) => show.shells[k]?.breaks.some((b) => b.effect === 'strobe')),
+      strobe: [...used].some((k) =>
+        embeddedShell(show, k)?.breaks.some((b) => b.effect === 'strobe'),
+      ),
       estimate,
       length: showLengthText(estimate),
     };
@@ -178,7 +185,8 @@ export class PlayerPageComponent {
   protected readonly placeholderShell = PRESETS[0];
   /** At the end step (§11.2): the ended state with Replay. */
   protected readonly ended = signal(false);
-  protected readonly announcement = signal('');
+  /** Repeats re-announce (phase-7.md §10 B4). */
+  protected readonly announcement = announcement();
   private readonly metaTime = viewChild<ElementRef<HTMLElement>>('metaTime');
   private readonly progress = viewChild<ElementRef<HTMLElement>>('progress');
   private lastSecond = -1;

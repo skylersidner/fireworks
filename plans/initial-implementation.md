@@ -487,18 +487,114 @@ Deep links also work on Railway. The Railway round trip runs with writes switche
 
 ### Phase 7: Polish and deploy hardening
 
-- **Cache headers:** hashed bundles are `immutable`, `index.html` is `no-cache`, and `GET` on a creation returns an ETag.
-- **CSP and security headers:** test whether Pixi needs its `pixi.js/unsafe-eval` build.
-- **Accessibility:**
-  - `prefers-reduced-motion` turns off strobe and dims the burst flash.
-  - A photosensitivity notice on the player. **Moved earlier (decided):** the designer gets it in 2c, and the player's notice and Reduce flashing ship with the player in Phase 5.
-  - Full keyboard access.
-- **Rendering quality:** pick `starBudget` automatically from measured fps, add a touch-friendly layout, and cap DPR at 1.5 on mobile.
-- **Operations:**
-  - Railway Postgres backups.
-  - A takedown runbook (SQL to delete a creation by share code).
-  - Optionally a `/health/ready` check against the database.
-- **Error handling:** handle WebGL context loss and restore.
+**Status:** expanded at the Phase 7 planning ceremony (Mario, 2026-11-15; record `records/mario-phase7-planning.md`). Scope below is settled by Skyler's answers to Q7.1–Q7.4 (2026-11-15, end of this section); Q7.5 waits on A3. Items marked **[R]** depend on Q7.1 (Railway), items marked **[P]** on Q7.2 (performance bench).
+
+The original outline, kept for traceability: cache headers (hashed bundles `immutable`, `index.html` `no-cache`, ETag on a creation `GET`); CSP and security headers (does Pixi need `pixi.js/unsafe-eval`); accessibility (`prefers-reduced-motion` turns off strobe and dims the burst flash; the player's photosensitivity notice, already moved to Phase 5; full keyboard access); rendering quality (`starBudget` from measured fps, a touch-friendly layout, DPR capped at 1.5 on mobile); operations (Railway Postgres backups, a takedown runbook, optionally `/health/ready`); WebGL context loss and restore.
+
+**Already done before Phase 7 (verify only, don't rebuild):** Reduce flashing defaults from `prefers-reduced-motion`, turns off the strobe blink, dims and shrinks the burst flash and raises the glitter floor (`engine/render/visual-rules.ts`, 2c), with flash spacing at 41 steps (Phase 6); it is device-wide (`core/device-preferences.ts`) on the designer, builder and player. The player's flashing notice shipped in Phase 5. `Cache-Control: no-store` and `nosniff` are on every `/api` response (`Services/ApiResponseHeaders.cs`, Boo S16). F11 (integer `type` copy) is closed in code (`designer-copy.ts:87`; Peach 5h); the Phase 5 gate's carry was stale.
+
+#### 7.1 Scope
+
+**In:**
+- **Caching (Bowser).** Hashed `main-*`, `chunk-*`, `styles-*` get `public, max-age=31536000, immutable`; `index.html` and every SPA-fallback response get `no-cache`; unhashed static files (`favicon.svg`, `3rdpartylicenses.txt`) get a short or revalidating policy. `GET api/creations/{code}` returns an `ETag` and answers `If-None-Match` with 304. The ETag is the quoted `updatedAt` token (schema.md §2.1), so Phase 8's `If-Match` (§11.4) reuses it unchanged.
+- **Security headers and CSP (Boo requirements, Bowser builds, Luigi makes the bundle comply).** CSP enforced (not report-only); `Referrer-Policy: same-origin` and `frame-ancestors 'none'` (Boo C20); `nosniff` site-wide; drop `Server: Kestrel`. Decide Pixi's `unsafe-eval` question from evidence (the built chunks contain `new Function`). Handle the two inline items in `wwwroot/index.html`: Beasties' critical `<style>` and its `<script>` media swap, plus Angular's runtime component `<style>` tags.
+- **Pipeline edges (Bowser).** `/health/ready` mapped (a DB check, text/plain, 503 when the DB is down) and not answered by the SPA; a dotted last segment under `/s/` and `/c/` (`/c/..%2Fme`) serves the app's not-found page or the bare 404 is recorded as accepted; Boo's chunked-body `Connection: close` hardening (`ContentLength is null && CanHaveBody`).
+- **Operations (Bowser).** A takedown runbook in the README (SQL to delete one creation by share code, with a before/after check); a backup and restore procedure rehearsed locally from `pg_dump`; Railway Postgres backups switched on **[R]**. The README's "There are no backups until Phase 7" sentence updated.
+- **WebGL context loss and restore (Luigi; Yoshi on the engine boundary).** All stage surfaces (designer, builder, shell and show player) survive `webglcontextlost`/`webglcontextrestored`: the sim keeps its state, the renderer is rebuilt, and a stage that never gets its context back shows the existing no-WebGL message.
+- **Mobile rendering (Luigi; Rosalina defines "mobile").** DPR capped at 1.5 on the mobile class (today `Math.min(dpr, 2)` everywhere, `pixi-renderer.ts:96`; the timeline canvas uses raw `devicePixelRatio`, `timeline.ts:467`). Touch-friendly layout at 760px and narrower, including two-finger pinch zoom on the timeline.
+- **Accessibility (Rosalina design-review, Luigi builds).** A keyboard audit of every page (`/`, `/show`, `/s/:code`, `/mine`, `/status`, the not-found pages), including whether Save gets Ctrl/⌘+S (phase-5.md §12, deferred there). Rosalina B4–B7 (phase-6.md §19.2). The API banner's Try again moves to `aria-disabled` (`api-banner.ts:28`). A reduced-motion audit of what is already built (above) and anything non-canvas that still animates.
+- **Builder UX carried from Phase 6 (Luigi; Rosalina's existing specs).** Show JSON Copy/Apply (phase-6.md §9.5), with show-path field labels in `labels.ts` (Peach's gap: `cues[3].seed` renders raw); library drag onto the timeline (§4.1); `+k` badge click-to-zoom (§6.2); the scrub-bar overview (§5.2); the moved end label no longer covering a `+k` badge (§19.1).
+- **Caps decision with measured numbers (Toad measures, Skyler rules; Yoshi/Bowser/Luigi/Toad apply any change).** The show-only particle cap and the 600 s maximum duration (Skyler, 2026-11-15), plus the Chrome p95 seek on a saved show that the "Show Builder v1" row names as its revisit trigger (>1 s). Measured as wall time of real work (step cost, seek time, long tasks), not fps.
+- **Cleanups.** TS `PlaybackClientConfig` renamed to match C# `ClientPlaybackConfig` (Luigi); Bowser's record sentence corrected per `toad-phase6-client-config-contract-parity.md` (Bowser); `doneWhenShow()` loads Toad's fixture `schema/fixtures/valid/show/done-when-60s-50.json` (Luigi); the designer save bar, status block and HUD move to `app/shared` if Yoshi says so; Boo F3 (`Object.hasOwn` or a null-prototype copy at every `shells[...]` lookup, plus Toad's `constructor`/`toString` round-trip spec); a late `ClientPlayback` config and the checkpoint interval, and the frame-past-end clamp (Yoshi rules; Luigi builds if needed); Boo re-checks Toad's F2/F5 closures (this also settles the Phase 5 "C2 name-only heuristic" item, which F2 replaced with a shape allowlist); Peach writes her closing note on the 6a/6b/6k rejections.
+- **Railway window [R].** First deploy and one test window: Phase 1 Railway Done-when (health, deep links, `/api/nope`, canary, migrations in the startup log); Phase 2d Firefox/Safari parity and the Safari trail-format check; 5i.2–5i.5; 6k.3–6k.4; Boo C18 (S5 413 through the edge with and without chunked, S21 client IP, the S28 runbook with `pg_dump` before) and C20 on the Production build; Toad's 21-fixture round trip; every Phase 7 header and cache check repeated through the edge. Writes are switched on for the window and off afterward, confirmed by `canWrite: false` and a 403 on `GET api/me/creations`.
+
+**Out of Phase 7:**
+- `If-Match` → 412 on Update original: schema.md §11.4's trigger is the first lost update or Phase 8, whichever comes first. Phase 7 only makes the ETag the right token (Q7.4).
+- Automatic `starBudget` from measured fps **[P]**: conflicts with the performance bench (Q7.2).
+- Multi-select of cues, editing embedded shells in place, auditioning a shell (phase-6.md §13.2).
+- The dense-flash warning on the timeline (phase-6.md §14.3, a creator aid) unless Skyler pulls it in (Q7.3).
+- Background checkpoint warm-up, unless the Chrome p95 seek measurement trips the >1 s trigger (Q7.3).
+- A custom domain (OQ18), a real `KnownProxies` entry (Phase 8, once the host is fixed), multi-replica migration locking (README: run one replica).
+
+**Deferred to Phase 8 or later:** `If-Match`/412; the `/mine` nav-versus-page wording and the other §5 index wording flags (Skyler's promotion calls, not build work); everything in §6.
+
+#### 7.2 Done when
+
+Each item names its evidence. The gate runs them against the built image on a fresh database unless marked [R].
+
+1. **Caching.** `curl -I` on the image: a hashed JS chunk and the stylesheet carry `immutable` with a one-year max-age; `/`, `/index.html` and a deep link `/s/<code>` carry `no-cache`; `favicon.svg` is not `immutable`. `GET api/creations/{code}` has an `ETag`; the same request with `If-None-Match` is 304 with no body; after a PUT the old tag gets 200 and a new tag. A recorded negative control (for example removing the immutable rule) fails the header test.
+2. **Security headers and CSP.** Boo's header list is present on every response class (index, deep link, static asset, `/api` 200, `/api` 404, 413, `/health/live`, `/health/ready`). The CSP is enforced, and Playwright in Chromium, Firefox and WebKit logs **zero CSP violations** while the designer auto-plays, the builder seeks, a shell and a show play on `/s/`, and `/mine` lists. The `unsafe-eval` decision is recorded with the evidence that decided it.
+3. **Pipeline edges.** `/health/ready` is `text/plain` and turns 503 when the database container is stopped (never `text/html`); `/c/..%2Fme` shows the app's not-found page, or Boo/Bowser's accepted-as-is note is recorded; the chunked over-limit request gets the agreed behavior in the Kestrel harness.
+4. **Operations.** The README's takedown runbook, run against the gate database, deletes exactly the creation with that share code, after which its link is the app's 404. A local restore from a `pg_dump` into an empty database gives the same row count and `max(updated_at)`. **[R]** Railway backups are enabled and one backup is listed in the dashboard.
+5. **Context loss.** On `/`, `/show`, `/s/<shell>` and `/s/<show>`, `WEBGL_lose_context.loseContext()` then `restoreContext()` leaves the stage drawing again (canvas frames change after restore), a show resumes at the same sim time, and no console errors appear. Without restore, the no-WebGL message shows. The Phase 2 20-navigation context-leak check still passes.
+6. **DPR.** Under Rosalina's mobile definition with a device scale factor of 3, the stage renderer and the timeline canvas use 1.5; a desktop at DPR 2 is unchanged. Unit specs cover both, with a negative control.
+7. **Accessibility.** Rosalina's keyboard inventory passes as a Playwright tab-walk on every page (each listed control reachable and operable, focus visible, no focus dropped to `body` by a disabling control). B4–B7 and the Try again fix have specs. Under emulated `prefers-reduced-motion: reduce`, each stage surface starts with Reduce flashing on, and the existing visual-rules specs still hold. Rosalina's post-implementation review passes.
+8. **Touch.** At 390×844 with touch emulation the designer, builder and player follow Rosalina's touch spec, and pinch zoom changes the timeline's zoom.
+9. **Builder UX.** Show JSON Copy in one engine and Apply in another gives a document that deep-equals the source (Toad's two-browser use, phase-6.md §9.5); Apply over a dirty show asks; an embedded shell's `sky` is dropped with the note. Library drag adds one cue at the drop time; a `+k` badge click zooms to that span; the scrub overview shows window, tail, cue ticks and view box; the end label never overlaps a badge.
+10. **Caps.** Toad's numbers (step cost at the particle cap, seek to end on `at-maximums` and on a realistic saved show, p95 of 20 seeks on a saved show in Chrome) are recorded, and Skyler's caps ruling cites them. If a cap changes: schema.md, both validators, fixtures (`generate-fixtures.mjs --check`) and both suites agree. If the p95 is over 1 s, the trigger's outcome (warm-up built, or a new ruling) is recorded.
+11. **Cleanups.** Each item in the cleanup bullet above is closed in code or in a record, or explicitly carried with an owner.
+12. **Suites.** `npm test`, `typecheck`, `ng build`, the `format` check, `generate-fixtures.mjs --check`, the gated `dotnet test` (`FIREWORKS_TEST_POSTGRES`) and the full three-stage `docker build` all pass, with counts. New header, ETag and context-loss checks each have a recorded negative control.
+13. **[R] Railway.** Every item in the Railway-window bullet above passes through the edge, writes are off afterward (`canWrite: false`, 403 on the list), and the row count and `max(updated_at)` match the window's expected writes.
+
+#### 7.3 Batches
+
+Every batch: commits are not authorized unless Skyler says so. Each brief names the files below and the question each must settle.
+
+**Batch A: ceremonies and measurement (parallel).**
+- **A1. Boo: security-review (CSP and headers).** Output: `records/boo-phase7-security-requirements.md`, the exact header set per response class, CSP directives, and verdicts on the pipeline edges.
+  - `src/api/Fireworks.Api/Program.cs`: static files short-circuit before routing (step 9), so where can a header land on a static file, an SPA fallback and an `/api` response without three copies?
+  - `Services/ApiResponseHeaders.cs`: `no-store` on every `/api` response vs an ETag on `GET api/creations/{code}`. Does the share-code GET become `no-cache` (revalidate) or stay `no-store` with a 304 path, given share codes must not sit in shared caches?
+  - `wwwroot/index.html` (build output): the inline critical `<style>` and the Beasties `<script>`. Hash, `security.autoCsp`, or turn `inlineCritical` off?
+  - `wwwroot/chunk-*.js` containing `new Function` and `engine/render/pixi-renderer.ts`: does a CSP without `unsafe-eval` render all three stage surfaces once `pixi.js/unsafe-eval` is imported, and what does that cost?
+  - `records/boo-phase5-security-requirements.md` C20 and `boo-phase4-security-verification.md` item 2: the Referrer-Policy and `frame-ancestors` lines, and whether the chunked `Connection: close` hardening is still wanted.
+  - `app/unsafe-sinks.spec.ts`, `features/designer/designer-structure.spec.ts`: do Toad's F2/F5 closures (rules 11–12, `toad-phase6-show-review.md`) hold?
+- **A2. Rosalina: design-review (accessibility, reduced motion, touch).** Output: `docs/fireworks-app/design/phase-7.md` and a record.
+  - Every page component under `features/**/pages` and `pages/`: the keyboard inventory, per control, and whether Ctrl/⌘+S comes in.
+  - `engine/render/visual-rules.ts`, `core/device-preferences.ts`, `core/browser.ts`: is anything left for reduced motion beyond what 2c and Phase 6 built (UI transitions, Auto show)?
+  - `features/designer/shared/api-banner/api-banner.ts`, `features/show/pages/show-builder-page/*`: B4–B7 and Try again, confirmed against phase-6.md §19.2.
+  - `features/show/shared/timeline/timeline.ts`, `engine/render/pixi-renderer.ts`: the definition of "mobile" for the DPR cap (coarse pointer, width or both), the touch layout, pinch zoom, and how the end label avoids a `+k` badge.
+  - phase-6.md §4.1, §5.2, §6.2, §9.5: are the library drag, scrub overview, badge zoom and Show JSON specs still right as written?
+- **A3. Toad: caps and seek measurement.** Output: a record with the numbers, on the current tree, Chrome headless and headed. Step cost at the particle cap; seek to end on `at-maximums` and on Toad's done-when fixture once saved; p95 of 20 random seeks on a saved show; long tasks during each. Files: `app/shared/fireworks-stage/fireworks-stage.ts` (`seekSlice`), `engine/loop/drivers.ts`, `schema/fixtures/valid/show/*.json`. Question: does a saved show's p95 seek exceed 1 s?
+- **A4. Yoshi: architecture rulings (short brief).** Output: a record. `engine/render/pixi-renderer.ts` and `stage-renderer.ts`: where does context loss live, the renderer or the stage host, and does the sim survive a renderer rebuild untouched? `TimelineDriver.inherit` and `records/luigi-phase6-show-builder.md` point 13: does a late config need to reset the checkpoint grid, and the frame-past-end clamp? `features/designer/shared/{save-bar,status,hud}`: move to `app/shared`? schema.md §2.1/§11.4: confirm the ETag token.
+- **A5. Peach: Phase 7 acceptance.** Output: `docs/fireworks-app/acceptance/phase-7.md` from 7.2 and A2's spec (Show JSON was promised a Phase 7 criterion in `acceptance/phase-6.md`), plus her 6a/6b/6k closing note. Runs after A2 lands and after Skyler answers Q7.1–Q7.3.
+
+**Batch B: implementation (parallel after A).**
+- **B1. Bowser:** caching, ETag and 304, the headers per A1, `/health/ready`, the dotted-segment fallback, chunked `Connection: close`, the takedown runbook, the backup and restore procedure (rehearsed locally), the README updates, his record correction. Backend tests with negative controls. Inputs: A1's record, `Program.cs`, `ApiResponseHeaders.cs`, `Controllers/CreationsController.cs`, `README.md` §Shipping/§Test windows.
+- **B2. Luigi (hardening):** CSP compliance in the bundle per A1 (`angular.json`, the Pixi import), context loss per A4, the DPR cap per A2, and the cleanups (config type rename, `doneWhenShow()`, F3, the shared-component move if A4 says so). Inputs: A1, A2, A4 records; `pixi-renderer.ts`; `fireworks-stage.ts`; `core/models.ts`; `testing/show-fixtures.ts`.
+- **B3. Luigi (UX and accessibility):** keyboard fixes, B4–B7, Try again, touch layout and pinch zoom, Show JSON with `labels.ts`, library drag, badge zoom, scrub overview, the label collision. Starts after A2; can interleave with B2 but is a separate report. Inputs: `design/phase-7.md`, phase-6.md §19, `acceptance/phase-7.md`.
+- **B4. Caps change (only if Skyler lowers a cap after A3):** Yoshi edits schema.md first, then Bowser (C# validator), Luigi (TS validator) and Toad (fixtures) in parallel.
+
+**Batch C: reviews (parallel after B).**
+- **C1. Boo:** security verification of the headers and CSP on the built image, three engines, zero violations.
+- **C2. Rosalina:** post-implementation review of B3 and the DPR/touch parts of B2.
+- **C3. Toad:** QA of B1–B3: header and ETag tests with negative controls, the context-loss Playwright check, the 20-navigation leak check, the tab-walk, the Show JSON two-browser round trip, F3's round-trip spec.
+- **C4. Peach:** acceptance against `acceptance/phase-7.md` (payloads and stores, not only screens).
+- Strict lockout on rejection: there is one backend and one frontend implementer, so a rejected B1, B2 or B3 goes to the coordinator to assign. The seam pieces are the exception: Bowser can take a rejected config rename or `index.html` CSP setting, and Luigi a rejected header rule that only the bundle can satisfy.
+
+**Batch D [R]: the Railway window.** Bowser deploys and runs the window per the README; Boo checks C18, C20 and the headers through the edge; Toad reruns the 21-fixture round trip and the 2d Firefox/Safari checks; Mario observes 5i/6k and the switch-off. Skyler switches writes on and off, or authorizes Bowser to.
+
+**Batch E: Mario's phase-gate**, then Koopa's retrospective (optional) and Scribe.
+
+#### 7.4 Parallelism
+
+- A1–A4 run together now; A5 waits for A2 and Skyler's answers.
+- B1 and B2 run together once A1 (and A4 for context loss) land; B3 starts when A2 lands. B4 waits for A3 and Skyler's ruling and can overlap B1–B3 (different files, except the validators).
+- C1–C4 run together once B is reported complete.
+- D needs B1 and C1 at least (headers are what the edge must preserve) and can run before or alongside C2–C4. If Q7.1 keeps the deferral, D is dropped and the gate records [R] items as DEFERRED.
+
+#### 7.5 Questions for Skyler
+
+- **Q7.1 Railway: deploy in Phase 7, or keep deferring?** The standing ruling defers Railway; Phase 7 is "deploy hardening" and its outline names Railway backups, and 5i.2–5i.5, 6k.3–6k.4, Boo C18/S5/S21 and the 2d Safari checks have been carried for two phases. **Recommendation: make the first Railway deploy and one test window Phase 7's last batch (D).** Headers and caching can only be proven through the edge (`Connection` is hop-by-hop and an edge can rewrite or compress), backups need the host, and Phase 8's OAuth needs real redirect URIs. Alternative: keep the deferral; Phase 7 passes on image evidence, backups become a documented procedure only, and every [R] item is DEFERRED again.
+- **Q7.2 Automatic `starBudget` from measured fps vs the performance bench.** The bench says no fps requirement until the end of the project and that the concern is CPU load; the outline (and OQ10's "automatic quality comes in Phase 7") wants an fps-driven setting. **Recommendation: drop the fps-driven `starBudget` from Phase 7 and move automatic quality to the end-of-project performance re-evaluation, reframed around CPU cost.** Keep the manual Star budget control and `starBudget` 1 for shows. Keep the DPR cap in Phase 7: it is a fixed rule, not a measurement. Confirm that A3's caps measurement (wall time of steps and seeks, not fps) is consistent with the bench; it is what your 2026-11-15 ruling asked for.
+- **Q7.3 Optional builder items.** **Recommendation:** build the four Rosalina moved (library drag, pinch zoom, `+k` badge, scrub overview), the label fix and Show JSON; build background checkpoint warm-up **only if** A3's p95 seek on a saved show exceeds 1 s; leave the dense-flash warning and multi-select out.
+- **Q7.4 `If-Match` → 412 now?** **Recommendation: no.** Keep schema.md §11.4's trigger (first lost update or Phase 8), and have Phase 7's ETag use the same `"<updatedAt>"` token so Phase 8 adds only the check.
+**Answers (Skyler, 2026-11-15):** Q7.1 **keep deferring Railway**: batch D is dropped, Phase 7 passes on Docker-image evidence, Railway backups become a documented, locally rehearsed procedure only, and every [R] item is DEFERRED again. Q7.2 **as recommended**: no fps-driven `starBudget` in Phase 7; automatic quality moves to the end-of-project review framed around CPU cost; manual control and `starBudget` 1 for shows stay; the DPR cap ships; A3's wall-time caps measurement proceeds. Q7.3 **as recommended** (Rosalina's four, the label fix, Show JSON; warm-up only if p95 seek > 1 s; no dense-flash warning or multi-select). Q7.4 **as recommended**: no If-Match yet; the ETag uses the `"<updatedAt>"` token. Q7.5 **keep 40k particles / 600 s** (no B4 caps change; Toad's `records/toad-phase7-caps-and-seek.md`). **Further rulings (Skyler, 2026-11-15):** the >1 s seek trigger covers cold (first) seeks, so background checkpoint warm-up is built in Phase 7; CSP `style-src 'unsafe-inline'` is an accepted residual (scripts strict; reopen if any HTML-rendering path is added); Show JSON Apply is one Undo step. Warm-up runs on every device class, touch included (Skyler, 2026-11-15). Coordinator rulings on Peach's N1/N3/N4: after the 10 s context-loss timeout the renderer is destroyed and a later restore is ignored (Yoshi's version); warm-up starts after a `/c/` load, a draft restore and a Show JSON Apply, and resumes from an edit point; the F3 helper is `embeddedShell`. **Throughput constraints (Skyler, 2026-11-15, for the rest of the project):** mutation testing only on engine, save-path and security/guard code; at most two agents at once; three-browser and real-time measurement runs happen once, at the phase gate. **Amended (Skyler, 2026-11-15):** regular test runs, phase gates included, use one browser (Chromium); Firefox and WebKit move to a daily test run, to be defined in the post-Phase-7 testing interlude. Until that daily run exists, the other engines are not a gate criterion. The 7l.5 early-seek bar passes if p95 ≤ 4,330 ms or no worse than a same-load no-warm-up baseline + 20% (Skyler, 2026-11-15). Coordinator default: ⌘S with two save choices moves focus to `Update original` and sends nothing (Rosalina's recommendation).
+
+- **Q7.5 Caps.** Not answerable yet: after A3, the coordinator brings Toad's numbers with a recommendation (keep, or lower the show particle cap and/or the 600 s maximum).
+
+### Interlude after Phase 7: fast show-testing strategy (Skyler, 2026-11-15)
+
+Before Phase 8 starts, find a way to test shows that doesn't depend on playing them in real time or seeking through them in a browser. Today's real-time runs and long seeks are too slow for future changes and impossible in a deployment pipeline. Owners: Toad (test strategy) and Yoshi (engine). It also defines the daily test run where Firefox and WebKit are evaluated (Skyler, 2026-11-15). Output: a proposal for Skyler, then adoption. The proposal must say which current real-time and browser checks it replaces, what it keeps, how long a pipeline run takes, and how confidence is preserved.
 
 ### Phase 8: Authentication pass
 

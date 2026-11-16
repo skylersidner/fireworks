@@ -177,3 +177,22 @@ The code closes F11. `designer-copy.ts` l.85–88 returns `${field} must be a wh
 - **N4 (cue id reuse, Luigi).** Reusing a deleted cue's `id` doesn't change other cues (seeds are per cue), but a reused id with a new seed can make a before/after ledger diff misleading. 6c.4 asks for no reuse within a draft. Push back if that's costly.
 - **N5 (resolved).** p6-spec landed. Route `/show`, transport (6c.8), the tail (6c.7), duration edits (6c.9: blocked), the empty show (6f.2), the library notice (6e.2: none, group hidden), the kind marker (6j.1), labels (6f.7) and caps (6d.3, 6d.4) now cite it. One correction to my own 6h.2: strobe is named only for shells used by a cue (p6-spec §11.3), which is the more accurate rule.
 - **N6 (Undo details, Rosalina and Luigi).** p6-spec's Undo exists only as its Q1 recommendation (Redo on Shift+⌘/Ctrl+Z, two toolbar buttons, cleared by link load or New show). It doesn't say what ⌘/Ctrl+Z does while focus is in a text or number field (the browser's own field undo, or the show's). Recommended default: inside INPUT, TEXTAREA and SELECT the browser's field undo wins (the 2c §6.2 exclusion list). Rosalina should confirm in p6-spec; 6c.11 doesn't test that case until she does.
+
+## Closing note (Peach, 2026-11-15)
+
+**My 6a, 6b and 6k rejections are closed.** I rejected 6a.4 and 6a.8 (the smoke only logged console errors and had no negative controls), 6b.1–6b.3 (the smoke seeded its own shells instead of the fixture, and "move" and "delete" both hit c1), and 6k.2 (the built-image cold load and reload). They are closed on this evidence, which I read and did not re-run:
+- **Toad's review-fix** (`.squad/decisions/records/toad-phase6-show-review.md` items 4, 6, 7 and 9): `scratchpad/p6smoke/done-when-toad.mjs` exits non-zero on any `console.error` or `pageerror`, edits two different cues and asserts on the POST body, and checks Share's clipboard text. Each check has a recorded control that makes the run exit 1 (`TOAD_INJECT_ERROR`, `TOAD_HIDE_ENDED`, `TOAD_BLOCK_CLIPBOARD`, `TOAD_SAME_CUE`).
+- **Mario's gate** (`.squad/decisions/records/mario-phase6-gate.md`): three cross-engine round trips on the built image (Chromium→Firefox, Firefox→WebKit, WebKit→Chromium), using the fixture, checking that the GET `document` deep-equals the POST, playing to the ended state, with zero console errors. Also 6k.2 by `curl -i` and a Playwright cold load and reload, following Bowser's image recipe from his review-fix round.
+
+6k.3 and 6k.4 stay **DEFERRED** (Railway; Skyler, Phase 7 Q7.1).
+
+**Where the Phase 6 deferrals went.** Skyler moved these to Phase 7 (2026-11-14), and their criteria now live in `acceptance/phase-7.md`. Nothing here is owed for them:
+- the library-drag gesture in 6c.2 → 7j.5–7j.9;
+- pinch zoom → 7j.1–7j.4;
+- the `+k` badge click → 7j.10–7j.12;
+- the scrub overview → 7j.13–7j.14;
+- the end-label collision → 7j.15;
+- Show JSON → 7k;
+- Rosalina's B4–B7 → 7g.21–7g.24.
+
+6h.1's "`starBudget` 1 until Phase 7" is settled: shows stay at `starBudget` 1 (Q7.2), per 7l.9. 6i.4's revisit trigger was measured (Toad A3) and tripped by cold seeks, so warm-up is built and accepted by 7l.3.

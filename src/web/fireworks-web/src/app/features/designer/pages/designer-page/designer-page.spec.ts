@@ -403,7 +403,13 @@ describe('DesignerPageComponent', () => {
       byTest('api-retry')!.click();
       await stable();
       expect(byTest('api-retry')?.textContent?.trim()).toBe('Checking…');
-      expect(byTest<HTMLButtonElement>('api-retry')!.disabled).toBe(true);
+      // phase-7.md §10: aria-disabled and busy while checking (it was [disabled] before Phase 7).
+      const retry = byTest<HTMLButtonElement>('api-retry')!;
+      expect([
+        retry.disabled,
+        retry.getAttribute('aria-disabled'),
+        retry.classList.contains('btn-busy'),
+      ]).toEqual([false, 'true', true]);
       http.expectOne('/health/live').flush('Healthy');
       // Try again also reloads the session (Skyler, 2026-11-14).
       http.expectOne('/api/me').flush(ME_TEST_WINDOW);

@@ -16,5 +16,5 @@
 
 ## Boundary
 - The builder's banner, like the designer's, follows `/health/live`, not `api/me`. If `api/me` fails while health is fine, neither surface shows a banner, and Try again doesn't reload the session. That's a shared behavior for Rosalina/Luigi to rule on, not something this round changed.
-- The banner's own Try again still uses `disabled` while checking (the designer's existing behavior), so focus drops to body during a retry. Phase 7 accessibility pass.
+- The banner's own Try again still uses `disabled` while checking (the designer's existing behavior), so focus drops to body during a retry. Phase 7 accessibility pass. **Superseded in part by `luigi-phase7-ux-accessibility.md` (points 2 and 3) on 2026-11-15:** Try again is `aria-disabled` with `.btn-busy`, and focus moves to the h1 when the banner unmounts.
 - Any further page reaching HTTP or identity still needs its own exact allowlist entry.

@@ -93,7 +93,7 @@ Each item is **must-have** (Phase 4 doesn't pass the gate without it) or **harde
 - Test: the alphabet constant equals the §9 string (length 58, no `0OIl`). A grep/reflection test that `ShareCodeGenerator` doesn't reference `System.Random`.
 - **Enumeration assessment (no extra control needed):** with N stored codes, each guess hits with probability N / 58⁸ (58⁸ ≈ 1.28 × 10¹⁴). At N = 10,000 that's 7.8 × 10⁻¹¹ per guess. Under the S19 read limit (120/min per IP), one IP makes about 1.7 × 10⁵ guesses a day, for about 1.3 × 10⁻⁵ expected hits; 1,000 IPs find about one creation every 75 days. A hit reveals one unlisted fireworks shell. That's acceptable for unlisted content. **Timing doesn't matter:** a hit and a miss already differ by status code. A malformed code (route 404, no DB) and a well-formed miss (DB 404) differ in timing, but that only reveals the public §9 regex. No constant-time work is needed.
 
-**S16 (hardening; Phase 7 caching is Bowser's). `Cache-Control: no-store` on all `/api` responses now.** A PUT changes what a code returns, and `isOwner`/`remixedFrom` vary by user after Phase 8, so no shared cache may hold them. Phase 7 can relax it for share-code GETs with `private` plus validators if it wants.
+**S16 (hardening; Phase 7 caching is Bowser's). `Cache-Control: no-store` on all `/api` responses now.** A PUT changes what a code returns, and `isOwner`/`remixedFrom` vary by user after Phase 8, so no shared cache may hold them. Phase 7 can relax it for share-code GETs with `private` plus validators if it wants. **Superseded in part by `boo-phase7-security-requirements.md` (§3 and §4, P7-S4) on 2026-11-15:** the share-code GET is `private, no-cache` with an ETag; every other `/api` response stays `no-store`.
 
 ### Rate limiting
 

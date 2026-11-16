@@ -3,7 +3,7 @@ import { FormField, type FieldTree } from '@angular/forms/signals';
 import { NAME_MAX_LENGTH, SHELL_LIMITS } from '../../../../../engine/model/limits';
 import { RangeRowComponent } from '../../../../shared/range-row';
 import type { EditableShell } from '../designer-draft';
-import { degrees, degreesText, percent, percentText } from '../formats';
+import { degrees, degreesText, percent, percentText } from '../../../../shared/formats';
 
 /** Counter appears at this many characters (designer-2c.md §3.3). */
 const COUNTER_FROM = 70;

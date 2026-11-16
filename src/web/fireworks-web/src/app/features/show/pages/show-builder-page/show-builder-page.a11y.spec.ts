@@ -18,10 +18,7 @@ import { ME_TEST_WINDOW, settleSession } from '../../../../testing/creation-fixt
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
 import { MemoryStorage } from '../../../../testing/memory-storage';
-import {
-  API_BANNER_DESIGNER,
-  ApiBannerComponent,
-} from '../../../designer/shared/api-banner/api-banner';
+import { API_BANNER_DESIGNER, ApiBannerComponent } from '../../../../shared/api-banner/api-banner';
 import { ShowBuilderStore } from './show-builder.store';
 
 const tick = (ms = 0) => new Promise<void>((resolve) => setTimeout(resolve, ms));

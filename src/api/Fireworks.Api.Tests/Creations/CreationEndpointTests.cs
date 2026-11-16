@@ -140,6 +140,10 @@ public sealed class CreationEndpointTests
         Assert.Equal(JsonValueKind.Null, orphan.GetProperty("remixedFrom").ValueKind);
     }
 
+    /// <summary>
+    /// The share-code GET's 200 is the one exception (<c>private, no-cache</c>, Phase 7); every
+    /// endpoint and status is enumerated in <c>Hardening/ApiCacheControlLedgerTests</c>.
+    /// </summary>
     [Fact]
     public async Task Api_responses_are_no_store_and_nosniff_including_errors()
     {
@@ -147,7 +151,7 @@ public sealed class CreationEndpointTests
         var code = await CreateAsync(h);
         foreach (var response in new[]
                  {
-                     await h.Client.GetAsync($"/api/creations/{code}"),
+                     await Send(h, HttpMethod.Put, $"/api/creations/{code}", $"{{\"document\":{Peony}}}"),
                      await h.Client.GetAsync("/api/creations/zzzzzzzz"),
                      await h.Client.GetAsync("/api/nope"),
                      await Send(h, HttpMethod.Post, "/api/creations", "{")

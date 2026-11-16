@@ -100,19 +100,19 @@ export interface ValidationErrorResponse {
 }
 
 /**
- * `PlaybackClientConfig(int SeekBudgetMs, int CatchingUpDelayMs, int CheckpointIntervalSeconds,
+ * `ClientPlaybackConfig(int SeekBudgetMs, int CatchingUpDelayMs, int CheckpointIntervalSeconds,
  * int CheckpointMemoryMiB)`: the playback knobs from the server's appsettings (Skyler,
  * 2026-11-15). The server validates the ranges at startup; the client clamps again
  * (core/client-config.ts).
  */
-export interface PlaybackClientConfig {
+export interface ClientPlaybackConfig {
   seekBudgetMs: number;
   catchingUpDelayMs: number;
   checkpointIntervalSeconds: number;
   checkpointMemoryMiB: number;
 }
 
-/** `ClientConfigResponse(PlaybackClientConfig Playback)`: `GET api/client-config`, anonymous. */
+/** `ClientConfigResponse(ClientPlaybackConfig Playback)`: `GET api/client-config`, anonymous. */
 export interface ClientConfigResponse {
-  playback: PlaybackClientConfig;
+  playback: ClientPlaybackConfig;
 }

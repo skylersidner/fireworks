@@ -6,6 +6,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
+import type { LiveNoteEntry } from '../../../../shared/announcer';
 
 /**
  * Shell JSON section (designer-2c.md §3.6, D8). Stateless: the store holds the text, any unapplied
@@ -24,7 +25,7 @@ import {
             type="button"
             class="btn btn-heading"
             data-testid="json-revert"
-            (click)="revert.emit()"
+            (click)="onRevert()"
           >
             Revert
           </button>
@@ -52,12 +53,17 @@ import {
       [value]="text()"
       (input)="edit.emit($any($event.target).value)"
     ></textarea>
-    <p class="note" id="json-note" aria-live="polite" data-testid="json-note">{{ note() }}</p>
+    <p class="note" id="json-note" aria-live="polite" data-testid="json-note">
+      @for (n of [note()]; track n.seq) {
+        {{ n.text }}
+      }
+    </p>
   `,
 })
 export class JsonPanelComponent {
   readonly text = input.required<string>();
-  readonly note = input.required<string>();
+  /** Keyed by `seq`, so the same note set again replaces the text node and re-announces (B4). */
+  readonly note = input.required<LiveNoteEntry>();
   readonly hasEdits = input(false);
 
   readonly edit = output<string>();
@@ -67,6 +73,12 @@ export class JsonPanelComponent {
   readonly copied = output<boolean>();
 
   private readonly area = viewChild.required<ElementRef<HTMLTextAreaElement>>('area');
+
+  /** Revert removes itself (no edits left), so focus goes to the textarea (phase-7.md K2). */
+  protected onRevert(): void {
+    this.revert.emit();
+    this.area().nativeElement.focus();
+  }
 
   protected async copy(): Promise<void> {
     const el = this.area().nativeElement;

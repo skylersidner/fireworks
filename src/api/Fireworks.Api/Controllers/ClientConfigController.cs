@@ -12,7 +12,7 @@ namespace Fireworks.Api.Controllers;
 /// <c>GET api/client-config</c>: the client tuning knobs the SPA reads once at page load. Anonymous
 /// and read-only, with no identity data, so it needs no service or <c>ICurrentUser</c>: it only
 /// projects validated configuration into the response record. Read-limited like every other
-/// <c>/api</c> read; <c>no-store</c> and <c>nosniff</c> come from <c>ApiResponseHeaders</c>.
+/// <c>/api</c> read; <c>no-store</c> and <c>nosniff</c> come from <c>ResponseHeaders</c>.
 /// </summary>
 [ApiController]
 [AllowAnonymous]

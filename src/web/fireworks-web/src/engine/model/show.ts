@@ -35,6 +35,21 @@ export interface ShowDocument {
   cues: ShowCue[];
 }
 
+/**
+ * The embedded shell under `key`, or undefined when `shells` has no such OWN key (Boo F3,
+ * yoshi-phase7-architecture-rulings.md point 5). A plain `shells[key]` on an object with a
+ * prototype returns `Object.prototype.constructor` for `'constructor'`; `in` has the same hole.
+ * Every read of an embedded shell by key outside normalize.ts goes through here
+ * (`embedded-shell-reads.spec.ts` allows `.shells[` only in this file, normalize.ts, show-edit.ts
+ * and the sim's own array).
+ */
+export function embeddedShell<S>(
+  show: { readonly shells: Readonly<Record<string, S>> },
+  key: string,
+): S | undefined {
+  return Object.hasOwn(show.shells, key) ? show.shells[key] : undefined;
+}
+
 /** Steps per second of the fixed-step loop (`sim/constants.ts` `STEP` = 1/120). */
 export const STEPS_PER_SECOND = 120;
 

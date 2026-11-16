@@ -1,9 +1,8 @@
-import type { CreationError } from '../../../core/creations';
-import type { SavePlan } from '../../../core/creation-save';
-import type { ShellIssue } from '../../../../engine/model/normalize';
-import { isolate } from '../../../shared/bidi';
-import { retryWhen } from '../../../shared/link-copy';
-import { issueReason } from './designer-copy';
+import type { CreationError } from '../core/creations';
+import type { SavePlan } from '../core/creation-save';
+import type { ShellIssue } from '../../engine/model/normalize';
+import { isolate } from './bidi';
+import { retryWhen } from './link-copy';
 
 /**
  * Save, Share and save-failure copy (docs/fireworks-app/design/phase-5.md §2, §3.2, §5, §6),
@@ -107,13 +106,13 @@ export function updateGoneStatus(sourceName: string, noun: SaveNoun = 'shell'): 
 /** §6 row 400b for the client's own strict check, which runs before any request (§3.1). */
 export function invalidStatus(
   issues: readonly ShellIssue[],
+  reasonOf: ReasonOf,
   truncated = false,
   noun: SaveNoun = 'shell',
-  reasonOf: ReasonOf = issueReason,
 ): SaveStatus {
   return {
     tone: 'error',
-    text: `Couldn't save: the server didn't accept this ${noun} (${reasons(issues, truncated, reasonOf)}). Reloading the page usually fixes this. ${kept(noun)}`,
+    text: `Couldn't save: the server didn't accept this ${noun} (${reasons(issues, reasonOf, truncated)}). Reloading the page usually fixes this. ${kept(noun)}`,
     actions: ['reload'],
   };
 }
@@ -136,8 +135,8 @@ export function saveFailureStatus(
   error: CreationError,
   request: SavePlan['request'],
   sourceName: string,
+  reasonOf: ReasonOf,
   noun: SaveNoun = 'shell',
-  reasonOf: ReasonOf = issueReason,
 ): SaveStatus {
   const KEPT = kept(noun);
   switch (error.kind) {
@@ -154,7 +153,7 @@ export function saveFailureStatus(
           actions: ['reload'],
         };
       }
-      return invalidStatus(issues, error.truncated, noun, reasonOf);
+      return invalidStatus(issues, reasonOf, error.truncated, noun);
     }
     case 'forbidden':
       return {
@@ -198,8 +197,8 @@ export const MAX_REASONS = 3;
 /** §6 `{reasons}`: at most 3 joined with `; `, then `, and {k} more`, or `, and more` when truncated. */
 export function reasons(
   issues: readonly ShellIssue[],
+  reasonOf: ReasonOf,
   truncated = false,
-  reasonOf: ReasonOf = issueReason,
 ): string {
   const listed = issues
     .slice(0, MAX_REASONS)

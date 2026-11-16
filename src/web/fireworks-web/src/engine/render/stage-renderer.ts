@@ -1,4 +1,5 @@
 import type { FireworksSim } from '../sim/simulation';
+import type { FlashSpacing } from './visual-rules';
 
 /**
  * The renderer Pixi actually picked. `preference: 'webgl'` is only a preference: Pixi 8 falls
@@ -12,6 +13,17 @@ export type TrailFormat = 'rgba16float' | 'rgba8unorm';
 export interface StageRendererOptions {
   /** Force the 8-bit trail buffer (dev switch for the fallback check, acceptance 2d.5). */
   forceTrailFormat?: TrailFormat;
+  /**
+   * Canvas resolution (device pixels per CSS pixel). The host passes the app's rule
+   * (`core/browser.ts` `canvasResolution`: 1.5 under a coarse pointer, else 2, never above the
+   * device ratio); the engine never calls matchMedia. Absent: the device ratio capped at 2.
+   */
+  resolution?: number;
+  /**
+   * Reduce flashing spacing state, owned by the host so it survives a renderer rebuild after a
+   * context loss (yoshi-phase7-architecture-rulings.md point 1). Absent: the renderer makes one.
+   */
+  flashSpacing?: FlashSpacing;
 }
 
 /**
@@ -36,6 +48,14 @@ export interface StageRenderer {
    * `reduceFlashing` applies the Reduce flashing visual rules (render/visual-rules.ts).
    */
   render(sim: FireworksSim, persistence: number, reduceFlashing?: boolean): void;
+  /**
+   * Reports a WebGL context loss and restore of this renderer's canvas (WebGL only; Canvas can't
+   * lose one, and Pixi restores WebGPU itself). On `lost` the renderer has already stopped its
+   * frames. The listener is dropped before `destroy` runs, so the loss Pixi's own destroy causes
+   * is never reported (yoshi-phase7-architecture-rulings.md point 1). One listener; a second call
+   * replaces it.
+   */
+  onContextChange(listener: (state: 'lost' | 'restored') => void): void;
   /** Idempotent. Releases the WebGL context and every texture. */
   destroy(): void;
 }

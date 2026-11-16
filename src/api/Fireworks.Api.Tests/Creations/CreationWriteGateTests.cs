@@ -25,10 +25,11 @@ public sealed class CreationWriteGateTests
     private static readonly Dictionary<string, string> MethodlessEndpoints = new(StringComparer.Ordinal)
     {
         ["/health/live"] = "health check; never writes",
+        ["/health/ready"] = "health check (one database connect); never writes",
         // app.Map maps every method. Excluded by pattern, not by method: it is the /api 404, has no
         // gate to test, and its own test asserts 404 (SkeletonEndpointTests).
         ["/api/{**rest}"] = "the /api 404 catch-all"
-        // The SPA fallback ({*path:nonfile}) is not here: it carries GET/HEAD metadata.
+        // The SPA fallbacks ({*path:nonfile}, /s/{**rest}, /c/{**rest}) are not here: they carry GET/HEAD metadata.
     };
 
     [Fact]

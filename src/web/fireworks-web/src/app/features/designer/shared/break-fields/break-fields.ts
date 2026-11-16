@@ -23,7 +23,7 @@ import {
   seconds1Text,
   seconds2,
   starsText,
-} from '../formats';
+} from '../../../../shared/formats';
 
 /** The active break's rows, in prototype order (designer-2c.md §3.4; prototype l.617–645). */
 @Component({

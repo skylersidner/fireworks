@@ -16,7 +16,7 @@ let nextId = 0;
   selector: 'app-range-row',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    class: 'my-1.5 grid grid-cols-[96px_1fr_44px] items-center gap-2 pointer-coarse:min-h-9',
+    class: 'my-1.5 grid grid-cols-[96px_1fr_44px] items-center gap-2 pointer-coarse:min-h-[44px]',
   },
   template: `
     <label [for]="id" class="text-muted">{{ label() }}</label>

@@ -52,7 +52,7 @@ There is no login yet (plan §3.4). Every request acts as one configured default
 
 > **Until sign-in exists (Phase 8), the deployed site has no accounts. Saving is normally off. When it is switched on for testing, anyone who can reach the site can see, change and delete every saved creation, and a share link can be changed to play something else. Don't save anything there you'd mind losing or having changed.**
 >
-> Now that `PUT` and `DELETE` exist, "writes on" means more than "people can save". With `Identity__AllowAnonymousWrites=true`, anyone who reaches the site (not only people you give the URL to; new `*.up.railway.app` hostnames show up in certificate-transparency logs within minutes) can list every creation saved in any test window, overwrite what any existing share link plays (including links already sent to people), rename it to any 80-character text, delete everything, and create up to 300 rows a day per IP, each up to 256 KiB. There are no backups until Phase 7. Follow [Test windows](#test-windows-switching-writes-on) every time.
+> Now that `PUT` and `DELETE` exist, "writes on" means more than "people can save". With `Identity__AllowAnonymousWrites=true`, anyone who reaches the site (not only people you give the URL to; new `*.up.railway.app` hostnames show up in certificate-transparency logs within minutes) can list every creation saved in any test window, overwrite what any existing share link plays (including links already sent to people), rename it to any 80-character text, delete everything, and create up to 300 rows a day per IP, each up to 256 KiB. Take a [backup](#backups-and-restore) before every window, and follow [Test windows](#test-windows-switching-writes-on) every time.
 
 ### Creations API (Phase 4)
 
@@ -61,7 +61,7 @@ The contract is `docs/fireworks-app/schema.md` (§2 envelope and status codes, �
 | Endpoint | Does | Status codes |
 |---|---|---|
 | `POST api/creations` | body `{ kind, document }`; creates a creation owned by the current user | 201, 400, 403, 413, 415, 429 |
-| `GET api/creations/{shareCode}` | public; no identity needed | 200, 404, 429 |
+| `GET api/creations/{shareCode}` | public; no identity needed; `ETag` and `If-None-Match` (below) | 200, 304, 404, 429 |
 | `PUT api/creations/{shareCode}` | body `{ document }`; owner only, validated against the stored kind | 200, 400, 403, 404, 413, 415, 429 |
 | `DELETE api/creations/{shareCode}` | owner only | 204, 403, 404, 429 |
 | `POST api/creations/{shareCode}/remix` | body `{ document }` (the edited working copy); a new creation with `remixedFrom` set; any source | 201, 400, 403, 404, 413, 415, 429 |
@@ -71,6 +71,8 @@ The contract is `docs/fireworks-app/schema.md` (§2 envelope and status codes, �
 - **400 body:** exactly `{ message, errors: [{ path, code, message }], truncated }`, at most 100 issues.
 - **Rate limits** (per client IP, IPv6 per /64, in memory per replica, reset on deploy): writes 20 a minute and 300 a day; reads (`api/creations/{code}`, `api/me/creations`, `api/me`, unknown `/api` paths) 120 a minute. `/health/live`, static files and the SPA are never limited. Override with `RateLimits__Writes__PerMinute`, `RateLimits__Writes__PerDay` and `RateLimits__Reads__PerMinute`; production needs none of them. **The limiter is only as good as the client IP behind Railway's edge, which is unverified until the first deploy** (checklist step 5).
 - **Body limits:** Kestrel's global limit is 64 KiB; the three write actions raise it to 256 KiB. Clients send compact JSON (a pretty-printed worst-case show is 290 KB). A body sent with `Transfer-Encoding: chunked` has its chunk framing counted toward the limit too, so a chunked body somewhat under 256 KiB of JSON can still get 413 (Boo F2). Browsers' `fetch` sends a `Content-Length` for these bodies, so this is information only.
+- **ETag:** every response carrying a creation (the GET, POST, PUT and remix) sends the strong tag `ETag: "<updatedAt>"`, the body's `updatedAt` string exactly as serialized (schema.md §2.1.1). The GET answers `If-None-Match` (any listed tag by weak comparison, or `*`) with a bodiless 304 carrying the same `ETag` and `Cache-Control`. The lookup and the read limit come first. `If-Match` is not read yet (Phase 8, schema.md §11.4).
+- **Caching:** the share-code GET's 200 and 304 are `Cache-Control: private, no-cache`: kept out of shared caches, revalidated on every view, so an Update original shows up on the next load. Every other `/api` response (that GET's 404 and 429 included) is `no-store`.
 - **No form binding:** MVC's form value providers are removed for the whole API (`AddFireworksControllers`). With them, a `multipart/form-data` or large urlencoded body was parsed during model binding, before the write gate, and got MVC's 400 instead of 403 or 415 (Boo F1).
 
 ### Playback tuning (`ClientPlayback`)
@@ -95,7 +97,7 @@ Once snapshots exist, the median seek was about 0.14 s for 600 s of presets and 
   ClientPlayback__SeekBudgetMs=40 dotnet run --project src/api/Fireworks.Api
   ```
 - **On Railway:** add a service variable, for example `ClientPlayback__SeekBudgetMs` = `40`. Saving it redeploys, and the new value applies once the deploy is live. Remove the variable to go back to the committed value.
-- **Then reload the page.** The SPA reads these settings once, when the page loads, so an open tab keeps the old values until it is reloaded.
+- **Then reload the page.** The SPA reads these settings once, when the page loads, so an open tab keeps the old values until it is reloaded. If the values arrive late in a tab that is already open, the two checkpoint values (`CheckpointIntervalSeconds`, `CheckpointMemoryMiB`) apply only to shows opened after they arrive; a show already open keeps its snapshot spacing until it is reopened (`yoshi-phase7-architecture-rulings.md` §2).
 
 **Out-of-range values.** The API refuses to start if any value is outside its range or isn't a whole number. It exits before it touches the database, with a message that names the key, for example `ClientPlayback:SeekBudgetMs must be between 4 and 100 (milliseconds per frame).` On Railway that shows up as a failed deploy, and the previous deploy keeps serving. The browser also clamps each value to the same range, so a bad value can't reach the builder even if it gets through.
 
@@ -206,7 +208,36 @@ docker run --rm -p 8080:8080 \
   -e "ConnectionStrings__Postgres=Host=host.docker.internal;Port=5433;Database=fireworks;Username=fireworks_app;Password=fireworks_dev_password" \
   fireworks-api
 curl -i http://localhost:8080/health/live    # 200 text/plain "Healthy"
+curl -i http://localhost:8080/health/ready   # 200 text/plain "Healthy"; 503 "Unhealthy" when the database is unreachable
 ```
+
+(Host port 8080 is often taken on a dev machine; map `-p 127.0.0.1:18080:8080` instead.)
+
+### Health checks
+
+- **`/health/live`** runs no checks. It is Railway's probe (`railway.toml`) and restarts the app when it fails, so it never depends on the database. Never rate limited.
+- **`/health/ready`** opens one database connection, gives up after 3 s, and answers `200 Healthy` or `503 Unhealthy`, text/plain, status word only. Point an uptime monitor here, not at the probe path. It counts toward the read limit (120 a minute per IP).
+- Both are answered by the health checks, never by the SPA fallback. Any near-miss path (`/health`, `/health/ready/x`) gets `index.html` with 200, so a monitor must use the exact path and expect `text/plain`.
+
+### Response headers and caching (Phase 7)
+
+One middleware sets these on every response, including static files, the SPA, `/api`, health and errors (`Services/ResponseHeaders.cs`; requirements in `.squad/decisions/records/boo-phase7-security-requirements.md`):
+
+- An **enforced** `Content-Security-Policy`: `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; worker-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'`. Scripts are strict (no inline script, no `eval`); the SPA build complies because Pixi loads `pixi.js/unsafe-eval` and `inlineCritical` is off. **Widening any directive needs a decision record with the violation as evidence.**
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`, and a `Permissions-Policy` that turns off camera, microphone, geolocation, payment and USB. No `Server` header (off in Kestrel, so its own 400 and 431 don't send it either).
+- `Strict-Transport-Security: max-age=31536000` only when the request is HTTPS (behind the edge, `X-Forwarded-Proto: https`) and the environment isn't Development.
+
+| Response | `Cache-Control` |
+|---|---|
+| Hashed bundles (`main-`, `chunk-`, `styles-`, `polyfills-` + an 8-character hash) | `public, max-age=31536000, immutable` |
+| `index.html`, every SPA deep link, other static files (`favicon.svg`, `3rdpartylicenses.txt`) | `no-cache` (revalidated with the ETag, so usually a 304) |
+| `GET api/creations/{code}` 200 and 304 | `private, no-cache` |
+| Every other `/api` response, a static miss (`/nope.js`), a 405 | `no-store` |
+| `/health/live`, `/health/ready` | `no-store, no-cache` (the framework's) |
+
+`/s/<anything>` and `/c/<anything>` always get the app, even with a dot in the last segment (`/c/..%2Fme`), so a mangled link shows the app's not-found page. Other dotted paths that aren't files are a bare 404.
+
+**Never add response compression or request decompression to the app.**
 
 Two log lines on a **first** boot against an empty database are expected, not errors. Don't chase them on Railway either:
 
@@ -230,7 +261,8 @@ Phase 1d is deferred: nothing has been created on Railway yet. When it happens, 
    Compose the connection string from the Postgres service's individual variables as shown. **Do not use `${{Postgres.DATABASE_URL}}`**: it is a `postgresql://` URI, and Npgsql can't parse that form. `ConnectionStrings__Postgres` is deliberately absent from `appsettings.json`, so a deploy that forgets it fails at startup with `ConnectionStrings:Postgres must be configured.` instead of half-starting.
 4. Push to the connected branch. Migrations apply themselves on startup, so a bad migration is a failed deploy rather than a manual recovery. **Run one replica.** Every replica migrates on start, with no lock between them, so two replicas starting against an empty (or behind) database can race the same migration and one crashes with Postgres `42P07` (relation already exists) (Boo F5). The rate limiter is per replica as well. Scaling out needs a migration lock or a separate migrate step first.
 5. Verify on the Railway URL (Phase 1 "Done when"):
-   - `/health/live` returns `200`, `text/plain`, `Healthy`.
+   - `/health/live` returns `200`, `text/plain`, `Healthy`; `/health/ready` returns the same (and is what an uptime monitor should watch).
+   - Every Phase 7 header and cache check passes through the edge ([Response headers and caching](#response-headers-and-caching-phase-7)), including HSTS over HTTPS and `Connection: close` on a chunked over-limit write.
    - A deep link such as `/designer` returns `index.html`.
    - `/api/nope` returns `404`.
    - `/api/me` returns `canWrite: false`.
@@ -243,12 +275,75 @@ Phase 1d is deferred: nothing has been created on Railway yet. When it happens, 
 
 Production writes stay off until Phase 8 (plan §5 OQ20). To test saving on Railway:
 
-1. **Back up first:** `pg_dump` the Railway database (Railway's Postgres service shows the connection details).
+1. **Back up first** ([Backups and restore](#backups-and-restore)), and note the creations row count and `max(updated_at)`.
 2. Set `Identity__AllowAnonymousWrites=true` on the app service. The deploy log then shows `Anonymous writes are ON`, so every window is visible in the logs.
 3. Test. In the first window, also check the 413 through the edge (Boo S5): `curl -sv -H 'Content-Type: application/json' --data-binary @300k.json https://<host>/api/creations`, with and without `-H 'Transfer-Encoding: chunked'`. Record what the client sees (413 ProblemDetails, an edge-generated error, or a reset) and confirm a compact `schema/fixtures/valid/show/at-maximums.json` body (about 190 KB) gets 201.
 4. **Delete the variable** (don't set it to `false` and forget it) and let Railway redeploy.
 5. Confirm `GET /api/me` reports `canWrite: false` and `GET /api/me/creations` returns `403`.
 6. Compare the creations row count and `max(updated_at)` with what the window should have produced. If they differ, restore from the dump.
 7. Never post the URL publicly during a window.
+
+### Backups and restore
+
+Rehearsed locally against the compose database (2026-11-15: dump, restore into an empty database, then the same creations row count, `max(updated_at)`, user count and migration count). Phase 7 gate rehearsal (2026-11-15, Mario), on the gate image's database `fireworks_gate7`: a 6,625-byte custom-format dump, restored into an empty `fireworks_gate7_restored` in about 1 s. Source and restore both gave 2 creations, `max(updated_at)` `2026-11-15 23:22:31.623056+00`, 1 user and 2 applied migrations. Railway's own scheduled backups are not switched on yet: Railway is deferred, so that part is **[R]**.
+
+**Back up** (custom format, restorable into any empty database):
+
+```bash
+# Local compose database. pg_dump runs inside the container, so its version matches the server.
+docker exec fireworks-postgres pg_dump -U fireworks_app -d fireworks --format=custom --no-owner > fireworks-$(date +%Y%m%d-%H%M).dump
+
+# Railway [R]: use the Postgres service's public connection URL (DATABASE_PUBLIC_URL in its
+# Variables tab; never commit or paste it anywhere). Run pg_dump 18 from the postgres:18 image.
+docker run --rm postgres:18 pg_dump "$RAILWAY_DATABASE_PUBLIC_URL" --format=custom --no-owner > fireworks-railway-$(date +%Y%m%d-%H%M).dump
+```
+
+Then record what the dump should contain:
+
+```bash
+docker exec fireworks-postgres psql -U fireworks_app -d fireworks -Atc \
+  "select (select count(*) from creations), (select max(updated_at) from creations), (select count(*) from users)"
+```
+
+**Restore** into an **empty** database, never over a live one:
+
+```bash
+docker exec fireworks-postgres psql -U fireworks_app -d postgres -c "CREATE DATABASE fireworks_restored"
+docker exec -i fireworks-postgres pg_restore -U fireworks_app -d fireworks_restored --no-owner --exit-on-error < fireworks-YYYYMMDD-HHMM.dump
+docker exec fireworks-postgres psql -U fireworks_app -d fireworks_restored -Atc \
+  "select (select count(*) from creations), (select max(updated_at) from creations), (select count(*) from users)"
+```
+
+The three numbers must match the ones recorded at backup time. To put the restored data into service, point `ConnectionStrings__Postgres` at the restored database (on Railway: restore into the service's database only after stopping the app, or into a new Postgres service and switch the variable). The app migrates on start, so a dump from an older schema is brought forward automatically; a dump from a newer schema than the deployed code is not supported.
+
+### Takedown runbook
+
+Use this to remove one creation, for example a share link reported as abusive. Writes being off doesn't matter: this runs in SQL, not through the API.
+
+1. **Back up first** (above). A takedown can't be undone otherwise.
+2. **Look at it, and at its remixes.** Remixes are separate creations with their own codes, and they may carry the same content. Deleting the original sets their `remixed_from_id` to null, so list them first. Replace `abcd2345` with the reported code (share codes are case-sensitive):
+
+   ```sql
+   SELECT share_code, kind, name, owner_user_id, created_at, updated_at
+   FROM creations WHERE share_code = 'abcd2345';
+
+   SELECT share_code, name FROM creations
+   WHERE remixed_from_id = (SELECT id FROM creations WHERE share_code = 'abcd2345');
+   ```
+
+3. **Delete exactly that row, in a transaction:**
+
+   ```sql
+   BEGIN;
+   DELETE FROM creations WHERE share_code = 'abcd2345' RETURNING share_code, name;
+   -- Exactly one row must come back. If it's 0 or more than 1, ROLLBACK and stop.
+   COMMIT;
+   ```
+
+   Locally: `docker exec -it fireworks-postgres psql -U fireworks_app -d fireworks`. On Railway **[R]**: the Postgres service's Data tab, or `psql "$RAILWAY_DATABASE_PUBLIC_URL"`. Repeat for any remix that also has to go.
+4. **Verify:**
+   - `SELECT count(*) FROM creations WHERE share_code = 'abcd2345';` is 0, and the total row count went down by exactly one per deleted code.
+   - `curl -i https://<host>/api/creations/abcd2345` is `404` with `{"message":"No creation has that share code."}` and `Cache-Control: no-store`.
+   - `https://<host>/s/abcd2345` in a browser shows the app's "not found" page. A browser that had the creation cached gets the 404 too: the share-code GET is `private, no-cache`, so every view revalidates, and no shared cache holds it.
 
 If `AllowedHosts` is ever tightened from `*`, keep `healthcheck.railway.app` in the list: Railway's deploy probe sends that Host header, and a 400 means the deploy never goes live.

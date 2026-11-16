@@ -15,6 +15,9 @@ import { DRAFT_KEY, editableFrom, serializeDraft } from '../../../designer/share
 import { CUE_CAP, SHELL_CAP } from '../../shared/show-copy';
 import { SHOW_DRAFT_KEY, readShowDraft, serializeShowDraft } from '../../shared/show-draft';
 import { embeddable } from '../../shared/show-edit';
+import { openShow } from '../../../../../engine/model/open';
+import { embeddedShell } from '../../../../../engine/model/show';
+import { saveDocumentOf } from './show-save';
 import { SHOW_DRAFT_DEBOUNCE_MS, ShowBuilderStore, UNDO_LIMIT } from './show-builder.store';
 
 const SOURCE = {
@@ -184,6 +187,8 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
   });
 
   // Toad, Phase 6 review-fix (Peach 6c.3, 6c.4): ledger diffs over the whole show, run to its end.
+  // Four (6c.3) and six (6c.4) full Done-when runs: 4.7 s and 6.6 s alone, 24.8 s for 6c.3 in the
+  // full suite at load 12 (Toad, Phase 7 C3). Load-only; 60 s keeps a real hang visible.
   describe('ledger diffs: an edit to cue A leaves every other row unchanged', () => {
     const fullLedger = (show: ReturnType<ShowBuilderStore['show']>) => {
       const d = new TimelineDriver(show);
@@ -224,7 +229,7 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
         expect([moved.step, moved.tx]).toEqual([t * 120, x * 1280]);
         expect(moved.step).not.toBe(a.step);
       }
-    }, 20_000);
+    }, 60_000);
 
     it('deleting cue A: the ledger is the old one minus A’s row (6c.4)', () => {
       const store = make({ ...readShowDraftOf(doneWhenShow()) });
@@ -236,7 +241,7 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
         expect(fullLedger(store.show())).toEqual(without(ref, id));
       }
       expect(fullLedger(store.show())).toEqual(without(without(before, 'c2'), 'c33'));
-    }, 20_000);
+    }, 60_000);
   });
 
   it('an undone add frees nothing: the next add gets a new id (Peach N4)', () => {
@@ -266,6 +271,15 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
     expect(store.show()).toBe(states[0]);
     expect(store.undo()).toBe(false);
     expect(store.show()).toBe(states[0]);
+  });
+
+  it('pagehide writes a pending draft at once, inside the debounce (phase-7.md §11; 7e.6)', () => {
+    const store = make();
+    store.addCue(peony(), 1, 0.5);
+    TestBed.tick();
+    expect(storage.getItem(SHOW_DRAFT_KEY)).toBeNull(); // still inside the debounce
+    window.dispatchEvent(new Event('pagehide'));
+    expect(readShowDraft(storage)?.show.cues.map((c) => c.id)).toEqual(['c1']);
   });
 
   it('history is session only: no draft key holds it, and a reload has nothing to undo (6c.11)', async () => {
@@ -453,6 +467,113 @@ describe('ShowBuilderStore (phase-6.md §4, §9, §10; acceptance 6c, 6d, 6f.8)'
     // The memory cap applies now; the spacing is inherited with the kept checkpoints (the
     // driver's `from` rule, so they stay on one grid) until a driver is built without `from`.
     expect(checkpointing(store.driver())).toEqual([1200, 8 * 1024 * 1024]);
+  });
+
+  // Toad, Phase 7 C3 (acceptance 7k.5): Apply keeps the active shell unless it is an embedded
+  // shell the applied show no longer has; that one falls back to Peony (preset 0). Mutant J2
+  // (no fallback) survived every Show JSON spec before this one.
+  it('Apply: a gone embedded active shell falls back to Peony; a kept one, a preset or the designer item stays (7k.5)', () => {
+    const show = doneWhenShow();
+    const [gone, kept] = Object.keys(show.shells);
+    const applied: typeof show = {
+      ...show,
+      shells: Object.fromEntries(Object.entries(show.shells).filter(([k]) => k !== gone)),
+      cues: show.cues.filter((c) => c.shell !== gone),
+    };
+    for (const [active, expected] of [
+      [
+        { kind: 'embedded', key: gone },
+        { kind: 'preset', index: 0 },
+      ],
+      [
+        { kind: 'embedded', key: kept },
+        { kind: 'embedded', key: kept },
+      ],
+      [
+        { kind: 'preset', index: 3 },
+        { kind: 'preset', index: 3 },
+      ],
+      [{ kind: 'designer' }, { kind: 'designer' }],
+    ] as const) {
+      const store = make({ ...readShowDraftOf(doneWhenShow()), dirty: false });
+      store.setActive(active);
+      expect(store.applyJson(applied, 'Applied.')).toBe(true);
+      expect(store.show()).toBe(applied);
+      expect(store.activeShell()).toEqual(expected);
+      TestBed.resetTestingModule();
+      storage = new MemoryStorage();
+    }
+  });
+
+  // Toad, Phase 7 C3 (yoshi-phase7-architecture-rulings.md point 5, acceptance 7m.5): embedded
+  // shells keyed like Object.prototype members survive every store path, and a prototype name
+  // that is not a key is never treated as one. `loadCopy` spreads `shells` into an ordinary
+  // object, so from here on a bare `shells[k]` or `k in shells` would see Object.prototype.
+  it('prototype-named shell keys go through loadCopy, add, remove, the draft and the Save body (7m.5)', () => {
+    const [a, b, c, fresh] = [1, 2, 3, 4].map((i) => embeddable(PRESETS[i])!);
+    const opened = openShow({
+      ...doneWhenShow(),
+      shells: { constructor: a, toString: b, valueOf: c },
+      cues: [
+        { id: 'c1', t: 1, shell: 'constructor', x: 0.2, seed: 11 },
+        { id: 'c2', t: 2, shell: 'toString', x: 0.4, seed: 22 },
+        { id: 'c3', t: 3, shell: 'valueOf', x: 0.6, seed: 33 },
+      ],
+    });
+    if (!opened.ok) throw new Error('fixture does not open');
+    const store = make();
+    expect(store.openWorkingCopy({ show: opened.show, source: SOURCE })).toBe(true);
+    const keysOf = () => Object.keys(store.show().shells).sort();
+    expect(keysOf()).toEqual(['constructor', 'toString', 'valueOf']);
+    expect(embeddedShell(store.show(), 'constructor')?.name).toBe(a.name);
+    expect(embeddedShell(store.show(), 'hasOwnProperty')).toBeUndefined();
+
+    // Add: an identical shell reuses its prototype-named key; a new one gets s1.
+    const again = store.addCue(b, 4, 0.5, 44);
+    expect(again.ok && again.cue.shell).toBe('toString');
+    const added = store.addCue(fresh, 5, 0.5, 55);
+    expect(added.ok && added.cue.shell).toBe('s1');
+    expect(keysOf()).toEqual(['constructor', 's1', 'toString', 'valueOf']);
+
+    // Remove: a prototype name that isn't a key changes nothing (no Undo step, same document).
+    const before = store.show();
+    store.removeShell('hasOwnProperty');
+    store.removeShell('isPrototypeOf');
+    expect(store.show()).toBe(before);
+    expect(store.pending()).toBeNull();
+    // A real one with cues asks, then removes the shell and its cue only.
+    store.removeShell('valueOf');
+    expect(store.pending()).toEqual({ kind: 'remove-shell', key: 'valueOf' });
+    store.confirmPending();
+    expect(keysOf()).toEqual(['constructor', 's1', 'toString']);
+    expect(
+      store
+        .show()
+        .cues.map((q) => q.id)
+        .sort(),
+    ).toEqual(['c1', 'c2', 'c4', 'c5']);
+
+    // The Save body carries exactly the own keys, each with its own shell.
+    const body = JSON.parse(JSON.stringify(saveDocumentOf(store.snapshotForSave())));
+    expect(Object.keys(body.shells).sort()).toEqual(['constructor', 's1', 'toString']);
+    expect([body.shells.constructor.name, body.shells.toString.name, body.shells.s1.name]).toEqual([
+      a.name,
+      b.name,
+      fresh.name,
+    ]);
+
+    // The draft: flushed, restored by a new store, the same show and active shell.
+    store.setActive({ kind: 'embedded', key: 'constructor' });
+    TestBed.tick();
+    store.flushDraft();
+    expect(readShowDraft(storage)?.show).toEqual(store.show());
+    const saved = store.show();
+    TestBed.resetTestingModule();
+    const restored = make();
+    expect(restored.show()).toEqual(saved);
+    expect(restored.activeShell()).toEqual({ kind: 'embedded', key: 'constructor' });
+    expect(embeddedShell(restored.show(), 'toString')?.name).toBe(b.name);
+    expect(embeddedShell(restored.show(), 'valueOf')).toBeUndefined();
   });
 });
 

@@ -1,10 +1,22 @@
 <!-- phase-6.md §3: panel, then main (stage, then dock). Tab order panel → notice → transport →
      toolbar → timeline; not reordered with CSS. -->
-<div class="flex h-full overflow-hidden max-[761px]:flex-col-reverse">
+<div
+  class="flex h-full overflow-hidden max-[761px]:flex-col-reverse"
+  [class.cursor-grabbing]="ghost() !== null"
+  [class.select-none]="ghost() !== null"
+>
   <aside
-    class="w-[340px] flex-none overflow-y-auto border-r border-default bg-surface px-[14px] pt-[14px] pb-10 max-[761px]:h-[40dvh] max-[761px]:w-full max-[761px]:border-t max-[761px]:border-r-0"
+    class="relative w-[340px] flex-none overflow-y-auto border-r border-default bg-surface px-[14px] pt-[14px] pb-10 max-[761px]:h-[40dvh] max-[761px]:w-full max-[761px]:border-t max-[761px]:border-r-0"
     data-testid="builder-panel"
   >
+    <!-- K8 (phase-7.md §3.2): the first element of the panel; sr-only until focused. -->
+    <a
+      href="#transport"
+      class="btn btn-sm sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-20"
+      data-testid="skip-link"
+      (click)="skipToTransport($event)"
+      >{{ skipText }}</a
+    >
     <div class="flex items-baseline justify-between gap-2">
       <h1
         class="m-0 mb-0.5 text-heading tracking-[0.02em]"
@@ -16,14 +28,14 @@
       <div class="flex gap-3">
         <a
           routerLink="/"
-          class="text-small text-muted no-underline hover:text-primary"
+          class="touch-link text-small text-muted no-underline hover:text-primary"
           data-testid="nav-designer"
           >Shell designer</a
         >
         @if (saveFlow.canWrite()) {
           <a
             routerLink="/mine"
-            class="text-small text-muted no-underline hover:text-primary"
+            class="touch-link text-small text-muted no-underline hover:text-primary"
             data-testid="nav-mine"
             >My creations</a
           >
@@ -34,7 +46,13 @@
 
     <app-test-mode-banner />
     @if (showApiBanner()) {
-      <app-api-banner [message]="copy.apiBanner" [checking]="apiChecking()" (retry)="retryApi()" />
+      <app-api-banner
+        [message]="copy.apiBanner"
+        [checking]="apiChecking()"
+        (retry)="retryApi()"
+        (focusin)="bannerFocus.focusIn()"
+        (focusout)="bannerFocus.focusOut($event)"
+      />
     }
     @if (saveFlow.status(); as status) {
       <app-save-status
@@ -88,22 +106,31 @@
         type="number"
         step="0.1"
         data-testid="show-duration"
+        aria-describedby="show-duration-note"
         [attr.min]="minDurationAttr()"
         [attr.max]="durationRange.max"
         [value]="store.show().duration"
         (change)="commitDuration(durationField)"
       />
-      <p class="note" data-testid="duration-note">{{ durationNote() ?? copy.durationNote }}</p>
+      <p class="note" id="show-duration-note" aria-live="polite" data-testid="duration-note">
+        @if (durationNote(); as n) {
+          @for (k of [n.seq]; track k) {
+            {{ n.text }}
+          }
+        } @else {
+          {{ copy.durationNote }}
+        }
+      </p>
     </section>
 
     <section class="section" data-testid="inspector">
       <h2 class="section-heading">Cue</h2>
       @if (store.selectedCue(); as cue) {
         <p class="m-0 mb-2 text-small text-muted" data-testid="inspector-heading">
-          <bdi>{{ store.show().shells[cue.shell]?.name }}</bdi> · Cue {{ selectedIndex() + 1 }} of
+          <bdi>{{ selectedShell()?.name }}</bdi> · Cue {{ selectedIndex() + 1 }} of
           {{ store.show().cues.length }}
         </p>
-        <label class="mb-1 block text-muted" for="cue-shell">Shell</label>
+        <label class="mb-1 block text-muted" for="cue-shell">{{ cueLabels['shell'] }}</label>
         <select
           id="cue-shell"
           class="field"
@@ -114,7 +141,7 @@
             <option [value]="o.key" [selected]="o.key === cue.shell">{{ o.label }}</option>
           }
         </select>
-        <label class="mt-2 mb-1 block text-muted" for="cue-t">Launch time (s)</label>
+        <label class="mt-2 mb-1 block text-muted" for="cue-t">{{ cueLabels['t'] }} (s)</label>
         <input
           #tField
           id="cue-t"
@@ -123,19 +150,22 @@
           step="0.1"
           min="0"
           data-testid="inspector-t"
+          aria-describedby="cue-t-note"
           [attr.max]="store.show().duration"
           [value]="cue.t"
           (change)="commitLaunch(tField)"
         />
-        <p class="note" data-testid="inspector-t-note">
+        <p class="note" id="cue-t-note" aria-live="polite" data-testid="inspector-t-note">
           @if (launchNote(); as n) {
-            {{ n }}
+            @for (k of [n.seq]; track k) {
+              {{ n.text }}
+            }
           } @else if (selectedTimes(); as times) {
             {{ cueNote(times.burst, times.fade) }}
           }
         </p>
         <app-range-row
-          label="Position"
+          [label]="cueLabels['x']"
           data-testid="inspector-x"
           [range]="L.x"
           [format]="percent"
@@ -145,7 +175,7 @@
           (touch)="store.endCoalesce()"
         />
         <p class="note">{{ copy.positionNote }}</p>
-        <label class="mt-2 flex items-center gap-1.5 text-muted">
+        <label class="touch-row mt-2 flex items-center gap-1.5 text-muted">
           <input
             type="checkbox"
             data-testid="inspector-own-height"
@@ -155,12 +185,16 @@
           Own burst height
         </label>
         <app-range-row
-          [label]="cue.burstHeight === undefined ? 'Burst height (from shell)' : 'Burst height'"
+          [label]="
+            cue.burstHeight === undefined
+              ? cueLabels['burstHeight'] + ' (from shell)'
+              : cueLabels['burstHeight']
+          "
           data-testid="inspector-height"
           [range]="L.burstHeight"
           [format]="fixed2"
           [disabled]="cue.burstHeight === undefined"
-          [value]="cue.burstHeight ?? store.show().shells[cue.shell]?.burstHeight ?? 0.5"
+          [value]="cue.burstHeight ?? selectedShell()?.burstHeight ?? 0.5"
           (valueChange)="setBurstHeight($event)"
           (touch)="store.endCoalesce()"
         />
@@ -222,6 +256,7 @@
                 [attr.data-testid]="item.testId"
                 [title]="item.name"
                 (click)="selectLibrary(item.ref)"
+                (pointerdown)="onLibDown($event, item.ref, item.name, item.swatches)"
               >
                 @for (sw of item.swatches; track $index) {
                   <span
@@ -272,7 +307,13 @@
 
       @if (library.state(); as mine) {
         @if (mine.status !== 'hidden') {
-          <h3 class="m-0 mt-2 mb-1 text-caption text-muted uppercase">My shells</h3>
+          <h3
+            class="m-0 mt-2 mb-1 text-caption text-muted uppercase"
+            tabindex="-1"
+            data-testid="mine-heading"
+          >
+            My shells
+          </h3>
           <div data-testid="lib-mine">
             @if (mineFailureText(); as text) {
               <p class="note mb-1" role="status" data-testid="lib-mine-failure">{{ text }}</p>
@@ -292,9 +333,20 @@
                     [attr.aria-pressed]="
                       isActive({ kind: 'mine', shareCode: item.shareCode, name: item.name })
                     "
+                    [attr.aria-describedby]="
+                      capNoteFor({ kind: 'mine', shareCode: item.shareCode, name: item.name })
+                    "
                     [attr.data-testid]="'lib-mine-' + item.shareCode"
                     [title]="item.name"
                     (click)="selectMine(item)"
+                    (pointerdown)="
+                      onLibDown(
+                        $event,
+                        { kind: 'mine', shareCode: item.shareCode, name: item.name },
+                        item.name,
+                        []
+                      )
+                    "
                   >
                     <span class="min-w-0 flex-1 truncate text-small"
                       ><bdi>{{ item.name }}</bdi></span
@@ -303,20 +355,53 @@
                       library.fetching() === item.shareCode ? 'Loading…' : 'Saved'
                     }}</span>
                   </button>
+                  @if (capNoteFor({ kind: 'mine', shareCode: item.shareCode, name: item.name })) {
+                    <p class="note" id="lib-cap-note" data-testid="lib-cap-note">
+                      {{ shellCapText }}
+                    </p>
+                  }
                 </li>
               }
             </ul>
+            <!--
+              K9 (phase-7.md §3.2): the pressed button stays rendered, aria-disabled and busy, while
+              the list loads. Separate @if blocks whose condition holds from press to settle, so the
+              element (and its focus) survives the error → loading → ready change.
+            -->
             @if (mine.status === 'error') {
               <p class="note" role="status">{{ mineErrorText(mine.error) }}</p>
-              <button type="button" class="btn btn-sm mt-1" (click)="library.retry()">
-                Try again
-              </button>
-            } @else if (mine.status === 'ready' && mine.more) {
-              <button type="button" class="btn btn-sm" (click)="library.showMore()">
-                Show more
-              </button>
             } @else if (mine.status === 'loading') {
               <p class="note" role="status">Loading…</p>
+            }
+            @if (
+              mine.status === 'error' ||
+              (mine.status === 'loading' && library.pending() === 'retry')
+            ) {
+              <button
+                type="button"
+                class="btn btn-sm mt-1"
+                data-testid="mine-retry"
+                [class.btn-busy]="mine.status === 'loading'"
+                [attr.aria-disabled]="mine.status === 'loading' ? 'true' : null"
+                (click)="retryMine()"
+              >
+                Try again
+              </button>
+            }
+            @if (
+              (mine.status === 'ready' && mine.more) ||
+              (mine.status === 'loading' && library.pending() === 'more')
+            ) {
+              <button
+                type="button"
+                class="btn btn-sm"
+                data-testid="mine-more"
+                [class.btn-busy]="mine.status === 'loading'"
+                [attr.aria-disabled]="mine.status === 'loading' ? 'true' : null"
+                (click)="showMoreMine()"
+              >
+                Show more
+              </button>
             }
           </div>
         }
@@ -354,7 +439,7 @@
         [value]="store.persistence()"
         (valueChange)="store.setPersistence($event)"
       />
-      <label class="my-1.5 flex items-center gap-2 text-muted">
+      <label class="touch-row my-1.5 flex items-center gap-2 text-muted">
         Reduce flashing
         <input
           type="checkbox"
@@ -367,6 +452,65 @@
         <span class="text-primary">{{ store.reduceFlashing() ? 'On' : 'Off' }}</span>
       </label>
     </section>
+
+    <!-- Show JSON (phase-7.md §9): the last section, closed; its text exists only while open. -->
+    <details
+      class="section group"
+      data-testid="show-json"
+      (toggle)="onJsonToggle($any($event.target).open)"
+    >
+      <!-- §9.1 (C2-2): .section-heading is flex, which drops the native marker, so draw one. -->
+      <summary
+        class="section-heading cursor-pointer justify-start gap-1.5 [&::-webkit-details-marker]:hidden"
+      >
+        <span aria-hidden="true" class="inline-block group-open:rotate-90">▸</span>
+        <span>Show JSON</span>
+      </summary>
+      @if (jsonOpen()) {
+        <div class="mb-1.5 flex gap-1.5 pointer-coarse:gap-[8px]">
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-testid="show-json-copy"
+            (click)="copyJson()"
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            data-testid="show-json-apply"
+            (click)="applyJson()"
+          >
+            Apply
+          </button>
+          @if (jsonHasEdits()) {
+            <button
+              type="button"
+              class="btn btn-sm"
+              data-testid="show-json-revert"
+              (click)="revertJson()"
+            >
+              Revert
+            </button>
+          }
+        </div>
+        <textarea
+          class="field h-[180px] resize-y font-mono text-caption leading-[1.35]"
+          spellcheck="false"
+          aria-label="Show JSON"
+          aria-describedby="show-json-note"
+          data-testid="show-json-text"
+          [value]="jsonValue()"
+          (input)="onJsonEdit($any($event.target).value)"
+        ></textarea>
+        <p class="note" id="show-json-note" aria-live="polite" data-testid="show-json-note">
+          @for (n of [jsonNote()]; track n.seq) {
+            {{ n.text }}
+          }
+        </p>
+      }
+    </details>
   </aside>
 
   <main class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-sunken">
@@ -382,6 +526,8 @@
         [paused]="stagePaused()"
         [timeline]="store.driver()"
         [frameHook]="frameHook"
+        surface="builder"
+        [warmUp]="true"
         (stats)="stats.set($event)"
         (skyClick)="onSkyClick($event)"
         (ended)="onEnded($event)"
@@ -430,14 +576,20 @@
           [style.top.px]="m.top"
           [style.height.px]="m.ground - m.top"
         ></div>
+        <!-- §5.2 item 8: a transparent 44px hit area centred on the 14px ring. -->
         <div
-          class="absolute size-[14px] -translate-x-1/2 -translate-y-1/2 cursor-move rounded-full border-2 border-accent touch-none"
+          class="absolute flex size-[44px] -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center touch-none"
           aria-hidden="true"
           data-testid="stage-marker"
           [style.left.px]="m.left"
           [style.top.px]="m.top"
           (pointerdown)="onMarkerDown($event)"
-        ></div>
+        >
+          <div
+            class="pointer-events-none size-[14px] rounded-full border-2 border-accent"
+            data-testid="stage-marker-ring"
+          ></div>
+        </div>
         <p
           [class.-translate-x-full]="m.labelLeft"
           [class.-ml-3]="m.labelLeft"
@@ -457,7 +609,7 @@
         {{ coarse() ? hintCoarse : hintFine }}
       </p>
       <app-hud [stats]="stats()" />
-      @if (catchingUpText(); as text) {
+      @if (!stage()?.lostNotice() && catchingUpText(); as text) {
         <p
           class="pointer-events-none absolute bottom-2.5 left-3 m-0 text-small text-muted [text-shadow:0_1px_2px_#000]"
           role="status"
@@ -468,11 +620,18 @@
       }
     </div>
 
+    <!-- At 760px and narrower (phase-7.md §5.4) the DOM order stays the same: an empty line break
+         after the time puts the scrub and the zoom group on a second line; the toolbar hides
+         Duplicate and the shell name and gains Edit cue; the status sentence becomes a line. -->
     <div
-      class="flex h-[232px] flex-none flex-col border-t border-default bg-surface max-[761px]:h-[176px]"
+      class="flex h-[232px] flex-none flex-col border-t border-default bg-surface max-[761px]:h-auto"
       data-testid="dock"
     >
-      <div class="flex h-9 flex-none items-center gap-2 px-2">
+      <div
+        id="transport"
+        class="flex h-9 flex-none items-center gap-2 px-2 max-[761px]:h-auto max-[761px]:flex-wrap max-[761px]:py-1"
+        data-testid="transport"
+      >
         <button
           type="button"
           class="btn btn-primary btn-sm"
@@ -497,21 +656,31 @@
           class="font-mono text-small whitespace-nowrap tabular-nums"
           data-testid="time"
         ></span>
-        <input
-          #scrub
-          type="range"
-          class="min-w-0 flex-1 accent-accent"
-          min="0"
-          step="0.1"
-          aria-label="Playhead"
-          data-testid="scrub"
-          [attr.max]="viewEnd()"
-          [value]="pausedAt()"
-          [attr.aria-valuetext]="valueText(pausedAt())"
-          (input)="onScrubInput($event)"
-          (change)="onScrubEnd()"
-        />
-        <div class="flex gap-1">
+        <span class="hidden h-0 basis-full max-[761px]:block" aria-hidden="true"></span>
+        <div class="relative min-w-0 flex-1 self-stretch" data-testid="scrub-wrap">
+          <app-scrub-overview
+            [show]="store.show()"
+            [selectedId]="store.selectedCueId()"
+            [end]="store.end()"
+            [viewEnd]="viewEnd()"
+            [window]="timeline()?.visibleWindow() ?? null"
+          />
+          <input
+            #scrub
+            type="range"
+            class="scrub-range relative block h-full w-full"
+            min="0"
+            step="0.1"
+            aria-label="Playhead"
+            data-testid="scrub"
+            [attr.max]="viewEnd()"
+            [value]="pausedAt()"
+            [attr.aria-valuetext]="valueText(pausedAt())"
+            (input)="onScrubInput($event)"
+            (change)="onScrubEnd()"
+          />
+        </div>
+        <div class="flex gap-1 pointer-coarse:gap-[8px]" data-testid="zoom-group">
           <button
             type="button"
             class="btn btn-sm"
@@ -543,7 +712,10 @@
           </button>
         </div>
       </div>
-      <div class="flex h-8 flex-none items-center gap-2 border-t border-default px-2">
+      <div
+        class="flex h-8 flex-none items-center gap-2 border-t border-default px-2 max-[761px]:h-auto max-[761px]:py-1"
+        data-testid="toolbar"
+      >
         <button
           type="button"
           class="btn btn-sm"
@@ -553,15 +725,25 @@
         >
           Add cue
         </button>
-        <span class="min-w-0 truncate text-caption text-muted"
+        @if (store.selectedCue()) {
+          <button
+            type="button"
+            class="btn btn-sm hidden max-[761px]:inline-block"
+            data-testid="edit-cue"
+            (click)="editCue()"
+          >
+            Edit cue
+          </button>
+        }
+        <span class="min-w-0 truncate text-caption text-muted max-[761px]:hidden"
           ><bdi>{{ activeName() }}</bdi></span
         >
+        <!-- K5 (phase-7.md §3.2): aria-disabled, not disabled, so focus never drops. -->
         <button
           type="button"
-          class="btn btn-sm"
+          class="btn btn-sm max-[761px]:hidden"
           data-testid="toolbar-duplicate"
-          [disabled]="!store.selectedCue()"
-          [attr.aria-disabled]="atCueCap() ? 'true' : null"
+          [attr.aria-disabled]="!store.selectedCue() || atCueCap() ? 'true' : null"
           (click)="duplicateSelected()"
         >
           Duplicate
@@ -570,7 +752,7 @@
           type="button"
           class="btn btn-sm"
           data-testid="toolbar-delete"
-          [disabled]="!store.selectedCue()"
+          [attr.aria-disabled]="store.selectedCue() ? null : 'true'"
           (click)="deleteSelected()"
         >
           Delete
@@ -594,12 +776,18 @@
           Redo
         </button>
         <span
-          class="ml-auto min-w-0 truncate text-right text-caption text-muted"
+          class="ml-auto min-w-0 truncate text-right text-caption text-muted max-[761px]:hidden"
           data-testid="toolbar-status"
           [title]="toolbarStatus()"
           >{{ toolbarStatus() }}</span
         >
       </div>
+      <p
+        class="m-0 hidden border-t border-default px-2 py-0.5 text-caption text-muted max-[761px]:block"
+        data-testid="status-line"
+      >
+        {{ toolbarStatus() }}
+      </p>
       @if (earlyEnd(); as note) {
         <p
           class="m-0 border-t border-default px-2 py-0.5 text-caption text-muted"
@@ -609,6 +797,7 @@
         </p>
       }
       <app-show-timeline
+        class="max-[761px]:h-24 max-[761px]:flex-none"
         [show]="store.show()"
         [ordered]="store.ordered()"
         [selectedId]="store.selectedCueId()"
@@ -626,6 +815,7 @@
         (remove)="deleteSelected()"
         (zoom)="zoom($event.command, $event.around)"
         (viewChange)="onViewChange($event)"
+        (manualView)="onManualView($event)"
         (focusInspector)="focusLaunchField()"
       />
       <p class="sr-only" role="status" aria-live="polite" data-testid="announcer">
@@ -683,9 +873,11 @@
     class="btn flex w-full min-w-0 items-center gap-1.5 text-left"
     [class.border-accent]="isActive(item.ref)"
     [attr.aria-pressed]="isActive(item.ref)"
+    [attr.aria-describedby]="capNoteFor(item.ref)"
     [attr.data-testid]="item.testId"
     [title]="item.name"
     (click)="selectLibrary(item.ref)"
+    (pointerdown)="onLibDown($event, item.ref, item.name, item.swatches)"
   >
     @for (sw of item.swatches; track $index) {
       <span
@@ -701,7 +893,27 @@
       <span class="text-caption text-muted">{{ item.meta }}</span>
     }
   </button>
+  <!-- B6 (phase-7.md §10): the 32-shell note sits directly under the active item. -->
+  @if (capNoteFor(item.ref)) {
+    <p class="note" id="lib-cap-note" data-testid="lib-cap-note">{{ shellCapText }}</p>
+  }
 </ng-template>
+
+@if (ghost(); as g) {
+  <!-- The library drag ghost (phase-7.md §7.1): follows the pointer, no easing. -->
+  <div
+    class="pointer-events-none fixed z-50 flex items-center gap-1.5 rounded-md border border-accent bg-surface-raised px-2 py-1 text-small opacity-90"
+    aria-hidden="true"
+    data-testid="drag-ghost"
+    [style.left.px]="g.x + 8"
+    [style.top.px]="g.y + 8"
+  >
+    @for (sw of g.swatches; track $index) {
+      <span class="size-3 flex-none rounded-full" [style.background]="sw.background"></span>
+    }
+    <bdi>{{ g.name }}</bdi>
+  </div>
+}
 
 @if (dialog(); as d) {
   <app-confirm-dialog

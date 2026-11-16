@@ -416,4 +416,40 @@ describe('My creations /mine', () => {
       new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-3, 'day'),
     );
   });
+
+  // K6 (phase-7.md §3.2; acceptance 7g.8) and R4's busy look on Delete (7g.19).
+  describe('Phase 7 focus and busy look', () => {
+    it('list-error Try again moves focus to the h1, then the list renders', async () => {
+      const { byTest, stable } = await visit(ME_TEST_WINDOW);
+      http.expectOne(LIST(1)).flush(null, { status: 500, statusText: 'x' });
+      await stable();
+      const retry = byTest('mine-error-retry')!;
+      retry.focus();
+      retry.click();
+      await stable();
+      expect(document.activeElement).toBe(byTest('mine-heading'));
+      http.expectOne(LIST(1)).flush(page([item()]));
+      await stable();
+      expect(byTest('mine-card')).not.toBeNull();
+    });
+
+    it('Delete is busy (aria-disabled + .btn-busy) only while its delete is in flight', async () => {
+      const { byTest, stable } = await visit(ME_TEST_WINDOW);
+      http.expectOne(LIST(1)).flush(page([item()]));
+      await stable();
+      const del = byTest('card-delete')!;
+      expect(del.classList.contains('btn-busy')).toBe(false);
+      del.click();
+      await stable();
+      byTest('confirm-accept')!.click();
+      await stable();
+      expect([del.getAttribute('aria-disabled'), del.classList.contains('btn-busy')]).toEqual([
+        'true',
+        true,
+      ]);
+      http.expectOne(`/api/creations/${CODE_A}`).flush(null, { status: 500, statusText: 'x' });
+      await stable();
+      expect(del.classList.contains('btn-busy')).toBe(false);
+    });
+  });
 });

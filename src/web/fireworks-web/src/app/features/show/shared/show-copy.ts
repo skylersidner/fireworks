@@ -5,7 +5,7 @@ import {
   SHOW_LIMITS,
 } from '../../../../engine/model/limits';
 import type { ShellIssue } from '../../../../engine/model/normalize';
-import { fieldLabel } from '../../../../engine/model/labels';
+import { CUE_FIELD_LABELS, fieldLabel } from '../../../../engine/model/labels';
 import { isolate } from '../../../shared/bidi';
 import { issueReason } from '../../designer/shared/designer-copy';
 
@@ -66,6 +66,8 @@ export const SKY_NOTE =
   'Every shell in the show plays under this sky. Gravity also changes how long shells take to rise, so burst markers move.';
 export const DURATION_NOTE =
   'The launch window. The show keeps playing after it until the last spark fades.';
+/** B7 (phase-7.md §10): a blank, non-number or out-of-range Duration entry. */
+export const DURATION_RANGE_NOTE = `Duration is between ${SHOW_LIMITS.duration.min} and ${SHOW_LIMITS.duration.max} seconds.`;
 export function durationBlockedNote(lastT: number): string {
   return `The last cue launches at ${formatTime(lastT)}, so the window can't end before it. Move or delete that cue first.`;
 }
@@ -94,6 +96,11 @@ export function pastWindow(duration: number): string {
 export function earlyEndNote(end: number, duration: number): string {
   return `The show ends at about ${formatClock(end)}, before its launch window closes at ${formatClock(duration)}. Add cues later in the window, or lower Duration.`;
 }
+/** The library drag's short blocked labels (phase-7.md §7.1); the full sentence is announced. */
+export const DROP_LABEL_CUE_CAP = `Show is full (${MAX_SHOW_CUES} cues)`;
+export const DROP_LABEL_SHELL_CAP = `Show already has ${MAX_SHOW_SHELLS} shells`;
+/** K8 (phase-7.md §3.2): the builder's bypass link. */
+export const SKIP_TO_TRANSPORT = 'Skip to the timeline controls';
 export const NOTICE_HOLDS_PLAY = 'Close the flashing notice on the stage to play.';
 export const PLAY_HELD_TITLE = 'Close the flashing notice to play.';
 export const TIMELINE_HELP =
@@ -189,15 +196,6 @@ export interface ShowForLabels {
   readonly shells?: unknown;
 }
 
-const CUE_FIELDS: Readonly<Record<string, string>> = {
-  t: 'Launch time',
-  x: 'Position',
-  burstHeight: 'Burst height',
-  seed: 'Seed',
-  shell: 'Shell',
-  id: 'Cue id',
-};
-
 function cueHandle(doc: ShowForLabels, i: number): string {
   const cues = Array.isArray(doc.cues) ? doc.cues : [];
   const cue: unknown = cues[i];
@@ -242,7 +240,7 @@ export function showFieldLabel(path: string, doc: ShowForLabels): string {
   if (cue) {
     const handle = cueHandle(doc, Number(cue[1]));
     if (!cue[2]) return handle;
-    return `${CUE_FIELDS[cue[2]] ?? cue[2]} (${handle})`;
+    return `${(Object.hasOwn(CUE_FIELD_LABELS, cue[2]) ? CUE_FIELD_LABELS[cue[2]] : undefined) ?? cue[2]} (${handle})`;
   }
   const shell = splitShellPath(path);
   if (shell) {

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
-import type { CreationSource, SaveChoice } from '../../../../core/creation-save';
+import { isApplePlatform } from '../../core/browser';
+import type { CreationSource, SaveChoice } from '../../core/creation-save';
 import {
   FRESH_NOTE,
   INDICATOR_NOT_SAVED,
@@ -42,7 +43,9 @@ const LABELS: Readonly<Record<SaveChoice, string>> = {
             type="button"
             class="btn border-accent text-accent"
             [attr.data-testid]="'save-' + choice"
+            [class.btn-busy]="saving() !== null"
             [attr.aria-disabled]="saving() !== null ? 'true' : null"
+            [attr.aria-keyshortcuts]="choice === 'save' ? keyShortcut : null"
             [disabled]="isDisabled(choice) || cannotSaveNote() !== null"
             [attr.title]="isDisabled(choice) ? savedTitle : null"
             (click)="press(choice)"
@@ -109,6 +112,8 @@ export class SaveBarComponent {
   protected readonly shareLabel = SHARE_LABEL;
   protected readonly savedTitle = SAVED_TITLE;
   protected readonly savedText = INDICATOR_SAVED;
+  /** Ctrl/⌘+S (phase-7.md §3.3): on the single-choice Save only; no visible hint. */
+  protected readonly keyShortcut = isApplePlatform() ? 'Meta+S' : 'Control+S';
 
   /** §2.3, first match. Not a live region (§12.3). */
   protected readonly indicator = computed(() => {

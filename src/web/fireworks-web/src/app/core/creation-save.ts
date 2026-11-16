@@ -10,6 +10,9 @@ import { isShareCode } from './share-code';
  * shape.
  */
 
+/** The server's write limit (schema.md §2.5): 256 KiB of UTF-8 request body. */
+export const MAX_BODY_BYTES = 262_144;
+
 /**
  * The saved record a working copy came from: client state in the draft, never in a document
  * (schema.md §7, §11.2). Set only by a link load (`/c/:code`) or a successful save, both through

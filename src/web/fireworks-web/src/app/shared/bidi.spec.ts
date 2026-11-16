@@ -1,4 +1,4 @@
-import { quoted } from '../features/designer/shared/save-copy';
+import { quoted } from './save-copy';
 import { FSI, PDI, isolate } from './bidi';
 import { creationTitle } from './link-copy';
 

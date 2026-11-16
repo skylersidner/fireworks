@@ -10,7 +10,7 @@
 
 ## Why
 - **Eager as well as `ValidateOnStart`.** The brief said Identity uses `ValidateOnStart`; it does not. `AddFireworksIdentity` validates eagerly because `ValidateOnStart` fires inside `app.Run()`, after step 12's migration. Measured: with only `ValidateOnStart`, `ClientPlayback__SeekBudgetMs=200` against a dead database printed an Npgsql error, not the range message (the "no-eager" mutant fails six process tests). Running the annotation validator at registration keeps the contract's mechanism and the project's "fail before the database" rule, with one validator so the two can't disagree.
-- **`IOptions<T>` resolves even when nothing registers it**, with class defaults. So a missing registration in Program.cs serves 25/300/10/64 and looks right. Only the gated real-program test with `ClientPlayback__SeekBudgetMs=40` catches that (measured: expected 40, got 25).
+- **`IOptions<T>` resolves even when nothing registers it**, with class defaults. So a missing registration in Program.cs serves 25/300/10/64 and looks right. Two tests catch it (corrected 2026-11-15, Phase 7 B1, from Toad's measurement in `toad-phase6-client-config-contract-parity.md`): the ungated `Startup/ClientConfigStartupTests` (6 failures: without the eager registration an out-of-range value no longer stops startup before Npgsql), and the gated real-program test with `ClientPlayback__SeekBudgetMs=40`, which is the only one that shows a served in-range override (expected 40, got 25). The earlier text said only the gated test catches it; that was wrong.
 - `[AllowAnonymous]` now so a Phase 8 fallback policy can't 401 the SPA's page-load read.
 
 ## Boundary

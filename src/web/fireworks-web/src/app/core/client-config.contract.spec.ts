@@ -172,8 +172,8 @@ describe('api/client-config contract parity (TS against C#)', () => {
     };
     expect(importers(withLoader, 'client-config-loader')).toEqual(['app.config.ts', player]);
     const multiline = {
-      x: "import {\n  ClientConfigLoader,\n} from '../core/client-config-loader';",
-      y: "import type { ClientConfigLoader } from '../core/client-config-loader';",
+      x: "import {\n  ClientConfigLoader,\n} from './client-config-loader';",
+      y: "import type { ClientConfigLoader } from './client-config-loader';",
       z: "import { ClientConfigStore } from './client-config';",
     };
     expect(importers(multiline, 'client-config-loader')).toEqual(['x']);

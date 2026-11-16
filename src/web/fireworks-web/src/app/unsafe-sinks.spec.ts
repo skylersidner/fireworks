@@ -166,7 +166,7 @@ describe('untrusted text and links (Boo C1, C2, C4, C5, C10, C14)', () => {
       'app/features/player/pages/player-page/player-page.html',
       'app/features/mine/pages/mine-page/mine-page.html',
       'app/features/designer/pages/open-link-page/open-link-page.ts',
-      'app/features/designer/shared/save-bar/save-bar.ts',
+      'app/shared/save-bar/save-bar.ts',
       'app/core/creations.ts',
       'engine/render/pixi-renderer.ts',
     ]) {

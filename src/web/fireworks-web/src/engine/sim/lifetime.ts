@@ -1,5 +1,6 @@
 import { BREAK_LIMITS, MAX_BREAKS, SHELL_LIMITS, SKY_LIMITS } from '../model/limits';
 import type { BreakDef } from '../model/shell';
+import { embeddedShell } from '../model/show';
 import { GROUND, STEP } from './constants';
 
 /**
@@ -125,8 +126,9 @@ export function estimateShowEnd(show: {
 }): number {
   let end = 0;
   for (const cue of show.cues) {
-    if (!Object.hasOwn(show.shells, cue.shell)) continue;
-    end = Math.max(end, cueTimes(cue, show.shells[cue.shell], show.sky.gravity).endEstimate);
+    const shell = embeddedShell(show, cue.shell);
+    if (!shell) continue;
+    end = Math.max(end, cueTimes(cue, shell, show.sky.gravity).endEstimate);
   }
   return end;
 }

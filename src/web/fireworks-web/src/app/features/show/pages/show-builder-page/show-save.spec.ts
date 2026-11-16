@@ -17,7 +17,7 @@ import {
 import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { doneWhenShow } from '../../../../testing/show-fixtures';
-import { SHARE_COPIED, SHARE_COPIED_UNSAVED } from '../../../designer/shared/save-copy';
+import { SHARE_COPIED, SHARE_COPIED_UNSAVED } from '../../../../shared/save-copy';
 import { EMPTY_SAVE_NOTE, formatTime } from '../../shared/show-copy';
 import { SHOW_DRAFT_KEY } from '../../shared/show-draft';
 import { embeddable } from '../../shared/show-edit';

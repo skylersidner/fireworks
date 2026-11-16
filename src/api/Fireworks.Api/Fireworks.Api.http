@@ -4,6 +4,10 @@
 ### the SPA fallback (which would answer text/html).
 GET {{Fireworks.Api_HostAddress}}/health/live
 
+### Readiness. 200 text/plain "Healthy" when the database answers within 3 s, otherwise 503
+### "Unhealthy". Read-limited (120 a minute per IP).
+GET {{Fireworks.Api_HostAddress}}/health/ready
+
 ### Current user (plan §3.4). 200 { userId, displayName, isAuthenticated: false, canWrite }.
 ### canWrite is true in Development (appsettings.Development.json), false in production unless
 ### Identity__AllowAnonymousWrites=true is set.

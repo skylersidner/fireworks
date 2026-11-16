@@ -3,7 +3,7 @@ import { FormField, type FieldTree } from '@angular/forms/signals';
 import { QUALITY_LIMITS } from '../../../../../engine/model/limits';
 import { RangeRowComponent } from '../../../../shared/range-row';
 import type { DisplayModel } from '../designer-draft';
-import { percent } from '../formats';
+import { percent } from '../../../../shared/formats';
 
 /**
  * Display section, this device only (designer-2c.md §3.5, §5.4). Reduce flashing is a native
@@ -28,7 +28,9 @@ import { percent } from '../formats';
       [format]="percent"
       [formField]="fields().starBudget"
     />
-    <div class="my-1.5 grid grid-cols-[96px_1fr_44px] items-center gap-2 pointer-coarse:min-h-9">
+    <div
+      class="my-1.5 grid grid-cols-[96px_1fr_44px] items-center gap-2 pointer-coarse:min-h-[44px]"
+    >
       <label for="reduce-flashing" class="text-muted">Reduce flashing</label>
       <span>
         <input

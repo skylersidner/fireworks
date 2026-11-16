@@ -1,7 +1,12 @@
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { validateShell } from '../../../../../engine/model/validate';
-import { saveChoices, saveCreation, type SaveChoice } from '../../../../core/creation-save';
+import {
+  MAX_BODY_BYTES,
+  saveChoices,
+  saveCreation,
+  type SaveChoice,
+} from '../../../../core/creation-save';
 import { CreationsService } from '../../../../core/creations';
 import { NotificationService } from '../../../../core/notifications';
 import { SessionService } from '../../../../core/session';
@@ -15,11 +20,9 @@ import {
   saveFailureStatus,
   savedToast,
   type SaveStatus,
-} from '../../shared/save-copy';
+} from '../../../../shared/save-copy';
+import { issueReason } from '../../shared/designer-copy';
 import { ShellDesignerStore } from './shell-designer.store';
-
-/** The server's write limit (schema.md §2.5): 256 KiB of UTF-8 request body. */
-export const MAX_BODY_BYTES = 262_144;
 
 /**
  * Save and Share for the Shell Designer (plan Phase 5; schema.md §11.4; phase-5.md §2–§6).
@@ -76,7 +79,7 @@ export class DesignerSaveFlow {
     const sent = this.store.snapshotForSave();
     const checked = validateShell(sent.shell);
     if (!checked.ok) {
-      this.status.set(invalidStatus(checked.errors));
+      this.status.set(invalidStatus(checked.errors, issueReason));
       return;
     }
     // What is sent is the captured shell (key order as plan §3.3 shows a document, sky before
@@ -95,7 +98,9 @@ export class DesignerSaveFlow {
     try {
       request$ = saveCreation(this.creations, { source, choice, kind: 'shell', document });
     } catch {
-      this.status.set(saveFailureStatus({ kind: 'unexpected', status: null }, 'create', ''));
+      this.status.set(
+        saveFailureStatus({ kind: 'unexpected', status: null }, 'create', '', issueReason),
+      );
       return;
     }
     this.status.set(null);
@@ -122,7 +127,7 @@ export class DesignerSaveFlow {
       ) {
         this.store.forgetSource();
       }
-      this.status.set(saveFailureStatus(outcome.error, outcome.request, sourceName));
+      this.status.set(saveFailureStatus(outcome.error, outcome.request, sourceName, issueReason));
       // Writes went off mid-visit: one `api/me` reload hides the bar (§6 row 403; Boo C8).
       if (outcome.error.kind === 'forbidden') this.session.load().subscribe();
     });

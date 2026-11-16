@@ -18,8 +18,9 @@ export const BREAK_PANEL_ID = 'break-panel';
 
 /**
  * Breaks heading row (+ Add, − Remove) and the break tablist (designer-2c.md §3.4, §8.2):
- * roving tabindex, Left/Right/Home/End with automatic activation. After Remove, focus moves to
- * the newly active tab, because the Remove button may just have disabled itself (§8.1).
+ * roving tabindex, Left/Right/Home/End with automatic activation. After Remove, and after the Add
+ * that makes the 4th break, focus moves to the newly active tab, because the pressed button may
+ * just have disabled itself (§8.1; phase-7.md K1).
  */
 @Component({
   selector: 'app-break-tabs',
@@ -35,7 +36,7 @@ export const BREAK_PANEL_ID = 'break-panel';
           data-testid="add-break"
           [disabled]="count() >= max"
           [attr.title]="count() >= max ? 'A shell can have up to 4 breaks.' : null"
-          (click)="add.emit()"
+          (click)="onAdd()"
         >
           + Add
         </button>
@@ -89,6 +90,17 @@ export class BreakTabsComponent {
 
   private readonly tabButtons = viewChildren<ElementRef<HTMLButtonElement>>('tab');
   private readonly injector = inject(Injector);
+
+  /**
+   * Focus stays on `+ Add` (2c §8.1), except on the press that makes the 4th break: Add disables
+   * under focus there, so focus goes to the newly active tab, as after Remove (phase-7.md K1).
+   */
+  protected onAdd(): void {
+    if (this.count() >= this.max) return;
+    const reachesMax = this.count() + 1 >= this.max;
+    this.add.emit();
+    if (reachesMax) this.focusActiveTabAfterRender();
+  }
 
   protected onRemove(): void {
     this.remove.emit();

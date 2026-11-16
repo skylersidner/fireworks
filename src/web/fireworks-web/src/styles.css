@@ -143,9 +143,13 @@
     &:disabled {
       @apply cursor-not-allowed opacity-45;
     }
-    /* Inert while a save is in flight (phase-5.md §2.2): it keeps focus and its look; only the cursor says so. */
+    /* Unavailable (phase-7.md §3.4, R4): looks like :disabled but keeps focus and ignores presses. */
     &[aria-disabled='true'] {
-      @apply cursor-progress;
+      @apply cursor-not-allowed opacity-45;
+    }
+    /* In flight (phase-5.md §2.2): keeps its full look; only the cursor says so. */
+    &.btn-busy[aria-disabled='true'] {
+      @apply cursor-progress opacity-100;
     }
   }
 
@@ -191,7 +195,7 @@
     @apply relative m-0 inline-block h-4 w-7 cursor-pointer appearance-none rounded-full border border-control bg-surface-raised align-middle;
     &::after {
       content: '';
-      @apply absolute top-px left-px size-3 rounded-full bg-text-primary transition-transform;
+      @apply absolute top-px left-px size-3 rounded-full bg-text-primary transition-transform motion-reduce:transition-none;
     }
     &:checked {
       @apply border-accent bg-accent;
@@ -199,5 +203,137 @@
     &:checked::after {
       @apply translate-x-3 bg-on-accent;
     }
+  }
+
+  /* The Playhead range over the scrub overview (phase-7.md §7.3): transparent track, 6x20 thumb. */
+  .scrub-range {
+    appearance: none;
+    background: transparent;
+    &::-webkit-slider-runnable-track {
+      height: 20px;
+      background: transparent;
+    }
+    &::-webkit-slider-thumb {
+      appearance: none;
+      width: 6px;
+      height: 20px;
+      border: 1px solid var(--color-on-accent);
+      border-radius: 2px;
+      background: var(--color-accent);
+    }
+    &::-moz-range-track {
+      height: 20px;
+      background: transparent;
+    }
+    &::-moz-range-thumb {
+      width: 6px;
+      height: 20px;
+      border: 1px solid var(--color-on-accent);
+      border-radius: 2px;
+      background: var(--color-accent);
+    }
+  }
+}
+
+/*
+ * Touch (phase-7.md §5.2, R3): only under a coarse primary pointer, so desktop is unchanged.
+ * Unlayered on purpose: it must beat utilities such as `min-w-0` and `text-caption`, which sit in
+ * Tailwind's utilities layer above components (found by the B3 touch check in Chromium).
+ * 44x44 targets, 16px field text (below it iOS Safari zooms into a focused field), and
+ * `manipulation` so a double tap on + never zooms the page.
+ */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  .field,
+  select,
+  input[type='number'] {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  textarea.field {
+    font-size: 16px;
+  }
+
+  /* Range rows: a 32px input box with a 24px thumb; the whole row is the hit area. */
+  input[type='range'] {
+    appearance: none;
+    min-height: 32px;
+    background: transparent;
+    touch-action: manipulation;
+  }
+
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border-control);
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    margin-top: -10px;
+    border: 1px solid var(--color-on-accent);
+    border-radius: 50%;
+    background: var(--color-accent);
+  }
+
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border-control);
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--color-on-accent);
+    border-radius: 50%;
+    background: var(--color-accent);
+  }
+
+  .touch-row {
+    min-height: 44px;
+  }
+
+  .touch-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: 4px;
+    touch-action: manipulation;
+  }
+
+  .touch-gap {
+    gap: 8px;
+  }
+
+  input.scrub-range[type='range']::-webkit-slider-runnable-track {
+    height: 32px;
+    background: transparent;
+  }
+
+  input.scrub-range[type='range']::-webkit-slider-thumb {
+    width: 24px;
+    height: 32px;
+    margin-top: 0;
+    border-radius: 4px;
+  }
+
+  input.scrub-range[type='range']::-moz-range-track {
+    height: 32px;
+    background: transparent;
+  }
+
+  input.scrub-range[type='range']::-moz-range-thumb {
+    width: 24px;
+    height: 32px;
+    border-radius: 4px;
   }
 }

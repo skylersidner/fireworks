@@ -26,6 +26,12 @@ export type MyShellsState =
       readonly error: CreationError;
     };
 
+/** The My shells button whose load is in flight (phase-7.md §3.2 K9). */
+export type MyShellsAction = 'retry' | 'more';
+
+/** Called once when a `retry` or `showMore` load settles: `firstNew` is the first new item's index. */
+export type MyShellsDone = (ok: boolean, firstNew: number) => void;
+
 /** Why one of my shells couldn't be fetched for an add (phase-6.md §13.1). */
 export type MineFetchFailure = 'gone' | 'network' | 'server' | 'newer';
 
@@ -43,6 +49,11 @@ export class ShowLibraryFlow {
   private readonly session = inject(SessionService);
 
   readonly state = signal<MyShellsState>({ status: 'hidden' });
+  /**
+   * The button that started the current load, so it stays rendered (aria-disabled, busy) while the
+   * list loads and focus never drops (K9). Null when idle or for the first load.
+   */
+  readonly pending = signal<MyShellsAction | null>(null);
   /** The code being fetched for an add, or null. */
   readonly fetching = signal<string | null>(null);
   /** Inline failure under one item: `{ code, failure }`. */
@@ -64,6 +75,7 @@ export class ShowLibraryFlow {
         if (status !== 'ready' || !canWrite) {
           this.request?.unsubscribe();
           this.started = false;
+          this.pending.set(null);
           this.state.set({ status: 'hidden' });
           return;
         }
@@ -79,21 +91,29 @@ export class ShowLibraryFlow {
     });
   }
 
-  retry(): void {
+  /** Ignored unless the list failed (so a press on the busy button sends nothing). */
+  retry(done?: MyShellsDone): void {
     const s = this.state();
     if (s.status !== 'error') return;
     const page = Math.floor(s.items.length / MY_SHELLS_PAGE_SIZE) + 1;
-    this.load(page, s.items);
+    this.load(page, s.items, 'retry', done);
   }
 
-  showMore(): void {
+  /** Ignored unless another page exists and nothing is loading. */
+  showMore(done?: MyShellsDone): void {
     const s = this.state();
     if (s.status !== 'ready' || !s.more) return;
-    this.load(s.page + 1, s.items);
+    this.load(s.page + 1, s.items, 'more', done);
   }
 
-  private load(page: number, items: readonly CreationListItem[]): void {
+  private load(
+    page: number,
+    items: readonly CreationListItem[],
+    action: MyShellsAction | null = null,
+    done?: MyShellsDone,
+  ): void {
     this.request?.unsubscribe();
+    this.pending.set(action);
     this.state.set({ status: 'loading', items });
     this.request = this.creations
       .listMine({ page, pageSize: MY_SHELLS_PAGE_SIZE, kind: 'shell' })
@@ -103,20 +123,24 @@ export class ShowLibraryFlow {
             (item) => item.kind === 'shell' && isShareCode(item.shareCode),
           );
           const all = [...items, ...fresh];
+          this.pending.set(null);
           this.state.set({
             status: 'ready',
             items: all,
             page: result.page,
             more: result.page * result.pageSize < result.totalCount,
           });
+          done?.(true, items.length);
         },
         error: (error: unknown) => {
           const e = toCreationError(error);
+          this.pending.set(null);
           if (e.kind === 'forbidden') {
             this.state.set({ status: 'hidden' });
             return;
           }
           this.state.set({ status: 'error', items, error: e });
+          done?.(false, items.length);
         },
       });
   }

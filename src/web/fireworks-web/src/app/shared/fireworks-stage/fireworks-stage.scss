@@ -23,8 +23,22 @@
   inset: 0;
   display: flex;
   align-items: center;
+  flex-direction: column;
+  gap: 12px;
   justify-content: center;
   padding: 30px;
   text-align: center;
   color: var(--color-danger);
+}
+
+// phase-7.md §11: the hint style, bottom left (where the builder's "Catching up…" sits).
+.stage-lost {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  margin: 0;
+  pointer-events: none;
+  font-size: var(--text-small);
+  color: var(--color-text-muted);
+  text-shadow: 0 1px 2px #000;
 }

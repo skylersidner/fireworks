@@ -4,6 +4,7 @@ using Fireworks.Api.Repositories;
 using Fireworks.Api.Services;
 using Fireworks.Api.Services.ClientConfig;
 using Fireworks.Api.Services.Creations;
+using Fireworks.Api.Services.Health;
 using Fireworks.Api.Services.Identity;
 using Fireworks.Api.Services.RateLimiting;
 using Fireworks.Api.Tests.Support;
@@ -30,9 +31,10 @@ namespace Fireworks.Api.Tests.Controllers;
 /// <c>ProgramOnPostgresTests</c>). This host repeats the Program.cs calls that shape a response:
 /// <c>AddFireworksIdentity</c> and <c>AddFireworksClientConfig</c> over configuration (so identity and the client knobs bind exactly as the app binds them),
 /// <c>AddProblemDetails</c>, <c>AddFireworksControllers</c> (default JSON options, no form value providers), health checks,
-/// <c>AddFireworksRateLimiting</c> over configuration, <c>UseExceptionHandler</c>, static files,
-/// explicit routing, <c>UseRateLimiter</c>, the <c>/api/{**rest}</c> 404 and the SPA fallback — in
-/// Program.cs order. Because it re-implements the pipeline, <c>ProgramOnPostgresTests</c> repeats the
+/// <c>AddFireworksRateLimiting</c> over configuration, <c>UseFireworksResponseHeaders</c>,
+/// <c>UseExceptionHandler</c>, <c>UseFireworksStaticFiles</c> with one shared <c>StaticFileOptions</c>,
+/// explicit routing, <c>UseRateLimiter</c>, <c>MapFireworksHealthChecks</c>, the <c>/api/{**rest}</c>
+/// 404 and <c>MapFireworksSpaFallback</c> — in Program.cs order. Because it re-implements the pipeline, <c>ProgramOnPostgresTests</c> repeats the
 /// load-bearing checks (creations round trip, the limiter) against the real Program. Development-only and Production-only steps (CORS, HTTPS
 /// redirection, Swagger, forwarded headers) are left out; none of them changes a response body.
 /// </para>
@@ -63,6 +65,9 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
 
     public WebApplication App => app;
 
+    /// <summary>The temporary wwwroot; tests drop extra files (hashed bundles, a favicon) into it.</summary>
+    public string WebRootPath => webRoot.Path;
+
     /// <param name="allowAnonymousWrites">The interim write switch, bound through configuration exactly as the app binds it.</param>
     /// <param name="configuration">Extra configuration (rate limits); the production defaults apply to anything not given.</param>
     /// <summary>
@@ -72,15 +77,29 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
     /// </summary>
     public const string TestClientIpHeader = "X-Test-Client-Ip";
 
+    /// <summary>
+    /// Test-only: a request carrying this header gets it as <c>Request.Scheme</c>, standing where
+    /// <c>UseForwardedHeaders</c> applies <c>X-Forwarded-Proto</c> in Program.cs. Present only when
+    /// <c>schemeOverride</c> is on. The real forwarded-headers path is covered by
+    /// <c>ProgramOnPostgresTests</c>.
+    /// </summary>
+    public const string TestSchemeHeader = "X-Test-Scheme";
+
     /// <param name="allowAnonymousWrites">The interim write switch, bound through configuration exactly as the app binds it.</param>
     /// <param name="configuration">Extra configuration (rate limits); the production defaults apply to anything not given.</param>
     /// <param name="configureServices">Test-only replacements, applied after the app's registrations (e.g. a recording repository).</param>
     /// <param name="clientIpOverride">Honor <see cref="TestClientIpHeader"/>.</param>
+    /// <param name="schemeOverride">Honor <see cref="TestSchemeHeader"/>.</param>
+    /// <param name="environmentName">The host environment ("Testing" unless a test is about Development-only behaviour).</param>
+    /// <param name="registerResponseHeaders">False only for the negative control that shows the header tests see the middleware.</param>
     public static async Task<FireworksApiHarness> StartAsync(
         bool allowAnonymousWrites = false,
         IReadOnlyDictionary<string, string?>? configuration = null,
         Action<IServiceCollection>? configureServices = null,
-        bool clientIpOverride = false)
+        bool clientIpOverride = false,
+        bool schemeOverride = false,
+        string environmentName = "Testing",
+        bool registerResponseHeaders = true)
     {
         var harness = new FireworksApiHarness();
         harness.ConnectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
@@ -93,7 +112,7 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
         // appsettings.json is picked up and the in-memory values below are the whole config.
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
-            EnvironmentName = "Testing",
+            EnvironmentName = environmentName,
             ContentRootPath = harness.webRoot.Path,
             WebRootPath = harness.webRoot.Path
         });
@@ -106,7 +125,7 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
 
         builder.Services.AddFireworksIdentity(builder.Configuration);
         builder.Services.AddFireworksClientConfig(builder.Configuration);
-        builder.Services.AddHealthChecks();
+        builder.Services.AddFireworksHealthChecks();
         builder.Services.AddProblemDetails();
         builder.Services.AddFireworksControllers();
         builder.Services.AddDbContext<FireworksDbContext>(o => o.UseSqlite(harness.ConnectionString));
@@ -133,10 +152,27 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
             });
         }
 
-        harness.app.UseFireworksApiResponseHeaders();
+        if (schemeOverride)
+        {
+            harness.app.Use((context, next) =>
+            {
+                if (context.Request.Headers.TryGetValue(TestSchemeHeader, out var scheme))
+                {
+                    context.Request.Scheme = scheme.ToString();
+                }
+
+                return next(context);
+            });
+        }
+
+        if (registerResponseHeaders)
+        {
+            harness.app.UseFireworksResponseHeaders();
+        }
+
         harness.app.UseExceptionHandler();
-        harness.app.UseDefaultFiles();
-        harness.app.UseStaticFiles();
+        var staticFileOptions = SpaHosting.CreateStaticFileOptions();
+        harness.app.UseFireworksStaticFiles(staticFileOptions);
         harness.app.UseRouting();
         harness.app.UseRateLimiter();
 
@@ -147,10 +183,10 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
             await FireworksDbInitializer.EnsureDefaultUserExistsAsync(setup, TestIdentity.Options(allowAnonymousWrites));
         }
 
-        harness.app.MapHealthChecks("/health/live").DisableRateLimiting();
+        harness.app.MapFireworksHealthChecks();
         harness.app.MapControllers();
         harness.app.Map("/api/{**rest}", () => Results.NotFound()).RequireRateLimiting(FireworksRateLimiting.ReadPolicy);
-        harness.app.MapFallbackToFile("index.html");
+        harness.app.MapFireworksSpaFallback(staticFileOptions);
         await harness.app.StartAsync();
 
         // Port 0 asks the OS for a free port; after start, Urls holds the one Kestrel bound.

@@ -119,7 +119,10 @@ describe('Show Builder /show', () => {
     expect(stage!.sim.particles.n).toBe(0);
     expect(byTest('play')!.textContent!.trim()).toBe('Play');
     expect(byTest('time')!.textContent).toMatch(/^0:00\.0 \/ about \d:\d\d$/);
-  });
+    // 2.0 s alone: the first test pays the lazy route, and the builder's warm-up spends up to
+    // WARM_UP_IDLE_MS of real clock in each of the 120 frames. Timed out at 5 s under the full
+    // suite's load (Toad, Phase 7 C3); load-only.
+  }, 20_000);
 
   it('the notice holds Play and sky clicks; Continue moves focus to Play (§14.1)', async () => {
     const { byTest, stage, store, stable } = await open();

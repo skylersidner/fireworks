@@ -2,12 +2,16 @@ import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } f
 import { Subscription } from 'rxjs';
 import { normalizeShow } from '../../../../../engine/model/normalize';
 import { validateShow } from '../../../../../engine/model/validate';
-import { saveChoices, saveCreation, type SaveChoice } from '../../../../core/creation-save';
+import {
+  MAX_BODY_BYTES,
+  saveChoices,
+  saveCreation,
+  type SaveChoice,
+} from '../../../../core/creation-save';
 import { CreationsService } from '../../../../core/creations';
 import { NotificationService } from '../../../../core/notifications';
 import { SessionService } from '../../../../core/session';
 import { isShareCode } from '../../../../core/share-code';
-import { MAX_BODY_BYTES } from '../../../designer/pages/designer-page/designer-save';
 import {
   SHARE_COPIED,
   SHARE_COPIED_UNSAVED,
@@ -17,9 +21,10 @@ import {
   savedToast,
   tooLargeStatus,
   type SaveStatus,
-} from '../../../designer/shared/save-copy';
+} from '../../../../shared/save-copy';
 import { EMPTY_SAVE_NOTE, showIssueReason } from '../../shared/show-copy';
-import { ShowBuilderStore } from './show-builder.store';
+import type { ShowDocument } from '../../../../../engine/model/show';
+import { ShowBuilderStore, type ShowSaveSnapshot } from './show-builder.store';
 
 /**
  * Save and Share for the Show Builder (plan Phase 6; schema.md §11.4, the same rules as shells;
@@ -68,12 +73,11 @@ export class ShowSaveFlow {
     this.lastChoice = choice;
 
     const sent = this.store.snapshotForSave();
-    const normalized = normalizeShow(sent.show);
-    const document = normalized.ok ? normalized.show : sent.show;
+    const document = saveDocumentOf(sent);
     const checked = validateShow(document);
     if (!checked.ok) {
       this.status.set(
-        invalidStatus(checked.errors, false, 'show', (i) => showIssueReason(i, document)),
+        invalidStatus(checked.errors, (i) => showIssueReason(i, document), false, 'show'),
       );
       return;
     }
@@ -87,7 +91,13 @@ export class ShowSaveFlow {
       request$ = saveCreation(this.creations, { source, choice, kind: 'show', document });
     } catch {
       this.status.set(
-        saveFailureStatus({ kind: 'unexpected', status: null }, 'create', '', 'show'),
+        saveFailureStatus(
+          { kind: 'unexpected', status: null },
+          'create',
+          '',
+          (i) => showIssueReason(i, document),
+          'show',
+        ),
       );
       return;
     }
@@ -113,8 +123,12 @@ export class ShowSaveFlow {
         this.store.forgetSource();
       }
       this.status.set(
-        saveFailureStatus(outcome.error, outcome.request, source?.name ?? '', 'show', (i) =>
-          showIssueReason(i, document),
+        saveFailureStatus(
+          outcome.error,
+          outcome.request,
+          source?.name ?? '',
+          (i) => showIssueReason(i, document),
+          'show',
         ),
       );
       if (outcome.error.kind === 'forbidden') this.session.load().subscribe();
@@ -146,4 +160,13 @@ export class ShowSaveFlow {
     this.notifications.success(saved ? SHARE_COPIED : SHARE_COPIED_UNSAVED);
     return 'copied';
   }
+}
+
+/**
+ * The document a Save sends for `sent` (6f.3's keys, in normalize's order, no UI state). Show JSON
+ * shows exactly this text, so Copy in one engine and Apply in another round-trip (phase-7.md §9.1).
+ */
+export function saveDocumentOf(sent: ShowSaveSnapshot): ShowDocument {
+  const normalized = normalizeShow(sent.show);
+  return normalized.ok ? normalized.show : sent.show;
 }

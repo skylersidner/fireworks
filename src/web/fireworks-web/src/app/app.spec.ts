@@ -73,4 +73,70 @@ describe('App', () => {
     expect(pause).toHaveBeenCalledWith(1);
     expect(resume).toHaveBeenCalledWith(1);
   });
+
+  // K7 (phase-7.md §3.2; acceptance 7g.9): a removed toast hands focus on.
+  describe('toast × focus (K7)', () => {
+    async function setup() {
+      const fixture = TestBed.createComponent(App);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      http.expectOne('/health/live').flush('Healthy');
+      const el = fixture.nativeElement as HTMLElement;
+      const h1 = document.createElement('h1');
+      h1.tabIndex = -1;
+      el.prepend(h1);
+      const notifications = TestBed.inject(NotificationService);
+      const xs = () => [...el.querySelectorAll<HTMLButtonElement>('[data-testid="toast-dismiss"]')];
+      const done = async () => {
+        await fixture.whenStable();
+        await new Promise((r) => setTimeout(r));
+        await fixture.whenStable();
+      };
+      return { fixture, el, h1, notifications, xs, done };
+    }
+
+    it('× on a toast focuses the next toast’s ×, then the h1', async () => {
+      const { fixture, h1, notifications, xs, done } = await setup();
+      notifications.success('One');
+      notifications.success('Two');
+      await done();
+      xs()[0].focus();
+      xs()[0].click();
+      await done();
+      expect(xs()).toHaveLength(1);
+      expect(document.activeElement).toBe(xs()[0]);
+      xs()[0].click();
+      await done();
+      expect(document.activeElement).toBe(h1);
+      fixture.nativeElement.remove();
+    });
+
+    it('a focused toast that times out hands focus on too; an unfocused one moves nothing', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, h1, notifications, xs } = await setup();
+        const outside = document.createElement('button');
+        document.body.appendChild(outside);
+        notifications.success('One');
+        fixture.detectChanges();
+        outside.focus();
+        vi.advanceTimersByTime(5000);
+        fixture.detectChanges();
+        vi.advanceTimersByTime(10);
+        expect(document.activeElement).toBe(outside);
+        notifications.success('Two');
+        fixture.detectChanges();
+        xs()[0].focus();
+        vi.advanceTimersByTime(5000);
+        fixture.detectChanges();
+        vi.advanceTimersByTime(10);
+        fixture.detectChanges();
+        expect(document.activeElement).toBe(h1);
+        outside.remove();
+        fixture.nativeElement.remove();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

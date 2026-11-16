@@ -4,6 +4,8 @@ using Fireworks.Api.Data;
 using Fireworks.Api.Tests.Support;
 using Fireworks.Api.Tests.Creations;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Fireworks.Api.Tests.Hardening;
 
 namespace Fireworks.Api.Tests.Data;
 
@@ -264,6 +266,128 @@ public sealed class ProgramOnPostgresTests
                 using var health = await client.GetAsync("/health/live");
                 Assert.Equal(HttpStatusCode.OK, health.StatusCode);
             }
+        }
+    }
+
+    /// <summary>
+    /// Phase 7 B1 on the real Program (Boo P7-S1 to S8): what the Kestrel harness can't show is
+    /// Program.cs's own order and registrations, the real forwarded-headers middleware feeding HSTS,
+    /// and a real database going away under <c>/health/ready</c>. Each line here fails if its
+    /// Program.cs call is removed (the harness calls the same extension methods, so it can't).
+    /// </summary>
+    [PostgresFact]
+    [Trait("Category", "Postgres")]
+    public async Task Real_program_serves_the_phase7_headers_caching_etag_and_readiness()
+    {
+        await ResetAsync();
+        using var webRoot = new TempWebRoot();
+        await File.WriteAllTextAsync(Path.Combine(webRoot.Path, "chunk-AAAAAAAA.js"), "export const x = 1;");
+        var baseUrl = $"http://127.0.0.1:{ApiProcess.FreeLoopbackPort()}";
+        await using var api = ApiProcess.Start(Environment(baseUrl, writes: true), "--webroot", webRoot.Path);
+        await api.WaitForOutputAsync("Now listening on", StartTimeout);
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+
+        foreach (var (path, cache) in new[]
+                 {
+                     ("/", "no-cache"), ("/s/a.b", "no-cache"), ("/c/..%2Fme", "no-cache"), ("/chunk-AAAAAAAA.js", "public, max-age=31536000, immutable"),
+                     ("/nope.js", "no-store"), ("/api/client-config", "no-store"), ("/api/nope", "no-store"), ("/health/live", "no-store, no-cache")
+                 })
+        {
+            using var response = await client.GetAsync(path);
+            Assert.Empty(HeaderExpectations.Problems(response).Select(p => $"{path}: {p}"));
+            Assert.Equal(cache, HeaderExpectations.CacheControl(response));
+        }
+
+        // HSTS follows X-Forwarded-Proto through the real forwarded-headers middleware; a
+        // non-localhost Host, so a UseHsts()-style localhost exclusion would show up here.
+        foreach (var (proto, expectHsts) in new[] { ("https", true), ("http", false) })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+            request.Headers.Host = "fireworks.example";
+            request.Headers.Add("X-Forwarded-Proto", proto);
+            using var response = await client.SendAsync(request);
+            Assert.Empty(HeaderExpectations.Problems(response, expectHsts));
+        }
+
+        using (var noProto = new HttpRequestMessage(HttpMethod.Get, "/"))
+        {
+            noProto.Headers.Host = "fireworks.example";
+            using var response = await client.SendAsync(noProto);
+            Assert.Empty(HeaderExpectations.Problems(response, expectHsts: false));
+        }
+
+        // ETag and 304 on the share-code GET.
+        var code = await Hardening.ResponseHeaderTests.CreateAsync(client);
+        string tag;
+        using (var got = await client.GetAsync($"/api/creations/{code}"))
+        {
+            tag = got.Headers.GetValues("ETag").Single();
+            using var json = JsonDocument.Parse(await got.Content.ReadAsStringAsync());
+            Assert.Equal("\"" + json.RootElement.GetProperty("updatedAt").GetString() + "\"", tag);
+            Assert.Equal("private, no-cache", HeaderExpectations.CacheControl(got));
+        }
+
+        using (var conditional = new HttpRequestMessage(HttpMethod.Get, $"/api/creations/{code}"))
+        {
+            conditional.Headers.TryAddWithoutValidation("If-None-Match", tag);
+            using var response = await client.SendAsync(conditional);
+            Assert.Equal(HttpStatusCode.NotModified, response.StatusCode);
+            Assert.Equal(tag, response.Headers.GetValues("ETag").Single());
+            Assert.Empty(HeaderExpectations.Problems(response));
+        }
+
+        // Chunked over-limit write: answered with Connection: close.
+        var chunkedHead = System.Text.Encoding.ASCII.GetBytes(
+            "POST /api/creations HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n");
+        var chunk = new byte[8192];
+        Array.Fill(chunk, (byte)' ');
+        var chunked = new MemoryStream();
+        for (var i = 0; i < 40; i++)
+        {
+            chunked.Write("2000\r\n"u8);
+            chunked.Write(chunk);
+            chunked.Write("\r\n"u8);
+        }
+
+        chunked.Write("0\r\n\r\n"u8);
+        var head = await HeaderExpectations.RawHeadAsync(client.BaseAddress!, chunkedHead, chunked.ToArray());
+        Assert.StartsWith("HTTP/1.1 413", head);
+        Assert.Equal("close", HeaderExpectations.RawHeader(head, "Connection"));
+        Assert.Null(HeaderExpectations.RawHeader(head, "Server"));
+
+        // Readiness: 200 while the database is there; drop it under the running app and ready turns
+        // 503 text/plain while live stays 200.
+        using (var ready = await client.GetAsync("/health/ready"))
+        {
+            Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
+            Assert.Equal("text/plain", ready.Content.Headers.ContentType?.MediaType);
+            Assert.Equal("Healthy", await ready.Content.ReadAsStringAsync());
+        }
+
+        var target = new NpgsqlConnectionStringBuilder(PostgresFactAttribute.ConnectionString);
+        var database = target.Database!;
+        target.Database = "postgres";
+        target.Pooling = false;
+        await using (var admin = new NpgsqlConnection(target.ConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var drop = new NpgsqlCommand($"DROP DATABASE \"{database}\" WITH (FORCE)", admin);
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        using (var ready = await client.GetAsync("/health/ready"))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, ready.StatusCode);
+            Assert.Equal("text/plain", ready.Content.Headers.ContentType?.MediaType);
+            var body = await ready.Content.ReadAsStringAsync();
+            Assert.Equal("Unhealthy", body);
+            Assert.Empty(HeaderExpectations.Problems(ready));
+        }
+
+        using (var live = await client.GetAsync("/health/live"))
+        {
+            Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+            Assert.Equal("Healthy", await live.Content.ReadAsStringAsync());
         }
     }
 }

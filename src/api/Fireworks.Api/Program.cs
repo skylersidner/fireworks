@@ -3,6 +3,7 @@ using Fireworks.Api.Repositories;
 using Fireworks.Api.Services;
 using Fireworks.Api.Services.ClientConfig;
 using Fireworks.Api.Services.Creations;
+using Fireworks.Api.Services.Health;
 using Fireworks.Api.Services.Identity;
 using Fireworks.Api.Services.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -29,12 +30,14 @@ builder.Services.AddFireworksIdentity(builder.Configuration);
 builder.Services.AddFireworksClientConfig(builder.Configuration);
 
 // 1a. Kestrel's global body limit is 64 KiB; the creation writes raise it per action to 256 KiB.
-// Never add request decompression (UseRequestDecompression): today a gzip body is read raw and fails
-// as not-json, so there is no zip-bomb path (Boo S2, S4).
+// No Server header, on Kestrel's own 400/431 responses too (Boo P7-S2).
+// Never add request decompression (UseRequestDecompression) or response compression: today a gzip
+// body is read raw and fails as not-json, so there is no zip-bomb path (Boo S2, S4, P7-S9).
 builder.WebHost.ConfigureKestrel(KestrelLimits.Apply);
 
-// 2. Health checks, ProblemDetails, controllers, Swagger.
-builder.Services.AddHealthChecks();
+// 2. Health checks (liveness runs none; readiness is one database round trip, 3 s timeout),
+// ProblemDetails, controllers, Swagger.
+builder.Services.AddFireworksHealthChecks();
 builder.Services.AddProblemDetails();
 // No form value providers: they read form-typed bodies before the write gate (Boo F1). Shared with
 // the test harness.
@@ -109,9 +112,13 @@ if (!app.Environment.IsDevelopment())
     app.UseForwardedHeaders(forwardedHeadersOptions);
 }
 
-// 6a. Cache-Control: no-store and nosniff on every /api response, error responses included (the
-// headers are set in OnStarting, after the exception handler has cleared the response).
-app.UseFireworksApiResponseHeaders();
+// 6a. The one site-wide header middleware (Boo P7-S1): CSP, nosniff, Referrer-Policy, framing,
+// COOP/CORP, Permissions-Policy, HSTS over HTTPS outside Development (after forwarded headers, so
+// it follows X-Forwarded-Proto), Cache-Control: no-store wherever nothing else set it, and
+// Connection: close on /api bodies that can't be drained. Before the exception handler and static
+// files, so error responses and files get it too; set in OnStarting, after the handler has cleared
+// a failed response.
+app.UseFireworksResponseHeaders();
 
 // 7. Exception handler (ProblemDetails body, no stack trace).
 app.UseExceptionHandler();
@@ -131,9 +138,10 @@ if (app.Environment.IsDevelopment())
 
 // 9. Static files (the Angular build in wwwroot) are served by middleware and short-circuit before
 // routing. When Phase 8 adds UseAuthentication/UseAuthorization, they go after UseRouting below,
-// so the SPA's JS/CSS stay anonymous with no configuration.
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// so the SPA's JS/CSS stay anonymous with no configuration. One StaticFileOptions for these and the
+// fallback (step 16): hashed bundles immutable, every other served file no-cache (Boo P7-S4).
+var staticFileOptions = SpaHosting.CreateStaticFileOptions();
+app.UseFireworksStaticFiles(staticFileOptions);
 
 // 10. Explicit, and load-bearing. With no UseRouting() call, WebApplicationBuilder inserts routing
 // at the very FRONT of the pipeline, ahead of everything above — after which UseDefaultFiles() is
@@ -171,11 +179,13 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// 13. Liveness. Answered by the health check as text/plain "Healthy" — never by the SPA fallback.
-// railway.toml's healthcheckPath must be exactly this path; any near-miss would be answered by the
-// fallback below with 200 text/html and pass forever.
-// Explicitly exempt from rate limiting, so the probe can never be throttled (Boo S20).
-app.MapHealthChecks("/health/live").DisableRateLimiting();
+// 13. Liveness and readiness. Answered by the health checks as text/plain — never by the SPA
+// fallback. railway.toml's healthcheckPath must be exactly /health/live; any near-miss would be
+// answered by the fallback below with 200 text/html and pass forever. Liveness runs no checks and
+// is exempt from rate limiting, so the probe can never be throttled (Boo S20) and a database blip
+// never restarts the app. /health/ready checks the database (503 when it's down) and is
+// read-limited (Boo P7-S6).
+app.MapFireworksHealthChecks();
 
 // 14. Controllers (attribute-routed).
 app.MapControllers();
@@ -191,9 +201,11 @@ app.MapControllers();
 // Read-limited like every other /api read, so a scanner walking 404s is throttled too (Boo S19).
 app.Map("/api/{**rest}", () => Results.NotFound()).RequireRateLimiting(FireworksRateLimiting.ReadPolicy);
 
-// 16. SPA fallback, last. Deep links (/designer, /s/{code}) get index.html and Angular routes them.
-// When Phase 8 adds a fallback authorization policy, this endpoint needs AllowAnonymous or every
+// 16. SPA fallback, last. Deep links (/designer, /s/{code}) get index.html and Angular routes them;
+// /s/{**rest} and /c/{**rest} take a dotted last segment too (/c/..%2Fme), so the app's not-found
+// page answers instead of a bare 404 (Boo P7-S7). Same StaticFileOptions as step 9 (no-cache).
+// When Phase 8 adds a fallback authorization policy, these endpoints need AllowAnonymous or every
 // deep link 401s before any HTML is served.
-app.MapFallbackToFile("index.html");
+app.MapFireworksSpaFallback(staticFileOptions);
 
 app.Run();

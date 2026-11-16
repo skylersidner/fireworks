@@ -1,7 +1,7 @@
 # Skill: Pixi host lifecycle in an Angular component
 
 **Domain:** Hosting a Pixi 8 Application inside a zoneless Angular 22 component
-**Applies to:** `app-fireworks-stage` (`app/features/designer/shared/fireworks-stage/`, Phase 2b; the Phase 1 canary was deleted in 2a), player (Phase 5), Show Builder preview (Phase 6)
+**Applies to:** `app-fireworks-stage` (`app/shared/fireworks-stage/`, moved from `features/designer/shared/` in Phase 5; Phase 2b; the Phase 1 canary was deleted in 2a), player (Phase 5), Show Builder preview (Phase 6)
 **Confidence:** medium-high. Proven with specs and mutants in Phase 1 (canary) and Phase 2b (stage), and in headless Chrome against the built wwwroot. Not yet on a real GPU in the deployed image.
 
 ## Shape
@@ -37,3 +37,9 @@ Fake: `src/web/fireworks-web/src/app/testing/fake-stage-renderer.ts`, a deferred
 - `app-fireworks-stage` has `:host { display: block; position: relative }`. A parent class `absolute inset-0` on the element **loses**: both selectors have the same specificity, and component styles load later. The stage renders 0 px tall and the canvas (absolute inside it) is invisible. Size it with `h-full w-full` (or a wrapper div), and check its size in the real-browser smoke. Specs in jsdom can't see this.
 - **Synchronous fire after a load.** Inputs reach the engine through `effect()`, which runs at the next change detection. A page that loads a shell and must fire it in the same handler calls `stage.fireNow(shell, sky)`, which sets `loop.shell` and `sim.sky` first. Otherwise the launch fires the previous shell.
 - **Viewer flags on a live driver.** Flip them on the running driver (`RandomShowDriver.reduceFlashing`), not by `setDriver(createDriver(...))`. A new driver starts its timer at 0 and fires immediately.
+
+## Context loss (Phase 7 ruling, `yoshi-phase7-architecture-rulings.md` point 1)
+- Pixi 8.23 `GlContextSystem` already calls `preventDefault()` on `webglcontextlost`, restores in place on `webglcontextrestored`, keeps the ticker running on a lost context, and auto-restores only its own `forceContextLoss()`. A test calling `WEBGL_lose_context.loseContext()` must call `restoreContext()` itself.
+- **Detect in the renderer, decide in the host.** The renderer reports `'lost' | 'restored'` through `StageRenderer.onContextChange` and stops its ticker on loss. The host keeps the old renderer until `restored`, then destroys it and mounts a new one through the factory (same guard as first start, plus a generation counter). After the 10 s timeout (phase-7.md §11) or a rebuild the factory rejects, it destroys the renderer and shows the loss failure block; a later restore is ignored (coordinator ruling N1). Built in Phase 7 B2: `fireworks-stage.ts` `onContextChange`, specs in `fireworks-stage.phase7.spec.ts`, fake `loseContext()`/`restoreContext()` on `FakeStageRenderer`.
+- **Trap:** `app.destroy()` calls `loseContext()`, which fires `webglcontextlost` on the dying canvas. Remove your listeners before destroying, or every navigation starts a rebuild.
+- State that must outlive a rebuild belongs to the host, not the renderer: the sim, the loop, drivers, the last world width, and `FlashSpacing` (passed in through options). While the renderer is down, treat the stage as paused.

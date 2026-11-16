@@ -1,5 +1,6 @@
 import {
   cueFireStep,
+  embeddedShell,
   orderCues,
   STEPS_PER_SECOND,
   type ShowCue,
@@ -108,6 +109,25 @@ function sameScheduled(a: ScheduledCue, b: ScheduledCue): boolean {
 }
 
 /**
+ * The last step at which `from`'s checkpoints still describe the receiver's show exactly
+ * (Infinity when the schedules never differ). Before the first differing cue every fire is
+ * identical; cues on that step itself fire after a checkpoint taken there, so a checkpoint at
+ * exactly this step is still exact. `b` is the receiver.
+ *
+ * When `b` is a strict prefix of `a` (its last cues removed), the world agrees up to `a`'s first
+ * extra cue, but a checkpoint taken after `b`'s last cue fired carries `a`'s unended `endStep` and
+ * `next === b.length`, so `restore` would date the end at the checkpoint. Capping at `b`'s last
+ * `fireStep` keeps only checkpoints taken before that cue fired (yoshi-phase7-architecture-rulings
+ * addendum 1, D1).
+ */
+function divergeStep(a: readonly ScheduledCue[], b: readonly ScheduledCue[]): number {
+  let i = 0;
+  while (i < a.length && i < b.length && sameScheduled(a[i], b[i])) i++;
+  const d = Math.min(a[i]?.fireStep ?? Infinity, b[i]?.fireStep ?? Infinity);
+  return i === b.length && i < a.length ? Math.min(d, b.at(-1)?.fireStep ?? 0) : d;
+}
+
+/**
  * Plays a ShowDocument (schema.md §4, plan Phase 6) on an `EngineLoop`: a pure, deterministic
  * driver with its own show clock.
  *
@@ -141,6 +161,7 @@ export class TimelineDriver implements PlaybackDriver {
    */
   readonly endBoundStep: number;
 
+  private readonly doc: ShowDocument;
   private readonly sky: ShowDocument['sky'];
   private readonly digestOn: boolean;
   private readonly cpBytesMax: number;
@@ -159,15 +180,17 @@ export class TimelineDriver implements PlaybackDriver {
    *   a cue names a shell the show doesn't have; the validator rejects that document (§6.3).
    */
   constructor(show: ShowDocument, options: TimelineDriverOptions = {}) {
+    this.doc = show;
     this.sky = { ...show.sky };
     this.digestOn = options.traceDigest ?? false;
     this.cpSteps = Math.max(0, Math.floor(options.checkpointSteps ?? DEFAULT_CHECKPOINT_STEPS));
     this.cpBytesMax = options.checkpointBytes ?? DEFAULT_CHECKPOINT_BYTES;
     this.schedule = orderCues(show.cues).map((cue) => {
-      if (!Object.hasOwn(show.shells, cue.shell)) {
+      const embedded = embeddedShell(show, cue.shell);
+      if (!embedded) {
         throw new Error(`TimelineDriver: cue ${cue.id} names unknown shell ${cue.shell}`);
       }
-      const def = structuredClone(show.shells[cue.shell]) as ShellDocument;
+      const def = structuredClone(embedded) as ShellDocument;
       const burstHeight = cue.burstHeight ?? def.burstHeight;
       const fireStep = cueFireStep(cue.t);
       return {
@@ -310,6 +333,48 @@ export class TimelineDriver implements PlaybackDriver {
     return this._endStep;
   }
 
+  /** Steps between checkpoints now (0: off). The memory cap can have doubled the configured value. */
+  get checkpointInterval(): number {
+    return this.cpSteps;
+  }
+
+  /**
+   * A fresh driver for the same document and options, holding this one's checkpoints: the shadow
+   * a host runs ahead on its own sim to warm checkpoints up (Phase 7), then hands back with
+   * `adoptCheckpoints`. Its run never touches this driver or its sim.
+   */
+  twin(): TimelineDriver {
+    return new TimelineDriver(this.doc, {
+      from: this,
+      checkpointSteps: this.cpSteps,
+      checkpointBytes: this.cpBytesMax,
+      traceDigest: this.digestOn,
+    });
+  }
+
+  /**
+   * Merges `from`'s checkpoints into this driver's, without touching this driver's own run: the
+   * warm-up handoff (both ways). Only checkpoints taken before the first step where the two
+   * schedules differ are taken (the `inherit` rule), so each one is exactly a straight run of this
+   * show at its run key; checkpoints under another key are still filtered by `seek`. The spacing
+   * becomes the wider of the two and the memory cap applies. Returns the number added.
+   */
+  adoptCheckpoints(from: TimelineDriver): number {
+    if (from === this || !this.compatible(from)) return 0;
+    const diverge = divergeStep(from.schedule, this.schedule);
+    this.cpSteps = Math.max(this.cpSteps, from.cpSteps);
+    const held = new Set(this.checkpoints.map((c) => c.step));
+    const added = from.checkpoints.filter(
+      (c) => c.step <= diverge && !held.has(c.step) && c.step % this.cpSteps === 0,
+    );
+    if (added.length === 0 && this.checkpoints.every((c) => c.step % this.cpSteps === 0)) return 0;
+    this.checkpoints = [...this.checkpoints, ...added]
+      .filter((c) => c.step % this.cpSteps === 0)
+      .sort((a, b) => a.step - b.step);
+    this.enforceCap();
+    return added.length;
+  }
+
   tick(_ctx: PlaybackContext, _dt: number): void {}
 
   onUserFire(_ctx: PlaybackContext): void {}
@@ -347,10 +412,26 @@ export class TimelineDriver implements PlaybackDriver {
     const at = this.checkpoints.findIndex((c) => c.step > cp.step);
     if (at < 0) this.checkpoints.push(cp);
     else this.checkpoints.splice(at, 0, cp);
+    this.enforceCap();
+  }
+
+  /** Over the memory cap, the spacing doubles and off-grid checkpoints go. */
+  private enforceCap(): void {
     while (this.checkpointBytes > this.cpBytesMax && this.checkpoints.length > 1) {
       this.cpSteps *= 2;
       this.checkpoints = this.checkpoints.filter((c) => c.step % this.cpSteps === 0);
     }
+  }
+
+  /** Whether `from`'s checkpoints can describe this show's world at all (sky, digest, grid on). */
+  private compatible(from: TimelineDriver): boolean {
+    return (
+      this.cpSteps > 0 &&
+      from.cpSteps > 0 &&
+      from.digestOn === this.digestOn &&
+      from.sky.gravity === this.sky.gravity &&
+      from.sky.wind === this.sky.wind
+    );
   }
 
   private restore(ctx: PlaybackContext, cp: Checkpoint): void {
@@ -366,23 +447,16 @@ export class TimelineDriver implements PlaybackDriver {
     this.runKey = cp.key;
   }
 
-  /** Keeps `from`'s checkpoints taken before the first step where the schedules differ. */
+  /**
+   * Keeps `from`'s checkpoints taken before the first step where the schedules differ, and its
+   * spacing. Note (yoshi-phase7-architecture-rulings.md point 2): because the spacing is copied,
+   * a `ClientPlayback` checkpoint interval that arrives after the first driver was built applies
+   * only to a driver built without `from` (the next show opened), never mid-session. That is
+   * deliberate: a checkpoint is exact on any grid, and resetting would throw away every one.
+   */
   private inherit(from: TimelineDriver): void {
-    if (
-      this.cpSteps === 0 ||
-      from.digestOn !== this.digestOn ||
-      from.sky.gravity !== this.sky.gravity ||
-      from.sky.wind !== this.sky.wind
-    ) {
-      return;
-    }
-    const a = from.schedule;
-    const b = this.schedule;
-    let i = 0;
-    while (i < a.length && i < b.length && sameScheduled(a[i], b[i])) i++;
-    // Before step `diverge` every fire is identical; cues on `diverge` itself fire after a
-    // checkpoint taken there, so a checkpoint at exactly `diverge` is still exact.
-    const diverge = Math.min(a[i]?.fireStep ?? Infinity, b[i]?.fireStep ?? Infinity);
+    if (!this.compatible(from)) return;
+    const diverge = divergeStep(from.schedule, this.schedule);
     this.cpSteps = from.cpSteps;
     this.checkpoints = from.checkpoints.filter((c) => c.step <= diverge);
   }

@@ -1,5 +1,5 @@
-import { COLORS, RAINBOW, isPaletteColor } from '../../../../engine/model/colors';
-import type { SwatchSpec } from '../../../shared/select-row';
+import { COLORS, RAINBOW, isPaletteColor } from '../../engine/model/colors';
+import type { SwatchSpec } from './select-row';
 
 /**
  * Value readouts (prototype `rangeRow` formats, l.606–653) and their screen-reader text

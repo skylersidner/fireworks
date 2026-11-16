@@ -3,7 +3,7 @@ import { FormField, type FieldTree } from '@angular/forms/signals';
 import { SKY_LIMITS } from '../../../../../engine/model/limits';
 import type { SkySettings } from '../../../../../engine/model/shell';
 import { RangeRowComponent } from '../../../../shared/range-row';
-import { plain, windText } from '../formats';
+import { plain, windText } from '../../../../shared/formats';
 
 /** Sky section, saved with the shell (designer-2c.md §3.5, D3). */
 @Component({

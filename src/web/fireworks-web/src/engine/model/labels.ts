@@ -86,6 +86,20 @@ export const FIELD_LABELS: Readonly<Record<string, string>> = {
   delay: 'Delay',
 };
 
+/**
+ * Row labels for a show cue's fields (phase-6.md §15; phase-7.md §9.4), next to `FIELD_LABELS` so
+ * every row label in the app is in this file (designer-2c.md D5). The inspector reads them, and
+ * `showFieldLabel` names cue paths with them.
+ */
+export const CUE_FIELD_LABELS: Readonly<Record<string, string>> = {
+  t: 'Launch time',
+  x: 'Position',
+  burstHeight: 'Burst height',
+  seed: 'Seed',
+  shell: 'Shell',
+  id: 'Cue id',
+};
+
 /** Labels for any value an enum field can hold, keyed by field. */
 const VALUE_LABELS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   pattern: PATTERN_LABELS,

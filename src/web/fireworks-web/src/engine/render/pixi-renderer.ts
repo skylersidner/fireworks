@@ -1,3 +1,6 @@
+// Must stay the first import (Boo P7-S10): Pixi 8 compiles shaders and uniform syncs with
+// generated code unless this polyfill is loaded first, and the CSP forbids `unsafe-eval`.
+import 'pixi.js/unsafe-eval';
 import {
   Application,
   Container,
@@ -48,12 +51,22 @@ export class PixiRenderer implements StageRenderer {
    */
   private tintCache: Uint32Array = new Uint32Array(0);
   private readonly visual: ParticleVisual = { alpha: 0, px: 0, color: 0 };
-  private readonly flashSpacing = new FlashSpacing();
+  private readonly flashSpacing: FlashSpacing;
   private readonly resizeObserver: ResizeObserver | null;
   private lastW = 0;
   private lastH = 0;
   private scale = 1;
   private destroyed = false;
+  private contextListener: ((state: 'lost' | 'restored') => void) | null = null;
+  private readonly onLost = (): void => {
+    if (this.destroyed) return;
+    this.app.ticker.stop();
+    this.contextListener?.('lost');
+  };
+  private readonly onRestored = (): void => {
+    if (this.destroyed) return;
+    this.contextListener?.('restored');
+  };
 
   private constructor(
     private readonly app: Application,
@@ -61,6 +74,7 @@ export class PixiRenderer implements StageRenderer {
     options: StageRendererOptions,
   ) {
     this.name = app.renderer.name as RendererName;
+    this.flashSpacing = options.flashSpacing ?? new FlashSpacing();
     this.dotTex = createGlowTexture();
     this.pc = new ParticleContainer({
       texture: this.dotTex,
@@ -80,6 +94,13 @@ export class PixiRenderer implements StageRenderer {
     this.resizeObserver?.observe(host);
 
     this.handleResize();
+
+    // Pixi's GlContextSystem prevents the default on loss, so the browser may restore. Only WebGL
+    // reports it: Canvas can't lose a context, and Pixi restores a WebGPU device by itself.
+    if (this.name === 'webgl') {
+      app.canvas.addEventListener('webglcontextlost', this.onLost);
+      app.canvas.addEventListener('webglcontextrestored', this.onRestored);
+    }
   }
 
   /** Creates and initializes a renderer sized to `host`. Does not attach the canvas. */
@@ -93,7 +114,7 @@ export class PixiRenderer implements StageRenderer {
       background: '#04060c',
       antialias: false,
       preference: 'webgl',
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      resolution: options.resolution ?? Math.min(window.devicePixelRatio || 1, 2),
       autoDensity: true,
     });
     return new PixiRenderer(app, host, options);
@@ -118,6 +139,10 @@ export class PixiRenderer implements StageRenderer {
     });
   }
 
+  onContextChange(listener: (state: 'lost' | 'restored') => void): void {
+    this.contextListener = listener;
+  }
+
   render(sim: FireworksSim, persistence: number, reduceFlashing = false): void {
     if (reduceFlashing) this.flashSpacing.update(sim.particles, sim.simTime);
     else this.flashSpacing.reset();
@@ -128,6 +153,11 @@ export class PixiRenderer implements StageRenderer {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    // Before app.destroy(): it calls loseContext(), which fires webglcontextlost on this canvas,
+    // and a host still listening would start a rebuild on every navigation.
+    this.contextListener = null;
+    this.app.canvas.removeEventListener('webglcontextlost', this.onLost);
+    this.app.canvas.removeEventListener('webglcontextrestored', this.onRestored);
     this.resizeObserver?.disconnect();
     this.app.ticker.stop();
     // Off-stage objects first, while the renderer can still free their GPU resources.

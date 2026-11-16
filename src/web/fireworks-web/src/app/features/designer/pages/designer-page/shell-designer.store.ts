@@ -37,6 +37,7 @@ import {
   type DisplaySettings,
   type EditableShell,
 } from '../../shared/designer-draft';
+import { announcement, type LiveNoteEntry } from '../../../../shared/announcer';
 
 /** Draft writes wait this long after the last change (acceptance: "within 1 s", never per frame). */
 export const DRAFT_DEBOUNCE_MS = 300;
@@ -234,21 +235,37 @@ export class ShellDesignerStore {
   /** JSON panel: unapplied text (null when the textarea shows the shell), and the note. */
   readonly jsonEdits = signal<string | null>(null);
   readonly jsonText = computed(() => this.jsonEdits() ?? this.shellJson());
-  private readonly note = signal<{ text: string; json: string; edits: string | null } | null>(null);
-  /** A note holds until the next edit (shell or textarea), Copy or Apply (designer-2c.md §3.6). */
-  readonly jsonNote = computed(() => {
+  private readonly note = signal<{
+    text: string;
+    seq: number;
+    json: string;
+    edits: string | null;
+  } | null>(null);
+  private noteSeq = 0;
+  /**
+   * A note holds until the next edit (shell or textarea), Copy or Apply (designer-2c.md §3.6).
+   * Every `setNote` gets a new `seq`, and the panel keys the note's text node by it, so the same
+   * note set twice (Copy, Copy) re-announces (phase-7.md §10 B4, C2 ruling 4).
+   */
+  readonly jsonNoteEntry = computed<LiveNoteEntry>(() => {
     const note = this.note();
-    if (note && note.json === this.shellJson() && note.edits === this.jsonEdits()) return note.text;
+    if (note && note.json === this.shellJson() && note.edits === this.jsonEdits()) {
+      return { text: note.text, seq: note.seq };
+    }
     const edits = this.jsonEdits();
-    return edits !== null && edits !== this.shellJson() ? JSON_NOTE_EDITED : JSON_NOTE_DEFAULT;
+    return edits !== null && edits !== this.shellJson()
+      ? { text: JSON_NOTE_EDITED, seq: -2 }
+      : { text: JSON_NOTE_DEFAULT, seq: -1 };
   });
+  readonly jsonNote = computed(() => this.jsonNoteEntry().text);
   readonly hasJsonEdits = computed(() => {
     const edits = this.jsonEdits();
     return edits !== null && edits !== this.shellJson();
   });
 
   /** Polite announcement for break add/remove (designer-2c.md §3.4, §8.3). */
-  readonly announcement = signal('');
+  /** The panel's polite region; repeats re-announce (phase-7.md §10 B4). */
+  readonly announcement = announcement();
 
   /**
    * First-visit flashing notice (designer-2c.md §7.2). While it shows, playback is paused: nothing
@@ -405,7 +422,7 @@ export class ShellDesignerStore {
 
   /** Sets a JSON note that holds until the next edit, Copy or Apply. */
   setNote(text: string): void {
-    this.note.set({ text, json: this.shellJson(), edits: this.jsonEdits() });
+    this.note.set({ text, seq: ++this.noteSeq, json: this.shellJson(), edits: this.jsonEdits() });
   }
 
   /**

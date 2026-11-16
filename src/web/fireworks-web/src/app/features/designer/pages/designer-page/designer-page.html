@@ -16,14 +16,14 @@
       <div class="flex gap-3">
         <a
           routerLink="/show"
-          class="text-small text-muted no-underline hover:text-primary"
+          class="touch-link text-small text-muted no-underline hover:text-primary"
           data-testid="nav-show"
           >Show Builder</a
         >
         @if (saveFlow.canWrite()) {
           <a
             routerLink="/mine"
-            class="text-small text-muted no-underline hover:text-primary"
+            class="touch-link text-small text-muted no-underline hover:text-primary"
             data-testid="nav-mine"
             >My creations</a
           >
@@ -34,7 +34,12 @@
 
     <app-test-mode-banner />
     @if (showApiBanner()) {
-      <app-api-banner [checking]="apiChecking()" (retry)="retryApi()" />
+      <app-api-banner
+        [checking]="apiChecking()"
+        (retry)="retryApi()"
+        (focusin)="bannerFocus.focusIn()"
+        (focusout)="bannerFocus.focusOut($event)"
+      />
     }
     @if (saveFlow.status(); as status) {
       <app-save-status
@@ -109,7 +114,7 @@
     <section class="section">
       <app-json-panel
         [text]="store.jsonText()"
-        [note]="store.jsonNote()"
+        [note]="store.jsonNoteEntry()"
         [hasEdits]="store.hasJsonEdits()"
         (edit)="store.editJson($event)"
         (revert)="store.revertJson()"
