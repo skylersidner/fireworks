@@ -1,6 +1,7 @@
 // The regular-tier Chromium smoke (testing-strategy.md §2.2 step 8; Skyler 2026-11-16: part of
 // the regular tier). About a minute against a server that is already up; `tools/test/run.mjs
-// regular` starts its own Production-mode API and passes BASE.
+// regular` starts its own API as ASPNETCORE_ENVIRONMENT=Testing (tools/test/lib.mjs: the real
+// headers and CSP, but the stub OAuth allowed) and passes BASE.
 //
 // Usage: BASE=http://127.0.0.1:5190 [CODES=...|CODES_FILE=...] node smoke.mjs
 //   Without CODES it saves the gate fixtures first (lib/common.mjs SAVE_SET), signed in through the
@@ -16,7 +17,8 @@
 //   csp-neg      gate-csp MODE=none on three pages: each must show a blocked script (≈6 s)
 //   auth         gate-auth (Phase 8 B3): same-site and cross-site CSRF from a :5190 page, zero
 //                CSP violations across the real /signin -> stub -> /mine flow, and the
-//                walk-alice / walk-bob ownership walk. Its negative controls run in daily.
+//                walk-alice / walk-bob ownership walk, the anonymous Save path through sign-in
+//                (save) and both drafts kept across Sign out (signout). Its negative controls run in daily.
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { BASE, HERE, ensureSession, loadCodes, saveCodes } from './lib/common.mjs';

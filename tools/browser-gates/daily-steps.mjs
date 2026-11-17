@@ -52,6 +52,9 @@ export function dailySteps({ codes, gone, tier = 'daily' }) {
     s('auth-neg-csrf', ['gate-auth.mjs'], { env: { PARTS: 'csrf', NEG: 'csrf' }, expectExit: 1, mustSay: /CSRF LANDED: signed out, list changed/ }),
     s('auth-neg-csp', ['gate-auth.mjs'], { env: { PARTS: 'csp', NEG: 'csp' }, expectExit: 1, mustSay: /CSP VIOLATION: .*\/mine script-src/ }),
     s('auth-neg-walk', ['gate-auth.mjs'], { env: { PARTS: 'walk', NEG: 'walk' }, expectExit: 1, mustSay: /OWNERSHIP NOT ENFORCED: .*PUT of alice's code is 404.*DELETE of alice's code is 404/ }),
+    // Mario's Phase 8 G1 and G2 (Toad): the anonymous Save path, drafts kept across Sign out.
+    s('auth-neg-save', ['gate-auth.mjs'], { env: { PARTS: 'save', NEG: 'save' }, expectExit: 1, mustSay: /SAVE PATH BROKEN: the draft is byte-identical.*nothing was written on return/ }),
+    s('auth-neg-signout', ['gate-auth.mjs'], { env: { PARTS: 'signout', NEG: 'signout' }, expectExit: 1, mustSay: /DRAFT CHANGED ON SIGN OUT: fireworks\.showDraft\.v1/ }),
     s('player-vt', ['player-virtual-time.mjs']),
     s('player-vt-neg-frozen', ['player-virtual-time.mjs'], { env: { PAUSE: '0', PHASES: 'frozen' }, expectExit: 1, mustSay: /MOVED/ }),
     s('player-vt-neg-ended', ['player-virtual-time.mjs'], { env: { NEG_HIDE_ENDED: '1', PHASES: 'ff', MAX_FF: '200' }, expectExit: 1, mustSay: /did not end under virtual time/ }),

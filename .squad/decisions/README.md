@@ -52,10 +52,10 @@
 
 | Decision | Where |
 |---|---|
-| **Anonymous play; persistence is owned by a user ID from day one,** resolved through `ICurrentUser`, with a configured default user until Phase 8. | `plans/initial-implementation.md` §3.4 |
+| **Anonymous play; persistence is owned by a user ID,** resolved through `ICurrentUser` (claims from the Google cookie session since 2026-11-16; the interim default user is gone and its creations are read-only). | `plans/initial-implementation.md` §3.4, §Phase 8 |
 | **Shells first, shows later. No public gallery. No CI.** | `plans/initial-implementation.md` §5 |
-| **Production writes are off until Phase 8.** `AllowAnonymousWrites` is false in `appsettings.json` and true in Development, switched on in Railway only while testing. `api/me` reports `canWrite`. | plan §3.4, §5 OQ20 |
-| **"My creations" follows the write switch before Phase 8:** `GET api/me/creations` returns 403 when `CanWrite` is false, and `/mine` is hidden. Share-code GETs stay public. | plan §3.4, Phase 4, Phase 5 · `records/yoshi-phase1-plan-followups.md` |
+| **Writes require sign-in.** `canWrite` equals `isAuthenticated` (Google sign-in); the interim `AllowAnonymousWrites` switch and default user are gone (2026-11-16). | plan §Phase 8 · `records/bowser-phase8-server-auth.md` |
+| **"My creations" needs sign-in:** `GET api/me/creations` returns 401 when signed out, and `/mine` shows a sign-in prompt in place with no list call. Share-code GETs need no sign-in (they are `private, no-cache` with `Vary: Cookie`). | plan §Phase 8 · `records/boo-phase8-security-requirements.md` A44 |
 | **Stage coordinates follow the prototype:** a fixed 800-unit height, width follows the window, and cue `x` is a fraction of the width. | plan §5 OQ5 |
 | **The backend targets .NET 11 (`net11.0`)**, a deliberate departure from the reference's .NET 10, because .NET 11 is what's installed. | plan §2 (.NET row) |
 | **Flashing safety ships with each surface.** The designer at `/` auto-plays, with Rosalina's first-visit notice, a start in Manual under reduced motion, and a Reduce flashing toggle, all in 2c. The player gets the same in Phase 5. | plan Phase 2c, Phase 7 |
@@ -65,7 +65,7 @@
 | **Forms: Angular Signal Forms on Angular 22.** Stable there and the direction Angular is heading. This is a deliberate departure from the reference's reactive forms. | plan §5 OQ17 |
 | **A cue's `t` is its launch time.** | `docs/fireworks-app/schema.md` §4.3 · `records/yoshi-phase3-creation-schema.md` |
 | **Share links are not locked.** Improvements may change how existing links play; prototype goldens are regression guards updated by reviewed change; version bumps are for document-shape changes only. | schema.md §8.1 |
-| **`remixedFrom` is visible only to the remix's owner;** everyone else gets `null`. The condition is `isOwner` alone, with no `CanWrite` term. **Accepted interim exposure (Skyler, 2026-11-13):** before Phase 8 every visitor is the default user and so the owner, so every visitor of a remix's link sees the original's share code. It closes in Phase 8 with no code change. | schema.md §2.1, §14 · `records/yoshi-phase3-creation-schema.md` (addendum 3) |
+| **`remixedFrom` is visible only to the remix's owner;** everyone else gets `null`. The condition is `isOwner` alone, with no `CanWrite` term. **Accepted interim exposure (Skyler, 2026-11-13):** before Phase 8 every visitor is the default user and so the owner, so every visitor of a remix's link sees the original's share code. Closed by Phase 8: owners are real accounts, and the UI renders "Remixed from" only on the player when `isAuthenticated && isOwner` (A43). | schema.md §2.1, §14 · `records/yoshi-phase3-creation-schema.md` (addendum 3) |
 | **An empty show can't be saved** (1..1000 cues); caps are 32 shells, 1000 cues, 600 s. | schema.md §4, §5.1 |
 | **A blank name saves as "Custom".** | schema.md §6.4 |
 | **A link never opens the saved record for editing.** `/c/:code` is the only editing link, for shells and shows; it loads a dirty working copy with exactly the saved settings. No edit-in-place route; the player's Remix just opens the working copy. | schema.md §11.1–11.2 · `records/yoshi-phase3-creation-schema.md` |
@@ -75,7 +75,7 @@
 | **Remix always shows on the player,** whatever `canWrite` is; only Save is hidden when writes are off (Skyler, 2026-11-14). | plan Phase 5 · `docs/fireworks-app/acceptance/phase-5.md` |
 | **Display and flashing preferences are device-wide:** one flashing-notice dismissal and one Reduce flashing choice shared by the designer and the player; a link load keeps `display` and replaces shell, sky, tab, dirty flags and `source` (Skyler, 2026-11-14). | plan Phase 5 · `docs/fireworks-app/design/phase-5.md` |
 | **"Remixed from" is not rendered before Phase 8;** after Phase 8 only when `isAuthenticated && isOwner` (Skyler, 2026-11-14). | `records/boo-phase5-security-requirements.md` C10 |
-| **A test-mode banner is required in Phase 5** whenever `canWrite && !isAuthenticated` (Skyler, 2026-11-14). | `records/boo-phase5-security-requirements.md` C17 |
+| **~~A test-mode banner is required in Phase 5~~ — superseded (Skyler, 2026-11-16):** the banner is removed; saving requires Google sign-in, pinned by the server invariant `canWrite == isAuthenticated`. | `records/boo-phase8-security-requirements.md` A42 |
 | **Cross-browser means it runs in each browser,** not identical fidelity; exact determinism is a same-engine test (Skyler, 2026-11-14). | plan Phase 6 · `docs/fireworks-app/acceptance/phase-6.md` |
 | **Show Builder v1:** session-only Undo (50 steps); embedded shells not edited in place; seek performance accepted as measured, revisit at >1 s p95 on a saved show in Chrome (Skyler, 2026-11-14). | plan Phase 6 · `records/yoshi-phase6-timeline-driver.md` · `docs/fireworks-app/design/phase-6.md` |
 | **Show Builder fields use native controls, not Signal Forms** (OQ17 departure for that page only); **Motion blur is device-wide** like Reduce flashing; **Show JSON moves to Phase 7** (Skyler, 2026-11-14). | plan Phase 6 · `records/luigi-phase6-show-builder.md` |

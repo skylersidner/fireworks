@@ -56,3 +56,9 @@
 ### 2026-11-16 — Phase 8 fix round (D1 G logo, message-page gap, R1 mutant)
 - The G is now Google's bundle SVG at `public/brand/google-g.svg`, rendered through `<img>`. Google's zip is at `developers.google.com/static/identity/images/signin-assets.zip`. Unhashed `public/` files get `no-cache` from SpaHosting. Multi-file mutants use `swaps: []` plus `postgres: true`, and Toad's runner has to support that. An `old` anchor must also leave `new` absent, so pull in a nearby comment line when the replacement text already exists in the file.
 
+
+### 2026-11-17 — Cross-agent update (Scribe)
+
+- **Rosalina's B2 check rejected the G; your D1 fix closed it** (`rosalina-phase8-b2-design-check.md`, `bowser-phase8-server-auth.md` addendum). Google's sha1-matched asset is served as `<img alt="">`, and `message-page.ts` is `gap-[8px]` with a pinned test.
+- **R1 is wired and measured.** Toad's runner has `postgres: true` and `swaps`, and your two-swap text is in `phase8-auth`. Mario's gate ran it KILLED (20/20) on `fireworks_gate8_mut`. Boo's F4 (the mutant missing from the set) is closed.
+- **Open, yours:** N2, the stale `src/api/Fireworks.Api/bin/Release/net11.0/appsettings.json` with an `Identity` section (build output, dockerignored; a `dotnet run` from `bin/Release` hits the intended throw). Unassigned in the gate record. A37, no XML key encryptor (the warning appears on the image), needs a decision with Boo's A37 trigger.

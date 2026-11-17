@@ -1,6 +1,7 @@
 # Phase 1 identity foundation: ICurrentUser carries CanWrite, identity config is validated eagerly
 
 > Superseded in part by bowser-phase8-server-auth.md on 2026-11-16: `DefaultUserCurrentUser` and the `Identity` section validation (points 1 and 2) are removed. Any `Identity:*` key now stops startup, and `ClaimsCurrentUser` replaces the interim implementation.
+
 **By:** Bowser (Backend Developer / DevOps) · 2026-11-12 · Phase 1a
 
 ## What

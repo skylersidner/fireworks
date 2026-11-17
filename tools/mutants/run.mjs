@@ -25,7 +25,12 @@
 //        SURVIVED   the specs passed
 //        BROKEN     the build failed (a compile break is not a kill: use a type-preserving mutant)
 //        STALE      old text is not in the file exactly once (the code moved on: update the set)
-//      Exit 0 when every mutant was KILLED; 1 otherwise.
+//        EQUIVALENT a mutant marked `equivalent: '<why>'` whose specs passed: no test can kill it,
+//                   because it changes no behavior (the reason is printed). It still runs, so the
+//                   claim is re-checked each time; a marked mutant that is KILLED is reported as
+//                   NOT-EQUIVALENT (the claim is wrong, or a spec pins an implementation detail),
+//                   which fails the run until someone looks. Mark one only with written reasoning.
+//      Exit 0 when every mutant was KILLED or EQUIVALENT; 1 otherwise.
 //
 // A set is tools/mutants/sets/<name>.mjs exporting { kind: 'web' | 'api', description, mutants }.
 //   web mutant: { id, name, file (relative to src/web/fireworks-web), old, new, specs: [...] }
@@ -42,8 +47,8 @@
 // FIREWORKS_TEST_POSTGRES stripped, whatever the caller's environment says.
 //   FIREWORKS_MUTANT_POSTGRES="Host=localhost;Port=5433;Username=fireworks_app;Password=…;Database=fireworks_mut" \
 //     node tools/mutants/run.mjs phase8-auth R1
-// Exit codes: 0 every mutant KILLED; 3 every mutant that ran was KILLED but some were SKIPPED (not
-// a full result: say which); 1 anything else.
+// Exit codes: 0 every mutant KILLED (or EQUIVALENT, as marked); 3 every mutant that ran was KILLED
+// or EQUIVALENT but some were SKIPPED (not a full result: say which); 1 anything else.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -60,7 +65,7 @@ if (!args.length || args[0] === '--list') {
   for (const f of fs.readdirSync(SETS).filter((f) => f.endsWith('.mjs')).sort()) {
     const set = (await import(pathToFileURL(path.join(SETS, f)))).default;
     console.log(`${f.replace(/\.mjs$/, '')} (${set.kind}, ${set.mutants.length} mutants): ${set.description}`);
-    for (const m of set.mutants) console.log(`  ${m.id}  ${m.name}`);
+    for (const m of set.mutants) console.log(`  ${m.id}  ${m.name}${m.equivalent ? '  (marked equivalent)' : ''}`);
   }
   process.exit(args.length ? 0 : 2);
 }
@@ -240,12 +245,14 @@ for (const m of chosen) {
       }
     }
   }
+  if (m.equivalent && r.verdict === 'SURVIVED') r = { ...r, verdict: 'EQUIVALENT', detail: `${r.detail}; marked equivalent: ${m.equivalent}` };
+  else if (m.equivalent && r.verdict === 'KILLED') r = { ...r, verdict: 'NOT-EQUIVALENT', detail: `${r.detail}; marked equivalent but killed: re-check the claim` };
   tally[r.verdict] = (tally[r.verdict] ?? 0) + 1;
   log(`${m.id} ${r.verdict.padEnd(8)} ${m.name} | ${r.detail} | load ${load()}`);
   for (const f of (r.failed ?? []).slice(0, 6)) log(`    ${f.timeout ? '[timeout] ' : ''}${f.test.slice(-150)} :: ${f.why}`);
 }
 log(`summary ${setName}: ${Object.entries(tally).map(([k, v]) => `${k} ${v}`).join(', ')}; log ${path.join(RIG, 'mutants.log')}`);
 if (!process.env.KEEP_RIG) fs.rmSync(REPO, { recursive: true, force: true });
-const killed = tally.KILLED ?? 0, skips = tally.SKIPPED ?? 0;
+const killed = (tally.KILLED ?? 0) + (tally.EQUIVALENT ?? 0), skips = tally.SKIPPED ?? 0;
 if (skips) log(`NOTE: ${skips} mutant(s) SKIPPED (${chosen.filter(skipped).map((m) => m.id).join(', ')}): not killed, not run. Exit 3 unless something else failed.`);
 process.exitCode = killed === chosen.length ? 0 : killed + skips === chosen.length ? 3 : 1;

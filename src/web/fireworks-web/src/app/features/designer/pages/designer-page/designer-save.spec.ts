@@ -31,6 +31,7 @@ import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { DRAFT_KEY, editableFrom, serializeDraft } from '../../shared/designer-draft';
+import { SHOW_DRAFT_KEY } from '../../../show/shared/show-draft';
 import { WorkingCopyHandoff } from '../../shared/working-copy-handoff';
 import { DesignerPageComponent } from './designer-page';
 import { DRAFT_DEBOUNCE_MS, ShellDesignerStore } from './shell-designer.store';
@@ -248,7 +249,10 @@ describe('Designer Save and Share', () => {
     });
 
     it('signed in: the name in <bdi>, Sign out; Sign out posts logout, reloads, toasts, focuses Sign in', async () => {
-      const { byTest, stable } = await mount(ME_ADA);
+      storage.setItem(SHOW_DRAFT_KEY, '{"show":"kept"}');
+      const { byTest, stable } = await mount(ME_ADA, null, { shellDirty: true });
+      const drafts = () => [storage.getItem(DRAFT_KEY), storage.getItem(SHOW_DRAFT_KEY)];
+      const kept = drafts();
       expect(byTest('account-name')?.tagName).toBe('BDI');
       expect(byTest('account-name')?.textContent?.trim()).toBe('Ada Lovelace');
       expect(byTest('account-name')?.getAttribute('title')).toBe(
@@ -263,6 +267,9 @@ describe('Designer Save and Share', () => {
       respond('/api/me', ME_ANONYMOUS);
       await stable();
       expect(ledger).toEqual(['POST /api/auth/logout', 'GET /api/me']);
+      // G2: both drafts are byte-identical across Sign out (Skyler, 2026-11-16).
+      expect(kept).not.toContain(null);
+      expect(drafts()).toEqual(kept);
       expect(toasts.notifications().map((n) => n.message)).toContain('Signed out.');
       expect(document.activeElement?.getAttribute('data-testid')).toBe('account-sign-in');
       expect(byTest('save-save')?.getAttribute('aria-haspopup')).toBe('dialog');

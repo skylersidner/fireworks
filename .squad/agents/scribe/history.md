@@ -58,3 +58,8 @@
 - **Index:** not edited. Session log flags: the cross-browser row (narrowed by the Chromium-only amendment), the Show Builder seek row (basis stale after the cold-seek ruling), the Phase 7 scope row (overtaken), the throughput rule (not indexed), and the "public" wording on the share-code GET.
 - **Pattern:** a supersession mark goes on the exact anchor sentence, and the script asserts one match per anchor. A fold is applied by heading prefix with one match asserted, and the size is checked after each file. Bowser and Luigi finished 50 to 60 bytes under the 12 KB limit, so the next append on either needs a fold.
 - **Commits:** none. Commits were not authorized.
+
+### 2026-11-17: Phase 8 batch (Scribe)
+
+- Supersession marks go in place as a blockquote directly above the superseded clause, using the `> Superseded by {file} on {date}` form (or `Superseded in part` / `Amended by`). Take the exact clause IDs from the superseding record's own "Supersedes" or "Boundary" line, and check them against the older file's text before marking.
+- A history fold keeps paths and rules and moves the oldest Learnings into one dated Core Context block. Re-measure after the cross-agent notes are added: the notes can push a file back over 12,288 bytes.

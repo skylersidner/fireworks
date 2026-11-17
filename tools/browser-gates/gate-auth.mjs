@@ -3,7 +3,7 @@
 // through the API's tools/fake-oauth stub. The server must be Testing (or Development) with the
 // stub configured: `tools/test/run.mjs` starts one; or BASE=http://127.0.0.1:<port>.
 //
-//   BASE=… [PARTS=csrf,csp,walk] [NEG=csrf|csp|walk] node gate-auth.mjs
+//   BASE=… [PARTS=csrf,csp,walk,save,signout] [NEG=csrf|csp|walk|save|signout] node gate-auth.mjs
 //
 // Parts (each prints PASS or FAIL lines; exit 1 if any check failed):
 //   csrf  Boo A13/F1. A victim signs in and saves one shell. Attacker pages come from a real
@@ -24,16 +24,25 @@
 //         Update original and bob only Save; bob's PUT and DELETE of alice's code get 404; bob's
 //         /mine lacks the card and alice's has it; alice's row is unchanged. Then the reverse
 //         (alice can't PUT or DELETE bob's).
+//   save  Mario's G1, the anonymous Save path, in a fresh profile: Save signed out opens the dialog
+//         (focus on the Google button, no write); sign-in through the stub (POST /__next-subject)
+//         returns with the draft byte-identical, the "Signed in as" toast, focus on Save and no
+//         write; Save then gets 201. The flashing notice is dismissed first (it rightly wins focus).
+//   signout  G2: on /show, signed in, fireworks.draft.v1 and fireworks.showDraft.v1 are
+//         byte-identical across Sign out, and the only write is the logout 204.
 // Negative controls (each must exit 1 and print its catch; the daily tier runs them):
 //   NEG=csrf  the same three requests from a real app document (/status, same-origin): the guard
 //             (rightly) lets them through, so the detectors must see the write and the sign-out ("CSRF LANDED").
 //   NEG=csp   an inline <script> is added to /mine after the redirect chain: the listener must
 //             report a script-src violation on the landing page ("CSP VIOLATION").
 //   NEG=walk  "bob" signs in as walk-alice: the ownership checks must fail ("OWNERSHIP NOT ENFORCED").
+//   NEG=save  the return document's draft is rewritten and a POST sent before the app boots: the
+//             byte check and the write ledger must both catch it ("SAVE PATH BROKEN").
+//   NEG=signout  the show draft is rewritten as the logout answers ("DRAFT CHANGED ON SIGN OUT").
 import http from 'node:http';
 import { BASE, fixtureDoc, launchers } from './lib/common.mjs';
 
-const PARTS = (process.env.PARTS ?? 'csrf,csp,walk').split(',');
+const PARTS = (process.env.PARTS ?? 'csrf,csp,walk,save,signout').split(',');
 const NEG = process.env.NEG ?? '';
 const failures = [];
 const check = (part, ok, what, detail = '') => {
@@ -233,6 +242,113 @@ try {
     if (bad.length) console.log(`OWNERSHIP NOT ENFORCED: ${bad.join('; ')}`);
     await actx.close();
     await bctx.close();
+  }
+
+  // ---- save (G1) and signout (G2) -----------------------------------------------------------
+  // One fresh profile: the full anonymous Save path, then (signed in) Sign out keeps both drafts.
+  if (PARTS.includes('save') || PARTS.includes('signout')) {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const page = await ctx.newPage();
+    const origin = new URL(BASE).origin;
+    // Every non-GET request the page sends to the app (navigations included): the write ledger.
+    const writes = [];
+    page.on('request', (r) => { if (!['GET', 'HEAD', 'OPTIONS'].includes(r.method()) && r.url().startsWith(origin)) writes.push(`${r.method()} ${new URL(r.url()).pathname}`); });
+    const raw = (key) => page.evaluate((k) => localStorage.getItem(k), key);
+    const focusId = () => page.evaluate(() => { const a = document.activeElement; return a?.dataset?.testid ?? a?.tagName ?? null; });
+    // Every toast the page ever shows (a success toast lives 4 s, so "still visible" is a race).
+    const seen = [];
+    await ctx.exposeBinding('__toadToast', (_src, t) => { seen.push(t); });
+    await ctx.addInitScript(() => {
+      const got = new Set();
+      new MutationObserver(() => {
+        for (const s of document.querySelectorAll('aside[aria-label="Notifications"] span')) {
+          const t = s.textContent.trim();
+          if (t && !got.has(t)) { got.add(t); window.__toadToast(t); }
+        }
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    const toasts = () => [...seen];
+    const draftHas = (key, text) => page.waitForFunction(([k, t]) => (localStorage.getItem(k) ?? '').includes(t), [key, text], { timeout: 15000 });
+    if (NEG === 'save') {
+      // NEG=save: on the return document (the sign-in marker is set), the draft is rewritten and a
+      // write is sent before the app boots: the byte check and the write ledger must both catch it.
+      await ctx.addInitScript((base) => {
+        if (location.pathname !== '/' || !sessionStorage.getItem('fireworks.signin.v1')) return;
+        const d = localStorage.getItem('fireworks.draft.v1');
+        if (d) localStorage.setItem('fireworks.draft.v1', d.replace('G1 marker', 'G1 mutant'));
+        fetch(`${base}/api/creations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => undefined);
+      }, BASE);
+    }
+    const SUBJECT = 'g1-saver';
+    const marker = `G1 marker ${Date.now()}`;
+    await page.goto(`${BASE}/`);
+    // The flashing notice wins focus on a fresh profile (rightly); dismiss it as a visitor would.
+    const flash = page.locator('[data-testid="flash-continue"]');
+    await flash.waitFor({ timeout: 30000 });
+    await flash.click();
+    await page.waitForFunction(() => localStorage.getItem('fireworks.flashNotice.v1') !== null, null, { timeout: 5000 });
+    const name = page.locator('[data-testid="designer-panel"] input[type="text"]').first();
+    await name.fill(marker);
+    await draftHas('fireworks.draft.v1', marker);
+    if (PARTS.includes('save')) {
+      const P = 'save';
+      const bad = [];
+      const g = (ok, what, detail) => { if (!check(P, ok, what, detail)) bad.push(what); };
+      const me0 = await inPage(page, () => fetch('/api/me').then((r) => r.json()));
+      check(P, me0.isAuthenticated === false, 'signed out at the start');
+      await page.click('[data-testid="save-save"]');
+      await page.locator('[data-testid="sign-in-dialog"]').waitFor({ timeout: 5000 });
+      await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'google-sign-in', null, { timeout: 3000 }).catch(() => undefined);
+      check(P, (await focusId()) === 'google-sign-in', 'Save signed out opens the dialog with focus on the Google button', String(await focusId()));
+      g(writes.length === 0, 'pressing Save signed out wrote nothing', JSON.stringify(writes));
+      const draftBefore = await raw('fireworks.draft.v1');
+      const q = await fetch(`${await stub()}/__next-subject?sub=${SUBJECT}`, { method: 'POST' });
+      if (q.status !== 200) throw new Error(`stub /__next-subject: HTTP ${q.status} (an older stub?)`);
+      await page.click('[data-testid="google-sign-in"]');
+      await page.locator('[data-testid="account-name"]').waitFor({ timeout: 30000 });
+      const toast = `Signed in as Stub ${SUBJECT}.`;
+      for (let i = 0; i < 50 && !seen.includes(toast); i++) await page.waitForTimeout(100);
+      await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'save-save', null, { timeout: 3000 }).catch(() => undefined);
+      const draftAfter = await raw('fireworks.draft.v1');
+      g(!!draftBefore && draftBefore.includes(marker) && draftAfter === draftBefore, 'the draft is byte-identical after the sign-in round trip', `(${draftBefore?.length} -> ${draftAfter?.length} bytes)`);
+      g((await name.inputValue()) === marker, 'the designer renders the same draft (name field)', await name.inputValue());
+      check(P, toasts().includes(toast), `the toast "${toast}" shows`, JSON.stringify(toasts()));
+      check(P, (await focusId()) === 'save-save', 'focus is on Save on return', String(await focusId()));
+      g(writes.length === 0, 'nothing was written on return', JSON.stringify(writes));
+      check(P, (await inPage(page, () => sessionStorage.getItem('fireworks.signin.v1'))) === null, 'the sign-in marker was deleted on load');
+      const [resp] = await Promise.all([page.waitForResponse((r) => r.url() === `${BASE}/api/creations` && r.request().method() === 'POST', { timeout: 15000 }), page.click('[data-testid="save-save"]')]);
+      check(P, resp.status() === 201, 'Save is POST api/creations 201', `(${resp.status()})`);
+      if (bad.length) console.log(`SAVE PATH BROKEN: ${bad.join('; ')}`);
+    } else {
+      await signInAs(ctx, SUBJECT).then((p) => p.close());
+      await page.reload();
+      await page.locator('[data-testid="account-name"]').waitFor({ timeout: 30000 });
+    }
+    if (PARTS.includes('signout')) {
+      const P = 'signout';
+      await page.goto(`${BASE}/show`);
+      const showName = `G2 show ${Date.now()}`;
+      await page.locator('[data-testid="show-name"]').fill(showName);
+      await draftHas('fireworks.showDraft.v1', showName);
+      const keys = ['fireworks.draft.v1', 'fireworks.showDraft.v1'];
+      const before = await Promise.all(keys.map(raw));
+      check(P, before.every((v) => v), 'both drafts are present before Sign out', `(${before.map((v) => v?.length)} bytes)`);
+      if (NEG === 'signout') {
+        // NEG=signout: the show draft is rewritten as the logout answers (as a buggy "clear on
+        // sign-out" would): the byte check must catch it.
+        page.on('response', (r) => { if (r.url().endsWith('/api/auth/logout')) page.evaluate(() => localStorage.setItem('fireworks.showDraft.v1', '{}')).catch(() => undefined); });
+      }
+      const w0 = writes.length;
+      const [lo] = await Promise.all([page.waitForResponse((r) => r.url() === `${BASE}/api/auth/logout`, { timeout: 15000 }), page.click('[data-testid="account-sign-out"]')]);
+      await page.locator('[data-testid="account-sign-in"]').waitFor({ timeout: 10000 });
+      await page.waitForTimeout(500); // a late draft write would land here
+      const after = await Promise.all(keys.map(raw));
+      const changed = keys.filter((k, i) => after[i] !== before[i]);
+      check(P, lo.status() === 204, 'logout is 204', `(${lo.status()})`);
+      check(P, JSON.stringify(writes.slice(w0)) === '["POST /api/auth/logout"]', 'the only write is the logout', JSON.stringify(writes.slice(w0)));
+      if (!check(P, changed.length === 0, `${keys.join(' and ')} are byte-identical across Sign out`, JSON.stringify(changed))) console.log(`DRAFT CHANGED ON SIGN OUT: ${changed.join(', ')}`);
+    }
+    await ctx.close();
   }
 } catch (e) {
   failures.push(`crash: ${e.message}`);

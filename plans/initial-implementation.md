@@ -1,7 +1,7 @@
 # Fireworks Sandbox — Initial Implementation Plan
 
 **Stack:** .NET 11 + Angular 22, mirroring `monster-of-the-week-net-angular`.
-**Status:** Phase 0 complete (2026-11-12). Skyler has decided OQ1, 2, 4, 5, 11, 12, 17, 19 (Google sign-in, 2026-11-16) and 20. Every other question in §5 uses its recommended default.
+**Status:** Phases 0–8 complete (Phase 8 gate passed 2026-11-17); Railway deploy and the end-of-project review remain. Phase 0 completed 2026-11-12. Skyler has decided OQ1, 2, 4, 5, 11, 12, 17, 19 (Google sign-in, 2026-11-16) and 20. Every other question in §5 uses its recommended default.
 
 ## 1. Overview
 
