@@ -445,18 +445,22 @@
         [value]="store.persistence()"
         (valueChange)="store.setPersistence($event)"
       />
-      <label class="touch-row my-1.5 flex items-center gap-2 text-muted">
-        Reduce flashing
-        <input
-          type="checkbox"
-          role="switch"
-          class="switch"
-          data-testid="reduce-flashing"
-          [checked]="store.reduceFlashing()"
-          (change)="store.setReduceFlashing($any($event.target).checked)"
-        />
-        <span class="text-primary">{{ store.reduceFlashing() ? 'On' : 'Off' }}</span>
-      </label>
+      <!-- Created in update mode, so the switch never exists without its [checked]: a routed page's
+           static elements exist a tick before their bindings (see quality-fields.ts). -->
+      @if (true) {
+        <label class="touch-row my-1.5 flex items-center gap-2 text-muted">
+          Reduce flashing
+          <input
+            type="checkbox"
+            role="switch"
+            class="switch"
+            data-testid="reduce-flashing"
+            [checked]="store.reduceFlashing()"
+            (change)="store.setReduceFlashing($any($event.target).checked)"
+          />
+          <span class="text-primary">{{ store.reduceFlashing() ? 'On' : 'Off' }}</span>
+        </label>
+      }
     </section>
 
     <!-- Show JSON (phase-7.md §9): the last section, closed; its text exists only while open. -->

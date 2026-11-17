@@ -1,5 +1,7 @@
 # Toad: testing interlude batch 2, T3 seeded property tests for seek exactness
 
+> Follow-up on 2026-11-17: the official serial `t3-engine` run and the deletion proof are in `toad-redundant-spec-deletion.md`. Every regular candidate below was deleted except "seek clamps and floors", which was kept and strengthened. In the clean run T23 SURVIVED the property spec alone (the fast screen's single kill did not hold).
+
 **Date:** 2026-11-16. **Plan:** testing strategy §3 item 5, §7 steps 5–6; Yoshi's T3 (`yoshi-interlude-show-testing.md`). **Commits:** none (not authorized).
 
 ## What

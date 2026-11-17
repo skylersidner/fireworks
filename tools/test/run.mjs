@@ -29,10 +29,13 @@
 //                       one (it must be Testing with stub OAuth configured, on 127.0.0.1, for headers;
 //                       Production refuses the stub)
 //   FIREWORKS_TEST_PG   Npgsql base string without Database= (default: the compose Postgres on 5433)
+// Node: refuses (exit 2) unless process.version satisfies engines.node in
+//   src/web/fireworks-web/package.json (tools/test/node-version.mjs). Use `nvm use` (.nvmrc).
 // Exit codes: 0 all gating steps passed; 1 a gating step failed; 2 usage or setup error.
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, WEB, GATES, Runner, dropDb, fmtS, git, load, pgConn, pgUp, stampNow, startApi } from './lib.mjs';
+import { requireNode } from './node-version.mjs';
 
 const argv = process.argv.slice(2);
 const tier = argv[0];
@@ -42,6 +45,8 @@ if (!['quick', 'regular', 'daily', 'final'].includes(tier)) {
   console.error('usage: node tools/test/run.mjs quick|regular|daily|final [--list] [--only a,b] [--skip a,b] [--keep-going] [--hook]');
   process.exit(2);
 }
+// Before any step (and before --list, so a dry run shows the refusal): engines.node, exit 2.
+requireNode(`run.mjs ${tier}`);
 const only = opt('--only')?.split(',');
 const skip = opt('--skip')?.split(',') ?? [];
 const LONG = tier === 'daily' || tier === 'final';

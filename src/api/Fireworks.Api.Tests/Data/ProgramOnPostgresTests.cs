@@ -133,7 +133,7 @@ public sealed class ProgramOnPostgresTests
     [Trait("Category", "Postgres")]
     public async Task Real_program_serves_client_config_with_an_environment_override_over_appsettings()
     {
-        // Railway sets ClientPlayback__SeekBudgetMs; the other three must still come from the
+        // Railway sets ClientPlayback__SeekBudgetMs; the other four must still come from the
         // committed appsettings.json, which only the real Program (content root = its folder) reads.
         using var webRoot = new TempWebRoot();
         var baseUrl = $"http://127.0.0.1:{ApiProcess.FreeLoopbackPort()}";
@@ -165,6 +165,7 @@ public sealed class ProgramOnPostgresTests
         Assert.Equal(300, playback.GetProperty("catchingUpDelayMs").GetInt32());
         Assert.Equal(10, playback.GetProperty("checkpointIntervalSeconds").GetInt32());
         Assert.Equal(64, playback.GetProperty("checkpointMemoryMiB").GetInt32());
+        Assert.Equal(1000, playback.GetProperty("warmUpDelayMs").GetInt32());
         // Production with a real-shaped client offers Google (schema.md §2.8: never empty there).
         Assert.Equal("""[{"id":"google","name":"Google"}]""", json.RootElement.GetProperty("loginProviders").GetRawText());
     }

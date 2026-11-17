@@ -21,6 +21,7 @@ import {
   STAGE_CLOCK,
   STAGE_RENDERER_FACTORY,
   STAGE_TIMERS,
+  WARM_UP_SKIP_COLD_RUN_MS,
   WARM_UP_IDLE_MS,
   WARM_UP_PLAYING_MS,
 } from './fireworks-stage';
@@ -30,6 +31,9 @@ import {
   CONTEXT_LOST_NOTICE,
   type StageSurface,
 } from './stage-copy';
+
+/** The default playback knobs with warm-up starting at once (the pre-2026-11-17 behaviour). */
+const PLAYBACK = { ...DEFAULT_PLAYBACK, warmUpDelayMs: 0 };
 
 const flushMicrotasks = () => new Promise<void>((resolve) => setTimeout(resolve));
 
@@ -153,6 +157,9 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       providers: [
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
         { provide: STAGE_CLOCK, useValue: () => clock.now },
+        // These specs are about warm-up itself: no short-show skip, no quiet delay (both are
+        // specced in fireworks-stage.warm-up-delay.spec.ts).
+        { provide: WARM_UP_SKIP_COLD_RUN_MS, useValue: 0 },
         { provide: STAGE_TIMERS, useValue: timers.api },
         { provide: PAGE_RELOAD, useValue: reload },
         { provide: MATCH_MEDIA, useValue: media.fn },
@@ -160,6 +167,7 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       ],
     });
     config = TestBed.inject(ClientConfigStore);
+    config.setPlayback(PLAYBACK);
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -532,7 +540,7 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
       show = show30(),
       opts: { paused?: boolean; checkpointSteps?: number } = {},
     ) {
-      config.setPlayback({ ...DEFAULT_PLAYBACK, seekBudgetMs: 25 });
+      config.setPlayback({ ...PLAYBACK, seekBudgetMs: 25 });
       const driver = new TimelineDriver(show, { checkpointSteps: opts.checkpointSteps });
       const m = await mount((h) => {
         h.driver.set(driver);
@@ -584,7 +592,7 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     // At the default budget an unsynced shadow is invisible; at 0.5 its checkpoints would carry
     // another run key, `seek` would skip every one, and warm-up would silently do nothing.
     it('at starBudget 0.5 the warmed checkpoints are used, and the seek is a straight run at 0.5', async () => {
-      config.setPlayback({ ...DEFAULT_PLAYBACK, seekBudgetMs: 25 });
+      config.setPlayback({ ...PLAYBACK, seekBudgetMs: 25 });
       const show = show4();
       const driver = new TimelineDriver(show, CP4);
       const m = await mount((h) => {
@@ -715,7 +723,7 @@ describe('FireworksStage Phase 7 (context loss, end clamp, warm-up, resolution)'
     });
 
     it('keeps checkpoint memory under the configured cap (7l.8)', async () => {
-      config.setPlayback({ ...DEFAULT_PLAYBACK, checkpointMemoryMiB: 8 });
+      config.setPlayback({ ...PLAYBACK, checkpointMemoryMiB: 8 });
       const driver = new TimelineDriver(show4(), { ...CP4, checkpointBytes: 1 });
       const m = await mount((h) => {
         h.driver.set(driver);

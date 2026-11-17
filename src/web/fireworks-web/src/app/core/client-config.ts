@@ -24,6 +24,7 @@ export const PLAYBACK_LIMITS: Readonly<Record<keyof ClientPlaybackConfig, Knob>>
   catchingUpDelayMs: { min: 0, max: 5000, fallback: 300 },
   checkpointIntervalSeconds: { min: 1, max: 60, fallback: 10 },
   checkpointMemoryMiB: { min: 8, max: 512, fallback: 64 },
+  warmUpDelayMs: { min: 0, max: 5000, fallback: 1000 },
 };
 
 /** The defaults, identical to the server's appsettings (seek budget 25 ms, Skyler). */
@@ -32,6 +33,7 @@ export const DEFAULT_PLAYBACK: Readonly<ClientPlaybackConfig> = {
   catchingUpDelayMs: PLAYBACK_LIMITS.catchingUpDelayMs.fallback,
   checkpointIntervalSeconds: PLAYBACK_LIMITS.checkpointIntervalSeconds.fallback,
   checkpointMemoryMiB: PLAYBACK_LIMITS.checkpointMemoryMiB.fallback,
+  warmUpDelayMs: PLAYBACK_LIMITS.warmUpDelayMs.fallback,
 };
 
 /**

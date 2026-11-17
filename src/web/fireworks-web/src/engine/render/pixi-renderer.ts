@@ -12,6 +12,7 @@ import {
 import type { FireworksSim } from '../sim/simulation';
 import { screenToWorld, worldScale } from './coordinates';
 import { createGlowTexture, GLOW_TEXTURE_SIZE } from './glow-texture';
+import { PARTICLE_DYNAMIC_PROPERTIES, StaticUploadMark } from './particle-upload';
 import { drawSkyline } from './skyline';
 import type {
   RendererName,
@@ -50,6 +51,8 @@ export class PixiRenderer implements StageRenderer {
    * Particle object; a newly created Particle resets its slot to NO_TINT.
    */
   private tintCache: Uint32Array = new Uint32Array(0);
+  /** The static buffer (uvs, rotation) is re-uploaded only past its high-water count. */
+  private readonly staticUpload = new StaticUploadMark();
   private readonly visual: ParticleVisual = { alpha: 0, px: 0, color: 0 };
   private readonly flashSpacing: FlashSpacing;
   private readonly resizeObserver: ResizeObserver | null;
@@ -74,11 +77,15 @@ export class PixiRenderer implements StageRenderer {
     options: StageRendererOptions,
   ) {
     this.name = app.renderer.name as RendererName;
+    // The host decides when a frame is drawn (render only on change, yoshi-end-review-cpu-cost.md
+    // Q1): Pixi's own per-tick present of the stage goes, and `render` presents instead.
+    app.ticker.remove(app.render, app);
     this.flashSpacing = options.flashSpacing ?? new FlashSpacing();
     this.dotTex = createGlowTexture();
     this.pc = new ParticleContainer({
       texture: this.dotTex,
-      dynamicProperties: { position: true, vertex: true, color: true, rotation: true, uvs: true },
+      // uvs and rotation are static (one texture, no rotation): particle-upload.ts.
+      dynamicProperties: { ...PARTICLE_DYNAMIC_PROPERTIES },
     });
     this.pc.blendMode = 'add';
     this.worldLayer.addChild(this.pc);
@@ -132,10 +139,10 @@ export class PixiRenderer implements StageRenderer {
     return screenToWorld(clientX, clientY, this.app.canvas.getBoundingClientRect(), this.scale);
   }
 
-  start(onFrame: (deltaMS: number) => void): void {
+  start(onFrame: (deltaMS: number, resized: boolean) => void): void {
     this.app.ticker.add((ticker) => {
-      this.handleResize();
-      onFrame(ticker.deltaMS);
+      const resized = this.handleResize();
+      onFrame(ticker.deltaMS, resized);
     });
   }
 
@@ -148,6 +155,7 @@ export class PixiRenderer implements StageRenderer {
     else this.flashSpacing.reset();
     this.sync(sim, reduceFlashing);
     this.trail.draw(this.worldRoot, persistence);
+    this.app.render();
   }
 
   destroy(): void {
@@ -173,16 +181,18 @@ export class PixiRenderer implements StageRenderer {
     this.dotTex.destroy(true);
   }
 
-  private handleResize(): void {
+  /** Returns whether the size changed (the trail was cleared and the skyline redrawn). */
+  private handleResize(): boolean {
     const w = this.app.screen.width;
     const h = this.app.screen.height;
-    if (w === this.lastW && h === this.lastH) return;
+    if (w === this.lastW && h === this.lastH) return false;
     this.lastW = w;
     this.lastH = h;
     this.scale = worldScale(h);
     this.worldLayer.scale.set(this.scale);
     this.trail.resize(w, h);
     drawSkyline(this.skyline, w, h, this.scale);
+    return true;
   }
 
   private sync(sim: FireworksSim, reduceFlashing: boolean): void {
@@ -216,7 +226,7 @@ export class PixiRenderer implements StageRenderer {
       p.alpha = v.alpha;
     }
     this.pc.particleChildren = live;
-    this.pc.update();
+    if (this.staticUpload.grows(P.n)) this.pc.update();
   }
 }
 

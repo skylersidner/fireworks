@@ -17,11 +17,7 @@ import type { EmbeddedShell, ShowCue, ShowDocument } from '../../model/show';
 import { KIND_COUNT } from '../../sim/kinds';
 import { FireworksSim } from '../../sim/simulation';
 import { EngineLoop } from '../engine-loop';
-import {
-  TimelineDriver,
-  type TimelineDriverOptions,
-  type TimelineLaunch,
-} from '../timeline-driver';
+import { TimelineDriver, type TimelineDriverOptions } from '../timeline-driver';
 
 export const WIDTH = 1280;
 
@@ -131,30 +127,4 @@ export function straight(doc: ShowDocument, step: number, capacity?: number, wid
   const loop = new EngineLoop(sim, undefined, { worldWidth: () => width, driver });
   driver.advance(loop, step);
   return { sim, driver };
-}
-
-export interface ReferencePoint {
-  readonly snapshot: Readonly<ReturnType<typeof snapshot>>;
-  readonly ledger: readonly TimelineLaunch[];
-}
-
-/**
- * One straight run of `doc` (checkpoints off) that records the exact store and ledger at each of
- * `targets` on the way (Yoshi T7.1, "one run, many assertions"). A spec file computes it once and
- * compares several seeks against it. The points are recorded steps of the run, never restored
- * snapshots, so a seek is never compared with `restore` itself. Frozen: a spec can't edit them.
- */
-export function referenceRun(
-  doc: ShowDocument,
-  targets: readonly number[],
-  capacity?: number,
-): ReadonlyMap<number, ReferencePoint> {
-  const { sim, driver } = straight(doc, 0, capacity);
-  const loop = new EngineLoop(sim, undefined, { worldWidth: () => WIDTH, driver });
-  const out = new Map<number, ReferencePoint>();
-  for (const k of [...targets].sort((a, b) => a - b)) {
-    driver.advance(loop, k - driver.step);
-    out.set(k, Object.freeze({ snapshot: Object.freeze(snapshot(sim)), ledger: driver.ledger }));
-  }
-  return out;
 }

@@ -34,4 +34,11 @@ public sealed class ClientPlaybackOptions
     /// <summary>Memory cap for seek snapshots, in MiB (TimelineDriver <c>checkpointBytes</c>).</summary>
     [Range(8, 512, ErrorMessage = "ClientPlayback:CheckpointMemoryMiB must be between {1} and {2} (MiB).")]
     public int CheckpointMemoryMiB { get; init; } = 64;
+
+    /// <summary>
+    /// Quiet time before the builder starts (or restarts) background warm-up, in milliseconds: warm-up
+    /// waits until this long has passed with no edit and no seek (yoshi-end-review-cpu-cost.md Q3).
+    /// </summary>
+    [Range(0, 5000, ErrorMessage = "ClientPlayback:WarmUpDelayMs must be between {1} and {2} (milliseconds).")]
+    public int WarmUpDelayMs { get; init; } = 1000;
 }

@@ -60,3 +60,29 @@
 - **N1 is yours:** `core/models.ts` l.17 types `signedInWith` as `string | null`; schema §2.8 says `'google' | null` (Peach's acceptance, info).
 - **G2 has no spec:** sign-out keeps the draft bytes (`fireworks.draft.v1`, `fireworks.showDraft.v1`). Mario checked it by script on both surfaces. If Skyler approves it as a gate, a one-line spec assertion is yours or Toad's.
 - **Toad's `gate-keyboard` now fails on any panel stop**, since your B2 removed `ENGINE_STOPS`.
+
+### 2026-11-17 — Cross-agent update (Scribe): T21 and T23 gap
+
+- **Toad deleted 19 redundant timeline-driver specs** (`toad-redundant-spec-deletion.md`). Each deletion was mutant-proven against the tier that stays. The regular unit-web step went from 34.9 s to 29.7 s, and the regular wall time from 198.8 s to 190.1 s.
+- **Open gap, owner you or Yoshi (Toad writes the test, you decide):** T21 (adopt ignores the grid) and T23 (checkpoint ignores the run key) survive every regular engine spec. This predates the cleanup. The fast screen had said T23 was killed by a thin single case, and that did not hold. T40 is covered only at stage level, and T27 is equivalent in the app.
+- **Also:** T07 (restore with the wrong digest) is now killed only by `timeline-driver.property.spec.ts`. If the generator's stream changes, re-run `t3-redundancy T07` first.
+- **Your decision:** make T21 and T23 a spec, or mark them equivalent with a reason. Nothing has changed in product code.
+
+### 2026-11-17 — End-review CPU fixes, client (record `luigi-end-review-cpu-fixes.md`)
+
+- **Render on change:** `fireworks-stage.ts` `shouldRender` (new renderer, `resized`, DPR, `frameDirty` from quality and seek frames, count change, live particles with `simTime` moving), then `RENDER_SETTLE_FRAMES` 90. `pixi-renderer.ts` removes Pixi's per-tick present (`app.ticker.remove(app.render, app)`) and presents in `render()`. `start` passes `(deltaMS, resized)`; `FakeStageRenderer.resize()`. Fade convergence at 0.92 is 84 frames, not 83.
+- **Lean upload:** `engine/render/particle-upload.ts` (`PARTICLE_DYNAMIC_PROPERTIES`, `StaticUploadMark`). `particle-upload.spec.ts` runs Pixi's real `ParticleBuffer` under the polyfill in jsdom and mirrors `_staticBuffer.setDataWithSize`, whose size is in **elements**, not bytes. `pixi-renderer.structure.spec.ts` pins the wiring by text and checks the remove call against the real `TickerPlugin.init` on a plain object.
+- **Warm-up:** `quietMs` resets on every seek frame (an edit always seeks), and warm-up waits for `playback.warmUpDelayMs`. The first slice is a probe, and a show at or under `WARM_UP_SKIP_COLD_RUN_MS` (token, 700 since 2026-11-17) is `skipped`. Warm-up specs provide 0 and `warmUpDelayMs: 0` (`PLAYBACK` in both phase7 files and `stage-clock.spec`).
+- **Contract spec trap:** a new knob with the same range as an old one breaks `swap()`'s once-only check (`[Range(0, 5000,`). Lengthen the anchor.
+- **Mutant runner:** `scratchpad/mut/run.py` (apply, run one spec with `ng test --include`, restore in `finally`). One spec file builds and runs in about 7 s. 23/23 killed.
+- **Open for Toad:** `gate-warm.mjs` `after` waits only for `finished`, and a skipped show hangs it. The Q2 smoke screenshot (particles after the count grows) is not built.
+
+### 2026-11-17: verification-ruling follow-ups (skip threshold, T23)
+- **Skip threshold 700 ms** (was 1000): at 1000, done-when-60 skipped and seeked cold at p95 947–995 ms, under the 1 s bar by only a few ms. A skip threshold needs margin under the seek bar it promises. The boundary specs derive `skipMs` from `endBoundStep`, so only the default spec and the spec-local 1000s changed.
+- **Gate coupling:** `gate-warm.mjs` patches the compiled default by literal string. esbuild prints 1000 as `1e3` and 700 as `700` (checked with the project's esbuild). After a default change, tell Toad the new string; it's his file.
+- **Dead guard removed:** `takeCheckpoint`'s `sameKey` check was unreachable after F1 (one caller, `beforeStep` nulls `runKey` right before it). Removed it along with mutant T23 from `t3-engine.mjs`. `run.mjs --check <set>` confirms the anchors without running specs. Node 26.5.0 is at `~/.nvm/versions/node/v26.5.0/bin`; the shell default is 21.5.
+
+### 2026-11-17: skip threshold 200 ms; Reduce flashing first render (record `luigi-end-review-cpu-fixes.md`, second addendum)
+- **Threshold 200:** the probe under-predicts about 4× (Toad). Set a skip threshold against the prediction, not against the bar. Natural gate after the change: done-when-60 `finished`, p95 247 ms; realistic-600 p95 514 ms. The 4 s Done-when spec fixture's end bound is step 1335, so compute `endBoundStep + 1` before picking a spec step cost. The skill `checkpoint-warm-up` is updated.
+- **Router creation-mode gap:** `RouterOutlet.activateWith` = `createComponent` + `markForCheck`. The page's static DOM is live for a macrotask before any binding, so a top-level `[checked]` reads false. The fix is an update-mode block (`@if (true)`). An input default never shows; that was refuted by mutant. Test it with `<router-outlet (activate)>` reading the DOM (`app/reduce-flashing-first-render.spec.ts`).
+- **Gate harness:** `startApi`'s OAuth stub is in-process, so run the gate with async `spawn`, not `spawnSync`. Wrapper: `scratchpad/luigi-warm/run-natural.mjs`.

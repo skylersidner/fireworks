@@ -10,6 +10,7 @@ It runs at test replacement, at phase gates whose phase touched the mutated code
 | `c3-api` | Phase 7 C3 (`apimut.py`, `apimut2.py`) | 14 of 14 still apply |
 | `p6-web` | Phase 6 QA (`toad-p6/mut.py`) | 56 of 65 still apply; 9 are STALE because the code moved, and need new old-text before the §7 step 6 mutant proof |
 | `p6cfg-api` | Phase 6 post-gate ClientPlayback (`bmut.py`) | 8 of 8 still apply |
+| `t3-redundancy` | The 2026-11-17 deletion proof: every engine mutant from the other sets, plus K1–K2 (seek clamp and floor) and X1 (state leaking across runs). `MUTANT_TIER=daily` runs the daily engine specs, `MUTANT_TIER=all` every regular spec | 62 of 62 apply (2026-11-17) |
 
 **Postgres mutants (ruling 6, Toad 2026-11-16).** An api mutant with `postgres: true` (today only `phase8-auth` R1, the If-Match race) runs only when `FIREWORKS_MUTANT_POSTGRES` is a connection string whose `Database=` ends in `_mut` or `_test`; the test drops and recreates that database. Otherwise it reports `SKIPPED` (never KILLED) and the run exits 3. Every other mutant still runs with `FIREWORKS_TEST_POSTGRES` stripped. A mutant may also be several exact swaps: `swaps: [{ file, old, new }, …]`, all applied and all restored.
 

@@ -67,18 +67,19 @@ public sealed class CommittedConfigurationTests
     }
 
     [Fact]
-    public void Production_appsettings_carry_all_four_ClientPlayback_values_equal_to_the_class_defaults()
+    public void Production_appsettings_carry_all_five_ClientPlayback_values_equal_to_the_class_defaults()
     {
         var section = Load("appsettings.json").GetSection(ClientPlaybackOptions.SectionName);
         var defaults = new ClientPlaybackOptions();
 
         Assert.Equal(
-            ["CatchingUpDelayMs", "CheckpointIntervalSeconds", "CheckpointMemoryMiB", "SeekBudgetMs"],
+            ["CatchingUpDelayMs", "CheckpointIntervalSeconds", "CheckpointMemoryMiB", "SeekBudgetMs", "WarmUpDelayMs"],
             section.GetChildren().Select(c => c.Key).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal(defaults.SeekBudgetMs.ToString(), section["SeekBudgetMs"]);
         Assert.Equal(defaults.CatchingUpDelayMs.ToString(), section["CatchingUpDelayMs"]);
         Assert.Equal(defaults.CheckpointIntervalSeconds.ToString(), section["CheckpointIntervalSeconds"]);
         Assert.Equal(defaults.CheckpointMemoryMiB.ToString(), section["CheckpointMemoryMiB"]);
+        Assert.Equal(defaults.WarmUpDelayMs.ToString(), section["WarmUpDelayMs"]);
     }
 
     [Fact]

@@ -46,7 +46,9 @@ export class FakeStageRenderer implements StageRenderer {
   width = 1280;
   /** World point the next `screenToWorld` returns. */
   nextWorldPoint = { x: 640, y: 300 };
-  private onFrame: ((deltaMS: number) => void) | null = null;
+  private onFrame: ((deltaMS: number, resized: boolean) => void) | null = null;
+  /** Set by `resize`; the next frame reports `resized` once, like the real renderer. */
+  private resizePending = false;
   contextListener: ((state: 'lost' | 'restored') => void) | null = null;
 
   constructor(
@@ -62,7 +64,7 @@ export class FakeStageRenderer implements StageRenderer {
     return this.nextWorldPoint;
   }
 
-  start(onFrame: (deltaMS: number) => void): void {
+  start(onFrame: (deltaMS: number, resized: boolean) => void): void {
     this.onFrame = onFrame;
   }
 
@@ -72,7 +74,17 @@ export class FakeStageRenderer implements StageRenderer {
 
   /** Drives `count` animation frames of `deltaMS` each (no-op once destroyed). */
   frame(deltaMS: number, count = 1): void {
-    for (let k = 0; k < count && this.onFrame && !this.lost; k++) this.onFrame(deltaMS);
+    for (let k = 0; k < count && this.onFrame && !this.lost; k++) {
+      const resized = this.resizePending;
+      this.resizePending = false;
+      this.onFrame(deltaMS, resized);
+    }
+  }
+
+  /** The host element changed size: the next frame reports `resized` (and the new width, if given). */
+  resize(width = this.width): void {
+    this.width = width;
+    this.resizePending = true;
   }
 
   render(_sim: FireworksSim, persistence: number, reduceFlashing = false): void {

@@ -20,16 +20,18 @@ const SERVED: ClientConfigResponse = {
     catchingUpDelayMs: 0,
     checkpointIntervalSeconds: 5,
     checkpointMemoryMiB: 16,
+    warmUpDelayMs: 250,
   },
 };
 
 describe('client config (playback knobs from appsettings)', () => {
-  it('defaults equal the server appsettings: 25 ms, 300 ms, 10 s, 64 MiB', () => {
+  it('defaults equal the server appsettings: 25 ms, 300 ms, 10 s, 64 MiB, 1000 ms', () => {
     expect(DEFAULT_PLAYBACK).toEqual({
       seekBudgetMs: 25,
       catchingUpDelayMs: 300,
       checkpointIntervalSeconds: 10,
       checkpointMemoryMiB: 64,
+      warmUpDelayMs: 1000,
     });
     // The driver's own defaults are what the default config implies.
     expect(checkpointOptions(DEFAULT_PLAYBACK)).toEqual({
@@ -45,12 +47,14 @@ describe('client config (playback knobs from appsettings)', () => {
         catchingUpDelayMs: -5,
         checkpointIntervalSeconds: 0,
         checkpointMemoryMiB: 2,
+        warmUpDelayMs: -1,
       }),
     ).toEqual({
       seekBudgetMs: 4,
       catchingUpDelayMs: 0,
       checkpointIntervalSeconds: 1,
       checkpointMemoryMiB: 8,
+      warmUpDelayMs: 0,
     });
     expect(
       clampPlayback({
@@ -58,12 +62,14 @@ describe('client config (playback knobs from appsettings)', () => {
         catchingUpDelayMs: 9999,
         checkpointIntervalSeconds: 61,
         checkpointMemoryMiB: 4096,
+        warmUpDelayMs: 5001,
       }),
     ).toEqual({
       seekBudgetMs: 100,
       catchingUpDelayMs: 5000,
       checkpointIntervalSeconds: 60,
       checkpointMemoryMiB: 512,
+      warmUpDelayMs: 5000,
     });
     expect(PLAYBACK_LIMITS.seekBudgetMs).toEqual({ min: 4, max: 100, fallback: 25 });
     // In range passes through untouched, edges included.
@@ -78,6 +84,7 @@ describe('client config (playback knobs from appsettings)', () => {
         catchingUpDelayMs: null,
         checkpointIntervalSeconds: Number.NaN,
         checkpointMemoryMiB: Number.POSITIVE_INFINITY,
+        warmUpDelayMs: '0',
       }),
     ).toEqual(DEFAULT_PLAYBACK);
     expect(clampPlayback({ seekBudgetMs: 30 })).toEqual({ ...DEFAULT_PLAYBACK, seekBudgetMs: 30 });
@@ -158,11 +165,13 @@ describe('client config (playback knobs from appsettings)', () => {
       http.expectOne('/api/client-config').flush({
         playback: { seekBudgetMs: 0.5, catchingUpDelayMs: '1', checkpointIntervalSeconds: 600 },
       });
+      // An older server without warmUpDelayMs leaves the client default (1000).
       expect(store.playback()).toEqual({
         seekBudgetMs: 4,
         catchingUpDelayMs: 300,
         checkpointIntervalSeconds: 60,
         checkpointMemoryMiB: 64,
+        warmUpDelayMs: 1000,
       });
     });
 

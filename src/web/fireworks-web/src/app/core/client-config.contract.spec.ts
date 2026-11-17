@@ -87,7 +87,7 @@ function importers(sources: Record<string, string>, module: string): string[] {
 const TS_KEYS = Object.keys(DEFAULT_PLAYBACK).sort();
 
 describe('api/client-config contract parity (TS against C#)', () => {
-  it('the C# records carry exactly the TS keys: { playback: { four knobs }, loginProviders }', () => {
+  it('the C# records carry exactly the TS keys: { playback: { five knobs }, loginProviders }', () => {
     // loginProviders: [{ id, name }] (schema.md §2.8, Phase 8 B1). The TS model reads it as optional.
     expect(recordKeys(CONTRACTS, 'ClientConfigResponse')).toEqual(['playback', 'loginProviders']);
     expect(recordKeys(CONTRACTS, 'LoginProviderConfig')).toEqual(['id', 'name']);
@@ -98,6 +98,7 @@ describe('api/client-config contract parity (TS against C#)', () => {
       'checkpointIntervalSeconds',
       'checkpointMemoryMiB',
       'seekBudgetMs',
+      'warmUpDelayMs',
     ]);
   });
 
@@ -124,7 +125,7 @@ describe('api/client-config contract parity (TS against C#)', () => {
     };
     expect(
       recordKeys(
-        swap(CONTRACTS, 'int CheckpointMemoryMiB)', 'int CheckpointMemoryMb)'),
+        swap(CONTRACTS, 'int CheckpointMemoryMiB,', 'int CheckpointMemoryMb,'),
         'ClientPlaybackConfig',
       ),
     ).toContain('checkpointMemoryMb');
@@ -133,7 +134,13 @@ describe('api/client-config contract parity (TS against C#)', () => {
       optionRanges(swap(OPTIONS, '[Range(4, 100,', '[Range(4, 200,'))['seekBudgetMs'].max,
     ).toBe(200);
     expect(
-      optionRanges(swap(OPTIONS, '[Range(0, 5000,', '[Range(1, 5000,'))['catchingUpDelayMs'].min,
+      optionRanges(
+        swap(
+          OPTIONS,
+          '[Range(0, 5000, ErrorMessage = "ClientPlayback:CatchingUpDelayMs',
+          '[Range(1, 5000, ErrorMessage = "ClientPlayback:CatchingUpDelayMs',
+        ),
+      )['catchingUpDelayMs'].min,
     ).toBe(1);
     expect(
       optionRanges(
@@ -147,7 +154,20 @@ describe('api/client-config contract parity (TS against C#)', () => {
     // A property whose annotation is lost drops out, so toEqual(PLAYBACK_LIMITS) fails.
     expect(
       Object.keys(optionRanges(swap(OPTIONS, '[Range(1, 60,', '[Obsolete] //'))).sort(),
-    ).toEqual(['catchingUpDelayMs', 'checkpointMemoryMiB', 'seekBudgetMs']);
+    ).toEqual(['catchingUpDelayMs', 'checkpointMemoryMiB', 'seekBudgetMs', 'warmUpDelayMs']);
+    // The newest knob (warm-up delay, 2026-11-17): a drifted default or range is seen too.
+    expect(
+      optionRanges(
+        swap(
+          OPTIONS,
+          'WarmUpDelayMs { get; init; } = 1000;',
+          'WarmUpDelayMs { get; init; } = 500;',
+        ),
+      )['warmUpDelayMs'].fallback,
+    ).toBe(500);
+    expect(
+      committed(swap(APPSETTINGS, '"WarmUpDelayMs": 1000', '"WarmUpDelayMs": 0'))['warmUpDelayMs'],
+    ).toBe(0);
     expect(
       committed(swap(APPSETTINGS, '"SeekBudgetMs": 25,', '"SeekBudgetMs": 30,'))['seekBudgetMs'],
     ).toBe(30);

@@ -28,7 +28,8 @@ public sealed class ClientConfigController(IOptions<ClientPlaybackOptions> playb
             playback.SeekBudgetMs,
             playback.CatchingUpDelayMs,
             playback.CheckpointIntervalSeconds,
-            playback.CheckpointMemoryMiB),
+            playback.CheckpointMemoryMiB,
+            playback.WarmUpDelayMs),
             // The same configured set as the login route's allowlist, so the two can't disagree.
             authSetup.LoginProviders.Select(p => new LoginProviderConfig(p.Id, p.Name)).ToList()));
     }

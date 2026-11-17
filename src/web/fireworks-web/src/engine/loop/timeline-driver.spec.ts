@@ -14,7 +14,6 @@ import { newShell } from '../model/shell';
 import { GROUND, STEP } from '../sim/constants';
 import { MAX_SHELL_LIFETIME } from '../sim/lifetime';
 import {
-  SMALL_CP,
   WIDTH,
   cue,
   doneWhenShow,
@@ -22,12 +21,10 @@ import {
   kindCounts,
   makeLoop,
   playFrames,
-  referenceRun,
   show,
   smallShow,
   snapshot,
   straight,
-  type ReferencePoint,
 } from './testing/timeline-spec-helpers';
 import { TimelineDriver, secondsToStep, stepToSeconds } from './timeline-driver';
 
@@ -233,75 +230,20 @@ describe('TimelineDriver determinism', () => {
 });
 
 describe('TimelineDriver seek (plan Phase 6: scrub re-runs from t = 0)', () => {
-  // One straight run of the Done-when show serves every oracle in this block (Yoshi T7.1).
-  let ref: ReadonlyMap<number, ReferencePoint> | null = null;
-  const at = (step: number): ReferencePoint => {
-    ref ??= referenceRun(doneWhenShow(), [300, 400, 700, 900]);
-    return ref.get(step)!;
-  };
-
-  it('seek to k equals a straight run to k, forward and backward', () => {
-    const s = makeLoop(doneWhenShow());
-    s.driver.seek(s.loop, 900);
-    expect(snapshot(s.sim)).toEqual(at(900).snapshot);
-    s.driver.seek(s.loop, 400); // backward: reset and re-run
-    expect(s.driver.step).toBe(400);
-    expect(snapshot(s.sim)).toEqual(at(400).snapshot);
-    expect(s.driver.ledger).toEqual(at(400).ledger);
-    s.driver.seek(s.loop, 900); // forward: run on
-    expect(snapshot(s.sim)).toEqual(at(900).snapshot);
-    expect(s.driver.ledger).toEqual(at(900).ledger);
-  });
-
-  it('a backward seek at the particle cap still equals a straight run (no state survives)', () => {
-    const cap = 3000;
-    const s = makeLoop(doneWhenShow(), cap);
-    s.driver.seek(s.loop, 3000);
-    s.driver.seek(s.loop, 1000);
-    expect(snapshot(s.sim)).toEqual(snapshot(straight(doneWhenShow(), 1000, cap).sim));
-  });
-
-  it('seek after playing through the loop equals a straight run', () => {
-    const s = makeLoop(doneWhenShow());
-    playFrames(s.loop, s.sim, 400);
-    s.driver.seek(s.loop, 300);
-    expect(snapshot(s.sim)).toEqual(at(300).snapshot);
-    expect(s.driver.ledger).toEqual(at(300).ledger);
-  });
-
-  it('seek back past the end clears done', () => {
-    const s = makeLoop(show([cue('a', 0)]));
-    s.driver.runToEnd(s.loop);
-    expect(s.driver.done).toBe(true);
-    s.driver.seek(s.loop, 10);
-    expect([s.driver.done, s.driver.endStep, s.driver.firedCount]).toEqual([false, null, 1]);
-  });
-
+  // Seek-equals-a-straight-run (forward, backward, at the cap, after the loop, past the end,
+  // budgeted with a moving target) is the T3 property test's job
+  // (`timeline-driver.property.spec.ts`); the fixed cases were deleted on 2026-11-17 after it was
+  // shown to kill every mutant they killed (`toad-redundant-spec-deletion.md`).
+  // `advance` floors and clamps its own step count, so only the return value shows whether the
+  // target was clamped and floored: a host loops until seek returns true (mutants K1, K2).
   it('seek clamps and floors its target; seek(0) is the empty sky before step 0', () => {
     const s = makeLoop(show([cue('a', 0)]));
-    s.driver.seek(s.loop, 10.9);
+    expect(s.driver.seek(s.loop, 10.9)).toBe(true);
     expect(s.driver.step).toBe(10);
-    s.driver.seek(s.loop, -5);
+    expect(s.driver.seek(s.loop, -5)).toBe(true);
     expect([s.driver.step, s.sim.particles.n, s.sim.shellCount, s.driver.firedCount]).toEqual([
       0, 0, 0, 0,
     ]);
-  });
-
-  it('a budgeted seek arrives in slices and equals a straight run, even if the target moves', () => {
-    const s = makeLoop(doneWhenShow());
-    s.driver.seek(s.loop, 900);
-    // Backward to 500, 100 steps per call: reset, then 0 → 100 → … The target moves to 700.
-    expect(s.driver.seek(s.loop, 500, 100)).toBe(false);
-    expect(s.driver.step).toBe(100);
-    expect(s.driver.seek(s.loop, 500, 100)).toBe(false);
-    let calls = 0;
-    while (!s.driver.seek(s.loop, 700, 100)) calls++;
-    expect([calls, s.driver.step]).toEqual([4, 700]);
-    expect(snapshot(s.sim)).toEqual(at(700).snapshot);
-    expect(s.driver.ledger).toEqual(at(700).ledger);
-    // Already there: a no-op that reports arrival.
-    expect(s.driver.seek(s.loop, 700, 100)).toBe(true);
-    expect(snapshot(s.sim)).toEqual(at(700).snapshot);
   });
 
   it('time and step convert with the cue rounding', () => {
@@ -313,25 +255,6 @@ describe('TimelineDriver seek (plan Phase 6: scrub re-runs from t = 0)', () => {
 
 describe('TimelineDriver trace digest (acceptance 6a.2)', () => {
   const ON = { traceDigest: true };
-
-  // Small-show equivalent of the daily Done-when case: to the end, through the loop, after seeks.
-  it('is equal across runs, through the loop or offline, and after a seek', () => {
-    const a = makeLoop(smallShow(), undefined, ON);
-    // 120-step checkpoints, so both seeks below start from a restored checkpoint (960, then 480),
-    // as the Done-when case's seeks do at 1200-step spacing.
-    const b = makeLoop(smallShow(), undefined, { ...ON, checkpointSteps: SMALL_CP });
-    a.driver.runToEnd(a.loop);
-    playFrames(b.loop, b.sim, 700);
-    expect(b.driver.step).toBeGreaterThan(a.driver.endStep!);
-    const restore = vi.spyOn(b.sim, 'restore');
-    b.driver.seek(b.loop, a.driver.endStep!);
-    expect(b.driver.traceDigest).toBe(a.driver.traceDigest);
-    b.driver.seek(b.loop, 500);
-    expect(restore).toHaveBeenCalledTimes(2);
-    const c = makeLoop(smallShow(), undefined, ON);
-    c.driver.advance(c.loop, 500);
-    expect(b.driver.traceDigest).toBe(c.driver.traceDigest);
-  });
 
   it('negative control: one seed changed by 1 changes the digest and the ledger', () => {
     const doc = smallShow();

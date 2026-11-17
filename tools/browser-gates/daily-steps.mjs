@@ -102,6 +102,9 @@ export function dailySteps({ codes, gone, tier = 'daily' }) {
     }
     steps.push(
       s('bench-warm-after', ['gate-warm.mjs', '$BASE', 'SAVE', 'after'], { gate: 'report', timeoutS: 900 }),
+      // The shipped skip threshold (no patch): which state each show reaches, and the skip's
+      // promise (p95 < 1 s; realistic-600 never skipped). Toad, end-of-project review 2026-11-17.
+      s('bench-warm-natural', ['gate-warm.mjs', '$BASE', 'SAVE', 'natural'], { gate: 'report', timeoutS: 900 }),
       s('bench-seek-node', [path.join(ROOT, 'tools', 'bench', 'bench.mjs'), 'done-when-60,realistic-600', '40000'], { gate: 'report', timeoutS: 900 }),
     );
   }

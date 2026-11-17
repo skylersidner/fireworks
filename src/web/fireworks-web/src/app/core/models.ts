@@ -106,15 +106,17 @@ export interface ValidationErrorResponse {
 
 /**
  * `ClientPlaybackConfig(int SeekBudgetMs, int CatchingUpDelayMs, int CheckpointIntervalSeconds,
- * int CheckpointMemoryMiB)`: the playback knobs from the server's appsettings (Skyler,
- * 2026-11-15). The server validates the ranges at startup; the client clamps again
- * (core/client-config.ts).
+ * int CheckpointMemoryMiB, int WarmUpDelayMs)`: the playback knobs from the server's appsettings
+ * (Skyler, 2026-11-15; `WarmUpDelayMs` 2026-11-17). The server validates the ranges at startup;
+ * the client clamps again (core/client-config.ts), and a server without a field leaves its default.
  */
 export interface ClientPlaybackConfig {
   seekBudgetMs: number;
   catchingUpDelayMs: number;
   checkpointIntervalSeconds: number;
   checkpointMemoryMiB: number;
+  /** Quiet time (no edit, no seek) before the builder starts or restarts warm-up, 0..5000 ms. */
+  warmUpDelayMs: number;
 }
 
 /** `LoginProviderConfig(string Id, string Name)`: today only `{ id: 'google', name: 'Google' }`. */

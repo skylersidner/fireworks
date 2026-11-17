@@ -39,12 +39,13 @@ public sealed class ClientConfigEndpointTests
         Assert.Equal("""[{"id":"google","name":"Google"}]""", root.GetProperty("loginProviders").GetRawText());
         var playback = root.GetProperty("playback");
         Assert.Equal(
-            ["catchingUpDelayMs", "checkpointIntervalSeconds", "checkpointMemoryMiB", "seekBudgetMs"],
+            ["catchingUpDelayMs", "checkpointIntervalSeconds", "checkpointMemoryMiB", "seekBudgetMs", "warmUpDelayMs"],
             playback.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray());
         Assert.Equal(25, playback.GetProperty("seekBudgetMs").GetInt32());
         Assert.Equal(300, playback.GetProperty("catchingUpDelayMs").GetInt32());
         Assert.Equal(10, playback.GetProperty("checkpointIntervalSeconds").GetInt32());
         Assert.Equal(64, playback.GetProperty("checkpointMemoryMiB").GetInt32());
+        Assert.Equal(1000, playback.GetProperty("warmUpDelayMs").GetInt32());
     }
 
     [Fact]
@@ -68,7 +69,8 @@ public sealed class ClientConfigEndpointTests
             ["ClientPlayback:SeekBudgetMs"] = "40",
             ["ClientPlayback:CatchingUpDelayMs"] = "1200",
             ["ClientPlayback:CheckpointIntervalSeconds"] = "20",
-            ["ClientPlayback:CheckpointMemoryMiB"] = "128"
+            ["ClientPlayback:CheckpointMemoryMiB"] = "128",
+            ["ClientPlayback:WarmUpDelayMs"] = "2500"
         });
 
         var playback = await GetPlaybackAsync(harness);
@@ -77,6 +79,7 @@ public sealed class ClientConfigEndpointTests
         Assert.Equal(1200, playback.GetProperty("catchingUpDelayMs").GetInt32());
         Assert.Equal(20, playback.GetProperty("checkpointIntervalSeconds").GetInt32());
         Assert.Equal(128, playback.GetProperty("checkpointMemoryMiB").GetInt32());
+        Assert.Equal(2500, playback.GetProperty("warmUpDelayMs").GetInt32());
     }
 
     [Fact]
@@ -148,6 +151,8 @@ public sealed class ClientConfigEndpointTests
     [InlineData("CheckpointIntervalSeconds", "61")]
     [InlineData("CheckpointMemoryMiB", "7")]
     [InlineData("CheckpointMemoryMiB", "513")]
+    [InlineData("WarmUpDelayMs", "-1")]
+    [InlineData("WarmUpDelayMs", "5001")]
     public void Registration_throws_at_once_on_an_out_of_range_value(string key, string value)
     {
         var configuration = new ConfigurationBuilder()
@@ -162,29 +167,31 @@ public sealed class ClientConfigEndpointTests
     }
 
     [Theory]
-    [InlineData(4, 0, 1, 8)]
-    [InlineData(100, 5000, 60, 512)]
-    public async Task Control_the_range_ends_are_accepted(int seek, int delay, int interval, int memory)
+    [InlineData(4, 0, 1, 8, 0)]
+    [InlineData(100, 5000, 60, 512, 5000)]
+    public async Task Control_the_range_ends_are_accepted(int seek, int delay, int interval, int memory, int warmUp)
     {
         await using var harness = await FireworksApiHarness.StartAsync(configuration: new Dictionary<string, string?>
         {
             ["ClientPlayback:SeekBudgetMs"] = seek.ToString(),
             ["ClientPlayback:CatchingUpDelayMs"] = delay.ToString(),
             ["ClientPlayback:CheckpointIntervalSeconds"] = interval.ToString(),
-            ["ClientPlayback:CheckpointMemoryMiB"] = memory.ToString()
+            ["ClientPlayback:CheckpointMemoryMiB"] = memory.ToString(),
+            ["ClientPlayback:WarmUpDelayMs"] = warmUp.ToString()
         });
 
         var playback = await GetPlaybackAsync(harness);
 
         Assert.Equal(seek, playback.GetProperty("seekBudgetMs").GetInt32());
         Assert.Equal(memory, playback.GetProperty("checkpointMemoryMiB").GetInt32());
+        Assert.Equal(warmUp, playback.GetProperty("warmUpDelayMs").GetInt32());
     }
 
     [Fact]
     public void The_class_defaults_are_the_contract_values()
     {
         var defaults = new ClientPlaybackOptions();
-        Assert.Equal((25, 300, 10, 64),
-            (defaults.SeekBudgetMs, defaults.CatchingUpDelayMs, defaults.CheckpointIntervalSeconds, defaults.CheckpointMemoryMiB));
+        Assert.Equal((25, 300, 10, 64, 1000),
+            (defaults.SeekBudgetMs, defaults.CatchingUpDelayMs, defaults.CheckpointIntervalSeconds, defaults.CheckpointMemoryMiB, defaults.WarmUpDelayMs));
     }
 }

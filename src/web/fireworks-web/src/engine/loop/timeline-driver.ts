@@ -408,8 +408,10 @@ export class TimelineDriver implements PlaybackDriver {
 
   private takeCheckpoint(ctx: PlaybackContext): void {
     const key = this.keyOf(ctx);
-    // A run whose width or budget changed since its reset isn't a straight run at either.
-    if (!this.runKey || !sameKey(this.runKey, key)) return;
+    // A run whose width, budget or capacity changed since its reset isn't a straight run at either.
+    // beforeStep (F1, the only caller) nulls runKey on any such change just before calling this,
+    // so a non-null runKey here always equals `key`.
+    if (!this.runKey) return;
     if (this.checkpoints.some((c) => c.step === this.k)) return;
     const cp: Checkpoint = {
       step: this.k,

@@ -46,4 +46,4 @@ public sealed record ClientConfigResponse(ClientPlaybackConfig Playback, IReadOn
 public sealed record LoginProviderConfig(string Id, string Name);
 
 /// <summary>The <c>ClientPlayback</c> section, validated at startup (ranges in <c>ClientPlaybackOptions</c>).</summary>
-public sealed record ClientPlaybackConfig(int SeekBudgetMs, int CatchingUpDelayMs, int CheckpointIntervalSeconds, int CheckpointMemoryMiB);
+public sealed record ClientPlaybackConfig(int SeekBudgetMs, int CatchingUpDelayMs, int CheckpointIntervalSeconds, int CheckpointMemoryMiB, int WarmUpDelayMs);

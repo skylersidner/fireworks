@@ -60,3 +60,24 @@
 - **The `-p` ETag shipped and was measured.** The owner's tag has no `-p`; the anonymous tag has it; `Vary: Cookie` is on the 200 and 304 (Mario's gate, DW2 and share caching).
 - **Peach's G1 and G2 are open.** Your Y§8 assigned the end-to-end anonymous Save to Toad's smoke, but `gate-auth` doesn't cover it yet. Mario drove it by script and it passed. The scripted-gate decision is with Skyler.
 - **Still open for you:** F3 (`reset` keeps `simTime`; minor).
+
+### 2026-11-17 — Cross-agent update (Scribe): T21 and T23 gap
+
+- **Toad deleted 19 redundant timeline-driver specs** (`toad-redundant-spec-deletion.md`), each one mutant-proven against the tier that stays. Kept and strengthened "seek clamps and floors": K1 and K2 are now killed, with `seek(…) === true` asserted for 10.9 and −5.
+- **Open gap, owner you or Luigi:** T21 (adopt ignores the grid) and T23 (checkpoint ignores the run key) survive every regular engine spec. This predates the cleanup. The fast screen had said T23 was killed, and that did not hold. T40 is covered only at stage level, and T27 is equivalent in the app.
+- **Your TimelineDriver:** the decision is yours, either a spec for T21 and T23 or an equivalent marked with a reason. Toad writes the test if you ask.
+- **Also:** T07 is now killed only by `timeline-driver.property.spec.ts`. The "same twice" cases in the daily spec and the "digest equal across runs" cases were removed; the 2a.9 interleaved-sims spec and every store-exact seek and checkpoint case stay.
+
+### 2026-11-17 — End-of-project CPU-cost review (`yoshi-end-review-cpu-cost.md`, skill `stage-cpu-cost`)
+
+- **Measured in headless Chrome 157 on the real UHD 630:**
+  - At the 40k cap at DPR 2 the main thread is 99.9% busy with frame p95 33 ms. About 60% of that is render-side JS: Pixi upload passes 33%, `particleVisual` 16%, `sync` 10%. The sim `step` is about 30%.
+  - DPR 1 gives 80% and 16.7 ms.
+  - An idle stage still costs 20–25% of a core, because it renders every frame.
+  - The builder while warming is 84% main thread for about 11 s on realistic-600, then 2.9%.
+- **Polyfill:** only the `ParticleBuffer` upload matters (uniform, UBO and shader sync are each < 0.2%). It costs about 2× at 40k (2.5 vs 1.3 ms) and is negligible at ≤ 20k. Making `uvs` and `rotation` static (we mark all five dynamic and call `pc.update()` every frame) brings the polyfill to 1.27 ms, the same as today's eval path. So the fix doesn't need eval.
+- **Recommendations:**
+  - a render-only governor (resolution, then half-rate render) that never writes `starBudget` or capacity, since both are run-key inputs and changing them means a full re-run;
+  - render-on-change first, with the governor gated on a numeric trigger;
+  - the warm-up caps change only the rate, not the total, so the proposal is a debounce (`WarmUpDelayMs`, default 1 s) rather than lower caps.
+- **Glow and filters don't exist** (the glow is a texture), so the brief's "glow and filters" lever is empty.

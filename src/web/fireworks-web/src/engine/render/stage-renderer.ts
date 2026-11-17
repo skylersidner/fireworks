@@ -39,13 +39,16 @@ export interface StageRenderer {
   /** CSS pixels to world units, against the canvas's current bounding rect. */
   screenToWorld(clientX: number, clientY: number): { x: number; y: number };
   /**
-   * Starts calling `onFrame(deltaMS)` once per animation frame, after the renderer has checked
-   * for a resize and before it draws.
+   * Starts calling `onFrame(deltaMS, resized)` once per animation frame, after the renderer has
+   * checked for a resize. `resized` is true when the size changed this frame: the trail was cleared,
+   * so the host must draw. Nothing reaches the screen in a frame without a `render` call (the host
+   * renders only when the frame changed, yoshi-end-review-cpu-cost.md Q1).
    */
-  start(onFrame: (deltaMS: number) => void): void;
+  start(onFrame: (deltaMS: number, resized: boolean) => void): void;
   /**
-   * Draws the sim into the trail buffer. `persistence` is the motion-blur setting (0..0.92);
-   * `reduceFlashing` applies the Reduce flashing visual rules (render/visual-rules.ts).
+   * Draws the sim into the trail buffer and presents the frame. `persistence` is the motion-blur
+   * setting (0..0.92); `reduceFlashing` applies the Reduce flashing visual rules
+   * (render/visual-rules.ts). A frame with no call keeps the last presented picture.
    */
   render(sim: FireworksSim, persistence: number, reduceFlashing?: boolean): void;
   /**

@@ -1,7 +1,7 @@
 // Phase 7 gate (Mario), 7l.3: the cold-seek warm-up bar on the production build (image).
 // From Luigi's pw/luigi-warm.mjs (Toad's A3 seeds), with Toad's verdicts (C3). MEASUREMENT run:
 // the context uses bypassCSP (waitForFunction needs it); the CSP itself is gate-csp.mjs's job.
-// Usage: node gate-warm.mjs <base> <codes.json|SAVE> [after|early|cold|frames|nowarm-check]
+// Usage: node gate-warm.mjs <base> <codes.json|SAVE> [after|natural|early|cold|frames|nowarm-check]
 //   SAVE: POSTs realistic-600 and done-when-60 (toad-a3/shows.mjs) to <base> first (writes on).
 // Bars (acceptance 7l.3): realistic-600 after warm-up p95 < 1000 ms; done-when-60 after warm-up
 // p95 <= 866 * 1.2 = 1039 ms. Record uptime with the result; a load over ~6 invalidates it.
@@ -13,6 +13,19 @@
 // runs lands on its exact target (the scrub's bound value equals t after catch-up).
 // MODE=nowarm-check: the baseline mechanism's own control (patch applied, attr stays off), no timing.
 // Engine: Chromium only (Skyler 2026-11-15: regular runs and the gate use one browser).
+// End-of-project review (Toad, 2026-11-17; toad-end-review-verification.md): the stage now skips
+// warm-up when its probe predicts a short cold run to the end (`data-warm-up="skipped"`,
+// WARM_UP_SKIP_COLD_RUN_MS: 1 s at first, 700 ms since Luigi's follow-up). At 1 s done-when-60
+// (~1.1 s cold) was skipped; at 700 ms it should warm, but a threshold can move again. So:
+//   after, early: the skip threshold is patched to 0 in the bundle (exactly one hit, or the run
+//     fails), so both shows really warm and the warm-after bars still measure a warmed show. The
+//     wait accepts `finished` or `skipped` (never hangs on a skip) and reports which it reached;
+//     the after verdict needs `finished`.
+//   natural: the shipped threshold (no patch). Reports the state each show reached and holds the
+//     promise the skip makes: every seek p95 < 1000 ms whichever state, no missed seeks, and
+//     realistic-600 (a ~6 s cold run) must not be skipped.
+// The client-config stub serves warmUpDelayMs 1000 (the served default), so the 1 s quiet delay
+// before warm-up is part of every mode; early mode waits for warm-up to start before seeking.
 import { chromium } from 'playwright';
 import { ensureSession, outPath, writeHeaders } from './lib/common.mjs';
 import fs from 'node:fs';
@@ -38,20 +51,32 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
 const WARM_ON = '(`warmUp`,!0)', WARM_OFF = '(`warmUp`,!1)';
-async function openPage(code, { noWarm = false } = {}) {
+// The compiled WARM_UP_SKIP_COLD_RUN_MS default (fireworks-stage.ts: `factory: () => 700`, minified
+// `()=>700`; it was `()=>1e3`). Matched for any numeric literal so a threshold change doesn't break
+// the patch; the hit count must still be exactly one (checked by the after/early verdicts).
+const SKIP_ON = /`WARM_UP_SKIP_COLD_RUN_MS`,\{factory:\(\)=>(\d[\d.e+]*)\}/g, SKIP_OFF = '`WARM_UP_SKIP_COLD_RUN_MS`,{factory:()=>0}';
+const FORCE_WARM = MODE === 'after' || MODE === 'early';
+const TERMINAL = ['finished', 'skipped'];
+async function openPage(code, { noWarm = false, forceWarm = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, bypassCSP: true });
-  const patched = { n: 0 };
-  if (noWarm) {
+  const patched = { n: 0, skip: 0, skipFrom: [] };
+  if (noWarm || forceWarm) {
     await ctx.route(/\.js(\?|$)/, async (route) => {
       const resp = await route.fetch();
-      const body = await resp.text();
-      const hits = body.split(WARM_ON).length - 1;
-      if (!hits) return route.fulfill({ response: resp, body });
+      let body = await resp.text();
+      const hits = noWarm ? body.split(WARM_ON).length - 1 : 0;
+      const skipFound = forceWarm ? [...body.matchAll(SKIP_ON)].map((m) => m[1]) : [];
+      const skipHits = skipFound.length;
+      if (!hits && !skipHits) return route.fulfill({ response: resp, body });
       patched.n += hits;
-      await route.fulfill({ response: resp, body: body.split(WARM_ON).join(WARM_OFF) });
+      patched.skip += skipHits;
+      patched.skipFrom.push(...skipFound);
+      if (hits) body = body.split(WARM_ON).join(WARM_OFF);
+      if (skipHits) body = body.replace(SKIP_ON, SKIP_OFF);
+      await route.fulfill({ response: resp, body });
     });
   }
-  await ctx.route('**/api/client-config', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ playback: { seekBudgetMs: 25, catchingUpDelayMs: 0, checkpointIntervalSeconds: 10, checkpointMemoryMiB: 64 } }) }));
+  await ctx.route('**/api/client-config', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ playback: { seekBudgetMs: 25, catchingUpDelayMs: 0, checkpointIntervalSeconds: 10, checkpointMemoryMiB: 64, warmUpDelayMs: 1000 } }) }));
   await ctx.addInitScript(() => {
     try { localStorage.setItem('fireworks.flashNotice.v1', '1'); } catch {}
     window.__long = [];
@@ -97,12 +122,19 @@ async function randomSeeks(page, n = 20) {
 const results = { base: BASE, mode: MODE, at: new Date().toISOString() };
 async function earlyRun(code, noWarm) {
   const R = {};
-  const { ctx, page, errors, patched } = await openPage(code, { noWarm });
+  const { ctx, page, errors, patched } = await openPage(code, { noWarm, forceWarm: !noWarm && FORCE_WARM });
   await page.waitForTimeout(1000);
+  // The warm-up delay (1 s of quiet) means warm-up may not have begun at 1 s, and "off at 1 s" no
+  // longer proves the baseline patch worked. Both runs wait up to 3 s more for warm-up to leave
+  // `off`: the early run then seeks on a show that is really warming, and the baseline must still
+  // be `off` after the whole window (warmUpLeftOff false).
+  R.warmUpLeftOff = await page.waitForFunction(() => document.querySelector('app-fireworks-stage')?.getAttribute('data-warm-up') !== 'off', null, { timeout: 3000, polling: 20 }).then(() => true, () => false);
   R.warmUpAtStart = await page.evaluate(() => document.querySelector('app-fireworks-stage')?.getAttribute('data-warm-up'));
   if (MODE !== 'nowarm-check') R.seeks = await randomSeeks(page);
   R.warmUpAtEnd = await page.evaluate(() => document.querySelector('app-fireworks-stage')?.getAttribute('data-warm-up'));
   R.patched = patched.n;
+  R.skipPatched = patched.skip;
+  R.skipFrom = patched.skipFrom;
   R.errors = errors.slice(0, 5);
   await ctx.close();
   return R;
@@ -117,9 +149,11 @@ for (const [name, code] of Object.entries(codes)) {
     continue;
   }
   const R = (results[name] = {});
-  const { ctx, page, errors, t0 } = await openPage(code);
-  if (MODE === 'after') {
-    await page.waitForFunction(() => document.querySelector('app-fireworks-stage')?.getAttribute('data-warm-up') === 'finished', null, { timeout: 300000, polling: 50 });
+  const { ctx, page, errors, t0, patched } = await openPage(code, { forceWarm: FORCE_WARM });
+  R.skipPatched = patched;
+  if (MODE === 'after' || MODE === 'natural') {
+    await page.waitForFunction((t) => t.includes(document.querySelector('app-fireworks-stage')?.getAttribute('data-warm-up')), TERMINAL, { timeout: 300000, polling: 50 });
+    R.warmUpReached = await page.evaluate(() => document.querySelector('app-fireworks-stage')?.getAttribute('data-warm-up'));
     R.warmUpMsFromLoad = Date.now() - t0;
     R.warmUpLongTasks = await longs(page);
   } else {
@@ -143,10 +177,22 @@ if (MODE === 'after') {
   pass = true;
   const bars = { 'realistic-600': 1000, 'done-when-60': 866 * 1.2 };
   for (const [name, bar] of Object.entries(bars)) {
-    const sk = results[name]?.seeks; const p95 = sk?.p95;
-    const ok = typeof p95 === 'number' && p95 < bar && results[name].warmUpAtEnd === 'finished' && sk.missed.length === 0;
+    const R = results[name]; const sk = R?.seeks; const p95 = sk?.p95;
+    // A warm bar measures a warmed show: the skip patch applied once, and warm-up finished.
+    const forced = R?.skipPatched?.skip === 1;
+    const ok = typeof p95 === 'number' && p95 < bar && forced && R.warmUpReached === 'finished' && R.warmUpAtEnd === 'finished' && sk.missed.length === 0;
     if (!ok) pass = false;
-    console.log(`${name}: p95 ${p95} ms (bar < ${Math.round(bar)}), missed ${sk?.missed?.length}, warm-up ${results[name]?.warmUpMsFromLoad} ms from load, ${ok ? 'ok' : 'FAIL'}`);
+    console.log(`${name}: p95 ${p95} ms (bar < ${Math.round(bar)}), missed ${sk?.missed?.length}, warm-up reached ${R?.warmUpReached} at ${R?.warmUpMsFromLoad} ms from load (skip patch hits ${R?.skipPatched?.skip}, from ()=>${R?.skipPatched?.skipFrom?.join(',')}), ${ok ? 'ok' : 'FAIL'}`);
+  }
+} else if (MODE === 'natural') {
+  // The skip's promise: a skipped show seeks cold under the 1 s trigger. A ~6 s show is never skipped.
+  pass = true;
+  for (const name of ['realistic-600', 'done-when-60']) {
+    const R = results[name]; const sk = R?.seeks; const p95 = sk?.p95;
+    const notSkipped = name !== 'realistic-600' || R?.warmUpReached === 'finished';
+    const ok = typeof p95 === 'number' && p95 < 1000 && TERMINAL.includes(R?.warmUpReached) && R?.skipPatched?.skip === 0 && notSkipped && sk.missed.length === 0;
+    if (!ok) pass = false;
+    console.log(`${name}: natural warm-up reached ${R?.warmUpReached} at ${R?.warmUpMsFromLoad} ms from load; p95 ${p95} ms (bar < 1000), missed ${sk?.missed?.length}${notSkipped ? '' : ', SKIPPED A LONG SHOW'}, ${ok ? 'ok' : 'FAIL'}`);
   }
 } else if (MODE === 'early' || MODE === 'nowarm-check') {
   pass = true;
@@ -154,21 +200,22 @@ if (MODE === 'after') {
     if (!R?.baseline) continue;
     const b = R.baseline;
     // The baseline is only a baseline if warm-up really was off on the same build.
-    const baseValid = b.patched === 1 && b.warmUpAtStart === 'off' && b.warmUpAtEnd === 'off';
+    const baseValid = b.patched === 1 && b.warmUpLeftOff === false && b.warmUpAtStart === 'off' && b.warmUpAtEnd === 'off';
     if (!baseValid) { pass = false; console.log(`${name}: INVALID BASELINE (patched ${b.patched}, warm-up ${b.warmUpAtStart}->${b.warmUpAtEnd})`); continue; }
     if (MODE === 'nowarm-check') {
       // Control: the same page unpatched does warm up, so "off" above is the patch's doing.
-      const on = R.early.warmUpAtStart !== 'off' && R.early.patched === 0;
+      const on = R.early.warmUpLeftOff === true && R.early.warmUpAtStart !== 'off' && R.early.patched === 0;
       if (!on) pass = false;
-      console.log(`${name}: baseline off (patched ${b.patched}); unpatched warm-up at 1 s = ${R.early.warmUpAtStart} ${on ? 'ok' : 'FAIL'}`);
+      console.log(`${name}: baseline off for 4 s (patched ${b.patched}); unpatched warm-up within 4 s = ${R.early.warmUpAtStart} ${on ? 'ok' : 'FAIL'}`);
       continue;
     }
     const e = R.early; const bp = b.seeks.p95; const ep = e.seeks.p95;
     const exact = b.seeks.missed.length === 0 && e.seeks.missed.length === 0;
-    const warmRan = e.warmUpAtStart !== 'off'; // the early run must actually have warm-up on
-    const ok = exact && warmRan && (ep <= 4330 || ep <= bp * 1.2);
+    const warmRan = e.warmUpAtStart === 'running' || e.warmUpAtStart === 'finished'; // warm-up really on
+    const forced = e.skipPatched === 1 && b.skipPatched === 0;
+    const ok = exact && warmRan && forced && (ep <= 4330 || ep <= bp * 1.2);
     if (!ok) pass = false;
-    console.log(`${name}: early p95 ${ep} ms vs paired baseline ${bp} ms (bar <= 4330 or <= ${Math.round(bp * 1.2)}), missed ${e.seeks.missed.length}+${b.seeks.missed.length}, warm-up at 1 s ${e.warmUpAtStart}, ${ok ? 'ok' : 'FAIL'} | ${R.uptime}`);
+    console.log(`${name}: early p95 ${ep} ms vs paired baseline ${bp} ms (bar <= 4330 or <= ${Math.round(bp * 1.2)}), missed ${e.seeks.missed.length}+${b.seeks.missed.length}, warm-up at start ${e.warmUpAtStart} (skip patch hits ${e.skipPatched}, from ()=>${e.skipFrom?.join(',')}), ${ok ? 'ok' : 'FAIL'} | ${R.uptime}`);
   }
 }
 const out = outPath(`gate-warm-${MODE}-${Date.now()}.json`);

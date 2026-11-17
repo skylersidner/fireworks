@@ -42,6 +42,8 @@ public sealed class ClientConfigStartupTests
     [InlineData("CatchingUpDelayMs", "6000")]
     [InlineData("CheckpointIntervalSeconds", "0")]
     [InlineData("CheckpointMemoryMiB", "1024")]
+    [InlineData("WarmUpDelayMs", "5001")]
+    [InlineData("WarmUpDelayMs", "-1")]
     public async Task Startup_fails_fast_on_an_out_of_range_value_from_the_environment(string key, string value)
     {
         await using var api = ApiProcess.Start(Environment((key, value)));
@@ -69,7 +71,7 @@ public sealed class ClientConfigStartupTests
     public async Task Control_in_range_overrides_get_past_the_check_and_fail_on_the_database()
     {
         await using var api = ApiProcess.Start(Environment(
-            ("SeekBudgetMs", "100"), ("CatchingUpDelayMs", "0"), ("CheckpointIntervalSeconds", "60"), ("CheckpointMemoryMiB", "8")));
+            ("SeekBudgetMs", "100"), ("CatchingUpDelayMs", "0"), ("CheckpointIntervalSeconds", "60"), ("CheckpointMemoryMiB", "8"), ("WarmUpDelayMs", "5000")));
 
         var exitCode = await api.WaitForExitAsync(ExitTimeout);
 

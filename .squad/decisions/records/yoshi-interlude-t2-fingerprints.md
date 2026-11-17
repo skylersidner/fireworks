@@ -1,5 +1,7 @@
 # Yoshi — Testing interlude, batch 2: T2 committed show fingerprints
 
+> Follow-up on 2026-11-17 (Toad): the four "same twice" cases in `timeline-driver.daily.spec.ts` named under "What this supports replacing later" were deleted after their own proof (`toad-redundant-spec-deletion.md`). The interleaved-sims spec and every store-exact seek and checkpoint case stay.
+
 > Superseded in part by `toad-interlude-final-tier.md` on 2026-11-16: `at-maximums` (point 4, the daily case) now runs only in the final tier, selected by name in `FINAL_ONLY_CASES`, and its browser runs are final-only. `realistic-600` stays daily. The rest of this record stands.
 
 **Date:** 2026-11-15. **Brief:** plan "Interlude after Phase 7" (adopted 2026-11-16), `docs/fireworks-app/testing-strategy.md` §3 item 4, my design `yoshi-interlude-show-testing.md` T2. **Commits:** not authorized; nothing committed.

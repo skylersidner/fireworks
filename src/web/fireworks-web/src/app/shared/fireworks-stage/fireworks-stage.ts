@@ -13,7 +13,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { CANVAS_RESOLUTION } from '../../core/browser';
+import { CANVAS_RESOLUTION, DEVICE_PIXEL_RATIO } from '../../core/browser';
 import { ClientConfigStore } from '../../core/client-config';
 import { createDriver, RandomShowDriver } from '../../../engine/loop/drivers';
 import { EngineLoop } from '../../../engine/loop/engine-loop';
@@ -53,8 +53,12 @@ export type StageStatus = 'starting' | 'running' | 'lost' | 'failed';
 /** Why the stage failed: it never started (no WebGL), or a context loss wasn't restored. */
 export type StageFailure = 'start' | 'lost';
 
-/** Background checkpoint warm-up (builder): `data-warm-up` on the host. */
-export type WarmUpState = 'off' | 'running' | 'finished';
+/**
+ * Background checkpoint warm-up (builder): `data-warm-up` on the host. `off` covers the quiet
+ * delay before a warm-up starts; `skipped` is a show short enough that a cold run to its end is
+ * predicted to take at most `WARM_UP_SKIP_COLD_RUN_MS`, so it isn't warmed.
+ */
+export type WarmUpState = 'off' | 'running' | 'finished' | 'skipped';
 
 /** A loss shows its status line after this long (phase-7.md §11: a quick blip shows nothing). */
 export const CONTEXT_LOST_NOTICE_MS = 1000;
@@ -67,6 +71,28 @@ export const CONTEXT_RESTORE_TIMEOUT_MS = 10_000;
  */
 export const WARM_UP_PLAYING_MS = 6;
 export const WARM_UP_IDLE_MS = 12;
+
+/**
+ * Skip warm-up for a show whose predicted cold run to the end is at most this many ms (Skyler,
+ * 2026-11-17, Q3 option C; lowered from 1000 to 700, then to 200 the same day). The prediction is
+ * the warm-up's own first slice (the probe): its measured ms per step times the show's total
+ * steps (`endBoundStep + 1`). The probe under-predicts about 4x, because a show's opening is its
+ * sparsest part (Toad: done-when-60 predicted 237-253 ms against a real cold run of about 1.1 s),
+ * so the threshold is set against the prediction, not the seek bar: at 200 only a show predicted
+ * under about 0.8 s of real cold run is skipped. See `warmUpSlice`. Specs about warm-up itself
+ * provide 0 (never skip).
+ */
+export const WARM_UP_SKIP_COLD_RUN_MS = new InjectionToken<number>('WARM_UP_SKIP_COLD_RUN_MS', {
+  factory: () => 200,
+});
+
+/**
+ * Render only when the frame changed (yoshi-end-review-cpu-cost.md Q1, Skyler 2026-11-17): after
+ * the last change the stage still draws this many frames, so the motion-blur trail finishes fading
+ * (at the maximum persistence 0.92 a fade falls below 1/1024 after 83 frames), then stops presenting
+ * until something changes. The sim, loop, drivers, frame hook and stats still run every frame.
+ */
+export const RENDER_SETTLE_FRAMES = 90;
 
 /** HUD numbers, emitted about 4 times a second (never per frame). */
 export interface StageStats {
@@ -237,6 +263,8 @@ export class FireworksStageComponent {
   /** Read on each seek frame (untracked), so values that arrive mid-seek apply from the next frame. */
   private readonly clientConfig = inject(ClientConfigStore);
   private readonly resolution = inject(CANVAS_RESOLUTION);
+  private readonly devicePixelRatio = inject(DEVICE_PIXEL_RATIO);
+  private readonly warmUpSkipMs = inject(WARM_UP_SKIP_COLD_RUN_MS);
   private readonly timers = inject(STAGE_TIMERS);
   protected readonly reload = inject(PAGE_RELOAD);
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
@@ -268,6 +296,22 @@ export class FireworksStageComponent {
   private seekElapsedMs = 0;
   private catchingUpShown = false;
   private endedReported = false;
+  /**
+   * Frame time since the last seek frame; warm-up waits for `warmUpDelayMs`. An edit (new driver)
+   * always seeks, so it restarts the wait too.
+   */
+  private quietMs = 0;
+  /** Steps the last unfinished `runSlice` ran (the warm-up probe's denominator). */
+  private sliceSteps = 0;
+
+  // Render on change: what the last drawn frame showed, and frames since anything changed.
+  /** Set by a settings change or a seek: the next frame draws. */
+  private frameDirty = true;
+  private renderedStage: StageRenderer | null = null;
+  private renderedCount = -1;
+  private renderedSimTime = Number.NaN;
+  private renderedDpr = Number.NaN;
+  private framesSinceChange = 0;
 
   constructor() {
     this.loop = new EngineLoop(this.sim, undefined, {
@@ -292,6 +336,7 @@ export class FireworksStageComponent {
           this.endedReported = false;
           this.playbackEndStep = null;
           this.stopWarmUp();
+          // The seek's frames restart the warm-up delay (quietMs), as for any seek.
           if (this.seekTarget === null) this.requestSeek(at);
           return;
         }
@@ -310,6 +355,7 @@ export class FireworksStageComponent {
       this.sim.starBudget = q.starBudget;
       this.persistence = q.persistence;
       this.reduceFlashing = q.reduceFlashing;
+      this.frameDirty = true;
       // Flipped on the running driver, so a toggle never restarts the Auto show timer.
       const driver = untracked(() => this.loop.driver);
       if (driver instanceof RandomShowDriver) driver.reduceFlashing = q.reduceFlashing;
@@ -454,7 +500,7 @@ export class FireworksStageComponent {
     this.trailFormat.set(stage.trailFormat);
     this.status.set('running');
     stage.onContextChange((state) => this.onContextChange(stage, state));
-    stage.start((deltaMS) => this.onFrame(stage, deltaMS));
+    stage.start((deltaMS, resized) => this.onFrame(stage, deltaMS, resized));
   }
 
   /**
@@ -502,13 +548,15 @@ export class FireworksStageComponent {
   }
 
   /** Runs once per animation frame, outside change detection. Writes no signals. */
-  private onFrame(stage: StageRenderer, deltaMS: number): void {
+  private onFrame(stage: StageRenderer, deltaMS: number, resized = false): void {
     this.lastWidth = stage.worldWidth();
     const timeline = this.timelineDriver;
     if (timeline) this.timelineFrame(timeline, deltaMS);
     // Read untracked: this runs outside any reactive context anyway, and must not subscribe.
     else if (!untracked(this.paused)) this.loop.frame(deltaMS);
-    stage.render(this.sim, this.persistence, this.reduceFlashing);
+    if (this.shouldRender(stage, resized)) {
+      stage.render(this.sim, this.persistence, this.reduceFlashing);
+    }
 
     this.statsElapsedMs += deltaMS;
     if (this.statsElapsedMs >= STATS_INTERVAL_MS) {
@@ -520,6 +568,39 @@ export class FireworksStageComponent {
         renderer: stage.name,
       });
     }
+  }
+
+  /**
+   * Render on change (yoshi-end-review-cpu-cost.md Q1). A frame changed when: a new renderer is
+   * mounted (first start, or the rebuild after a context restore); the renderer resized; the device
+   * pixel ratio changed; a display or Reduce flashing setting changed; a seek ran; the particle
+   * count changed; or particles are alive and the sim stepped. Visuals are a pure function of the
+   * particle store (visual-rules.ts), so a paused sky with particles is unchanged. After the last
+   * change it still draws RENDER_SETTLE_FRAMES frames while the trail fades, then stops.
+   */
+  private shouldRender(stage: StageRenderer, resized: boolean): boolean {
+    const n = this.sim.particles.n;
+    const simTime = this.sim.simTime;
+    const dpr = this.devicePixelRatio();
+    const changed =
+      this.frameDirty ||
+      resized ||
+      stage !== this.renderedStage ||
+      dpr !== this.renderedDpr ||
+      n !== this.renderedCount ||
+      (n > 0 && simTime !== this.renderedSimTime);
+    this.frameDirty = false;
+    this.renderedStage = stage;
+    this.renderedDpr = dpr;
+    this.renderedCount = n;
+    this.renderedSimTime = simTime;
+    if (changed) {
+      this.framesSinceChange = 0;
+      return true;
+    }
+    if (this.framesSinceChange >= RENDER_SETTLE_FRAMES) return false;
+    this.framesSinceChange++;
+    return true;
   }
 
   private requestSeek(step: number): void {
@@ -538,6 +619,8 @@ export class FireworksStageComponent {
     const budget = untracked(this.clientConfig.playback).seekBudgetMs;
     const target = this.seekTarget;
     if (target !== null) {
+      this.quietMs = 0;
+      this.frameDirty = true;
       this.seekElapsedMs += deltaMS;
       if (this.runSlice(timeline, this.loop, target, budget, frameStart)) {
         this.seekTarget = null;
@@ -552,9 +635,12 @@ export class FireworksStageComponent {
         this.catchingUpShown = true;
         this.catchingUp.emit(target);
       }
-    } else if (!untracked(this.paused) && !timeline.done) {
-      this.loop.frame(deltaMS);
-      if (timeline.done) this.playbackEndStep = timeline.endStep;
+    } else {
+      this.quietMs += deltaMS;
+      if (!untracked(this.paused) && !timeline.done) {
+        this.loop.frame(deltaMS);
+        if (timeline.done) this.playbackEndStep = timeline.endStep;
+      }
     }
     if (this.seekTarget === null && timeline.done && !this.endedReported) {
       this.endedReported = true;
@@ -562,7 +648,13 @@ export class FireworksStageComponent {
     }
     untracked(this.frameHook)?.(this.currentStep(), timeline);
 
-    if (untracked(this.warmUp) && this.seekTarget === null) {
+    // Warm-up waits `warmUpDelayMs` of frames with no edit and no seek (Skyler 2026-11-17, Q3 B):
+    // during an edit burst every restart would warm checkpoints the next edit throws away.
+    if (
+      untracked(this.warmUp) &&
+      this.seekTarget === null &&
+      this.quietMs >= untracked(this.clientConfig.playback).warmUpDelayMs
+    ) {
       const playing = !untracked(this.paused) && !timeline.done;
       const left = budget - (this.clock() - frameStart);
       this.warmUpSlice(timeline, Math.min(left, playing ? WARM_UP_PLAYING_MS : WARM_UP_IDLE_MS));
@@ -592,7 +684,10 @@ export class FireworksStageComponent {
       steps += chunk; // Not arrived: exactly `chunk` steps ran.
       const now = this.clock();
       const left = budget - (now - start);
-      if (left <= 0) return false;
+      if (left <= 0) {
+        this.sliceSteps = steps;
+        return false;
+      }
       const perStep = (now - sliceStart) / steps;
       chunk =
         perStep > 0
@@ -621,7 +716,7 @@ export class FireworksStageComponent {
         worldWidth: () => this.worldWidth(),
         driver: shadow,
       });
-      warm = this.warm = { live: timeline, shadow, sim, loop };
+      warm = this.warm = { live: timeline, shadow, sim, loop, probed: false };
       this.warmedFor = null;
       this.warmUpState.set('running');
     }
@@ -629,12 +724,13 @@ export class FireworksStageComponent {
     warm.sim.starBudget = this.sim.starBudget;
     warm.shadow.adoptCheckpoints(timeline);
     const shadow = warm.shadow;
+    const sliceStart = this.clock();
     const done = this.runSlice(
       shadow,
       warm.loop,
       shadow.endBoundStep + 1,
       budget,
-      this.clock(),
+      sliceStart,
       () => shadow.done,
     );
     timeline.adoptCheckpoints(shadow);
@@ -642,6 +738,20 @@ export class FireworksStageComponent {
       this.warm = null;
       this.warmedFor = { driver: timeline, key };
       this.warmUpState.set('finished');
+      return;
+    }
+    if (warm.probed) return;
+    // The probe (Q3 option C): this first slice's measured cost per step, times every step of the
+    // show, predicts a cold run from 0 to the end on this device at this run key. A show predicted
+    // at or under WARM_UP_SKIP_COLD_RUN_MS seeks cold fast enough, so it isn't warmed. The slice
+    // covers the show's opening, often its sparsest part, so this can under-predict a show that
+    // gets denser later; the probe's own steps (at most one slice) are the only cost of asking.
+    warm.probed = true;
+    const msPerStep = (this.clock() - sliceStart) / Math.max(1, this.sliceSteps);
+    if (msPerStep * (shadow.endBoundStep + 1) <= this.warmUpSkipMs) {
+      this.warm = null;
+      this.warmedFor = { driver: timeline, key };
+      this.warmUpState.set('skipped');
     }
   }
 
@@ -658,4 +768,6 @@ interface WarmRun {
   readonly shadow: TimelineDriver;
   readonly sim: FireworksSim;
   readonly loop: EngineLoop;
+  /** Whether the skip probe has run (the first unfinished slice). */
+  probed: boolean;
 }

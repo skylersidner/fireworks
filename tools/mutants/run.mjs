@@ -55,6 +55,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { classify } from './classify.mjs';
+import { requireNode } from '../test/node-version.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -124,6 +125,9 @@ if (check) {
   console.log(`${setName}: ${chosen.length - stale} apply, ${stale} stale`);
   process.exit(stale ? 1 : 0);
 }
+// A web set runs `ng test`, which needs engines.node; under nvm's v21 every baseline is BROKEN
+// with a misleading message. Api sets only run dotnet, so they don't need it.
+if (set.kind === 'web') requireNode(`mutants/run.mjs ${setName}`);
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const RIG = path.join(ROOT, 'test-results', 'mutants', `${setName}-${stamp}`);
 const REPO = path.join(RIG, 'repo');

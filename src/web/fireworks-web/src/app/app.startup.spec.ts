@@ -37,6 +37,7 @@ describe('App cold start (real appConfig)', () => {
       catchingUpDelayMs: 500,
       checkpointIntervalSeconds: 20,
       checkpointMemoryMiB: 128,
+      warmUpDelayMs: 2000,
     },
   };
   const answer = (url: string) =>

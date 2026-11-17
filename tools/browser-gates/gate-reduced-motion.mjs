@@ -48,6 +48,33 @@ async function until(page, fn, arg, timeout = 20000) {
     await page.waitForTimeout(150);
   }
 }
+// 7h.1 reads the switch once it has settled, not on first sight (toad-end-review-verification.md,
+// finding 3: under load 10.9 the first sight on /show read unchecked once). Settled: the stage is
+// running and the switch has held one state for SETTLE_MS, or the switch has held one state for
+// SETTLE_NO_STAGE_MS (a surface whose stage never reports running still gets a stable read).
+// Returns the first sight too, so a transient is visible in the log.
+const SETTLE_MS = 450, SETTLE_NO_STAGE_MS = 1500;
+async function settledSwitch(page, timeout = 20000) {
+  const end = Date.now() + timeout;
+  let first = null, last = null, since = 0, flips = 0;
+  for (;;) {
+    const v = await page.evaluate(() => {
+      const s = [...document.querySelectorAll('input[role="switch"]')].find((el) => el.getClientRects().length);
+      const running = document.querySelector('app-fireworks-stage')?.getAttribute('data-status') === 'running';
+      return s ? { checked: s.checked, id: s.id || s.getAttribute('data-testid'), running } : null;
+    }).catch(() => null);
+    const now = Date.now();
+    if (v) {
+      const sw = { checked: v.checked, id: v.id };
+      if (!first) first = sw;
+      if (!last || last.checked !== sw.checked || last.id !== sw.id) { if (last) flips++; last = sw; since = now; }
+      const held = now - since;
+      if ((v.running && held >= SETTLE_MS) || held >= SETTLE_NO_STAGE_MS) return { first, settled: last, flips };
+    }
+    if (now > end) return { first, settled: last, flips };
+    await page.waitForTimeout(150);
+  }
+}
 async function ctxFor(browser, { reduce, dismissed }) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: reduce && !NEG ? 'reduce' : 'no-preference' });
   await ctx.addInitScript(({ dismissed, neg, key }) => {
@@ -82,14 +109,15 @@ for (const name of only) {
     const ctx = await ctxFor(browser, { reduce: true, dismissed: false });
     const page = await ctx.newPage();
     await page.goto(BASE + url);
-    const sw = await until(page, () => {
-      const s = [...document.querySelectorAll('input[role="switch"]')].find((el) => el.getClientRects().length);
-      return s ? { checked: s.checked, id: s.id || s.getAttribute('data-testid') } : null;
-    }, null);
+    const { first, settled: sw, flips } = await settledSwitch(page);
     await page.waitForTimeout(1500); // past the NEG write and any draft debounce
     const stored = await page.evaluate((k) => localStorage.getItem(k), KEY);
     const mq = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
-    check(`7h.1 ${label}: Reduce flashing switch is on under reduce`, sw?.checked === true, `${JSON.stringify(sw)} media=${mq}`);
+    // A first sight that differs from the settled state is reported, not counted: under reduce the
+    // stage opens paused (7h.2), so a switch that reads unchecked for a moment flashes nothing.
+    const transient = first && sw && first.checked !== sw.checked ? `; first sight ${JSON.stringify(first)} (${flips} flip${flips === 1 ? '' : 's'} before settling)` : '';
+    if (transient) console.log(`note 7h.1 ${label}: the switch changed after it first appeared${transient}`);
+    check(`7h.1 ${label}: Reduce flashing switch is on under reduce`, sw?.checked === true, `${JSON.stringify(sw)} media=${mq}${transient}`);
     check(`7h.1 ${label}: the load does not write ${KEY}`, stored === null, `stored=${stored}`);
     await ctx.close();
   }

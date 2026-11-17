@@ -9,9 +9,11 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { Runner, ROOT, stampNow, load, fmtS } from '../test/lib.mjs';
+import { requireNode } from '../test/node-version.mjs';
 import { BASE, ensureSession, loadCodes, saveCodes, writeHeaders, HERE } from './lib/common.mjs';
 import { dailySteps } from './daily-steps.mjs';
 
+requireNode('browser-gates/daily.mjs'); // engines.node, exit 2 (tools/test/node-version.mjs)
 const dir = path.join(ROOT, 'test-results', 'browser-daily', stampNow());
 const runner = new Runner('browser-daily', dir);
 await ensureSession(BASE);

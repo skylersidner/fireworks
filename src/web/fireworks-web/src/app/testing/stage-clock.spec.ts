@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { TimelineDriver } from '../../engine/loop/timeline-driver';
 import { PRESETS } from '../../engine/model/presets';
 import { FireworksSim } from '../../engine/sim/simulation';
+import { ClientConfigStore, DEFAULT_PLAYBACK } from '../core/client-config';
 import {
   FireworksStageComponent,
   STAGE_RENDERER_FACTORY,
@@ -56,6 +57,8 @@ describe('provideStepClock (test helper)', () => {
       imports: [HostComponent],
       providers: [{ provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory }, provideStepClock()],
     });
+    // Warm-up from the first frame, so the per-frame step count is visible at once.
+    TestBed.inject(ClientConfigStore).setPlayback({ ...DEFAULT_PLAYBACK, warmUpDelayMs: 0 });
   });
   afterEach(() => vi.restoreAllMocks());
 

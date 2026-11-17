@@ -6,52 +6,20 @@
  * (about 5k live particles, 1200-step checkpoints, offsets up to 7000 steps). Each has a
  * small-show equivalent in the regular `timeline-driver.spec.ts` or
  * `timeline-driver.checkpoints.spec.ts`; the mutant proof that both sets kill the same mutants is
- * in `.squad/decisions/records/luigi-interlude-spec-split.md`.
+ * in `.squad/decisions/records/luigi-interlude-spec-split.md`. The "same show twice" cases (two
+ * runs, three frame sizes, the digest across runs, the end twice) were deleted on 2026-11-17: the
+ * committed fingerprint of this show (`golden/show-fingerprint.spec.ts`), the T3 property tests and
+ * the small-show equivalents kill every mutant they killed (`toad-redundant-spec-deletion.md`).
  */
 import { FireworksSim } from '../sim/simulation';
 import { EngineLoop } from './engine-loop';
-import {
-  WIDTH,
-  doneWhenShow,
-  makeLoop,
-  playFrames,
-  snapshot,
-  straight,
-} from './testing/timeline-spec-helpers';
+import { WIDTH, doneWhenShow, makeLoop, snapshot, straight } from './testing/timeline-spec-helpers';
 import type { ShowCue, ShowDocument } from '../model/show';
 import { TimelineDriver } from './timeline-driver';
 
 // Every case here runs the Done-when show at least once (1-3 s each alone); 30 s keeps a hang
 // visible under load (Toad, Phase 7 C3).
 vi.setConfig({ testTimeout: 30_000 });
-
-describe('TimelineDriver determinism, daily (Done-when show)', () => {
-  it('the same show gives the same ledger, particle-count trace and final state across two runs', () => {
-    const a = makeLoop(doneWhenShow());
-    const b = makeLoop(doneWhenShow());
-    const frames = 60 * 20;
-    const traceA = playFrames(a.loop, a.sim, frames);
-    const traceB = playFrames(b.loop, b.sim, frames);
-    expect(traceA.some((n) => n > 0)).toBe(true);
-    expect(traceB).toEqual(traceA);
-    expect(b.driver.ledger).toEqual(a.driver.ledger);
-    expect(snapshot(b.sim)).toEqual(snapshot(a.sim));
-  });
-
-  it('frame size never matters: 60 fps, 144 fps and 24 fps frames equal a straight run', () => {
-    for (const ms of [1000 / 60, 1000 / 144, 1000 / 24]) {
-      const played = makeLoop(doneWhenShow());
-      for (let f = 0; f < Math.floor(12_000 / ms); f++) played.loop.frame(ms);
-      const straight = makeLoop(doneWhenShow());
-      straight.driver.advance(straight.loop, played.driver.step);
-      expect(played.driver.step).toBeGreaterThan(1400);
-      expect(snapshot(played.sim)).toEqual(snapshot(straight.sim));
-      expect(played.driver.ledger).toEqual(straight.driver.ledger);
-    }
-    // Runs the Done-when show three times; under the full suite's parallel load it needs more
-    // than the default 5 s (Luigi, Phase 6 build).
-  }, 20_000);
-});
 
 describe('TimelineDriver checkpoints, daily (exact; acceptance 6i.2; Done-when show)', () => {
   it('are taken every 1200 steps on the way, and a seek from one equals a straight run at the cap', () => {
@@ -224,22 +192,6 @@ describe('TimelineDriver checkpoints, daily (exact; acceptance 6i.2; Done-when s
 describe('TimelineDriver trace digest, daily (acceptance 6a.2; Done-when show)', () => {
   const ON = { traceDigest: true };
 
-  it('is equal across runs, through the loop or offline, and after a seek', () => {
-    const a = makeLoop(doneWhenShow(), undefined, ON);
-    const b = makeLoop(doneWhenShow(), undefined, ON);
-    a.driver.runToEnd(a.loop);
-    playFrames(b.loop, b.sim, 5000);
-    b.driver.seek(b.loop, a.driver.endStep!);
-    expect(b.driver.traceDigest).toBe(a.driver.traceDigest);
-    b.driver.seek(b.loop, 3000);
-    const c = makeLoop(doneWhenShow(), undefined, ON);
-    c.driver.advance(c.loop, 3000);
-    expect(b.driver.traceDigest).toBe(c.driver.traceDigest);
-    // Three full runs of the Done-when show; under the full suite's parallel load it can exceed
-    // the default 5 s (2.4 s alone; Toad, Phase 6 review). 20 s timed out under a mutant run's
-    // load in Phase 7 C3; 30 s matches the file's setting.
-  }, 30_000);
-
   it('negative control: one seed changed by 1 changes the digest and the ledger', () => {
     const doc = doneWhenShow();
     const off = {
@@ -252,16 +204,5 @@ describe('TimelineDriver trace digest, daily (acceptance 6a.2; Done-when show)',
     b.driver.runToEnd(b.loop);
     expect(b.driver.traceDigest).not.toBe(a.driver.traceDigest);
     expect(b.driver.ledger).not.toEqual(a.driver.ledger);
-  });
-});
-
-describe('TimelineDriver end of show, daily (schema.md §4.5; Done-when show)', () => {
-  it('the Done-when show (60 s, 50 cues) ends within its bound, on the same step twice', () => {
-    const a = makeLoop(doneWhenShow());
-    const b = makeLoop(doneWhenShow());
-    const end = a.driver.runToEnd(a.loop);
-    expect(b.driver.runToEnd(b.loop)).toBe(end);
-    expect(end).toBeGreaterThan(a.driver.lastFireStep);
-    expect(end).toBeLessThanOrEqual(a.driver.endBoundStep);
   });
 });

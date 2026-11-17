@@ -3,7 +3,9 @@
 // luigi-interlude-spec-split.md), run against the T3 property file ALONE, so a kill here is a
 // kill by the property test and nothing else. `target` marks the six that survived both Luigi's
 // old and new sets (T22, T23, T32, T35, T36, T38). F03 (designer draft with no debounce) runs
-// against shell-designer.store.spec.ts, the spec Luigi named as its owner.
+// against shell-designer.store.spec.ts, the spec Luigi named as its owner. T23 (checkpoint ignores
+// the run key) was removed on 2026-11-17 with the dead check it mutated: since the F1 fix,
+// beforeStep nulls runKey on any key change (luigi-end-review-cpu-fixes.md addendum).
 // Results and the redundancy list: .squad/decisions/records/toad-interlude-t3-property-tests.md.
 export default {
   kind: 'web',
@@ -225,17 +227,6 @@ export default {
       "file": "src/engine/loop/timeline-driver.ts",
       "old": "this.cpSteps = Math.max(this.cpSteps, from.cpSteps);",
       "new": "this.cpSteps = Math.min(this.cpSteps, from.cpSteps);",
-      "specs": [
-        "src/engine/loop/timeline-driver.property.spec.ts"
-      ],
-      "target": "survived Luigi old and new sets (luigi-interlude-spec-split.md, finding 3)"
-    },
-    {
-      "id": "T23",
-      "name": "checkpoint ignores the run key",
-      "file": "src/engine/loop/timeline-driver.ts",
-      "old": "if (!this.runKey || !sameKey(this.runKey, key)) return;",
-      "new": "if (!this.runKey) return;",
       "specs": [
         "src/engine/loop/timeline-driver.property.spec.ts"
       ],

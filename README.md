@@ -143,7 +143,7 @@ The sign-in round trip goes through the `ng serve` proxy. The proxy keeps the `H
 
 ### Test tiers
 
-There are four tiers, all started from one entry point. The design and its reasoning are in [`docs/fireworks-app/testing-strategy.md`](docs/fireworks-app/testing-strategy.md). Run from the repo root with Node 26.5.0 first on your `PATH`. The browser steps need `npm ci` once in `tools/browser-gates` (Playwright 1.65.0, pinned; Chromium runs as the installed Google Chrome). Every tier except `quick` needs Postgres (`docker compose up -d postgres`) and exits 2 without it.
+There are four tiers, all started from one entry point. The design and its reasoning are in [`docs/fireworks-app/testing-strategy.md`](docs/fireworks-app/testing-strategy.md). Run from the repo root with Node 26.5.0 first on your `PATH` (`nvm use`). The runner checks this before any step: if `node --version` doesn't satisfy `engines.node` in `src/web/fireworks-web/package.json` (`>=26.5.0 <27`), it exits 2 and says so. The browser steps need `npm ci` once in `tools/browser-gates` (Playwright 1.65.0, pinned; Chromium runs as the installed Google Chrome). Every tier except `quick` needs Postgres (`docker compose up -d postgres`) and exits 2 without it.
 
 ```bash
 node tools/test/run.mjs quick      # dev loop, not a gate
@@ -159,12 +159,12 @@ node tools/test/run.mjs <tier> --list   # print a tier's steps (daily and final 
 | `quick` | `prettier --check` on changed web files, `npm run typecheck`, `ng test --include` on the specs impacted by your changes (sibling specs plus the folder map in `tools/test/impact.json`), and `dotnet build` plus `dotnet test --filter` on the matching test classes when C# changed | 15–30 s for a leaf change; about 100 s when the change touches the engine |
 | `regular` | `format:check`, `fixtures:check`, typecheck, `test:regular`, `ng build`, `dotnet build`, the Postgres-gated `dotnet test`, then the [Chromium smoke](#the-chromium-smoke) | about 3–4 min |
 | `daily` | everything in `regular` except the smoke, then `test:daily` (`*.daily.spec.ts`) and the browser steps in `tools/browser-gates/daily-steps.mjs`: the header checks, the Chromium gates with their negative controls (CSP, keyboard, touch, reduced motion, follow, `gate-auth`, virtual-time player, real-time 66 s round trip), the CSP and round-trip gates and the fidelity walks in Firefox and WebKit, and the T2 fingerprints in three engines | about 21–22 min. Keep the machine awake (`caffeinate -dims`): a closed lid can stall a run for hours of timeouts |
-| `final` | everything in `daily`, plus `test:final` (`*.final.spec.ts`), the `at-maximums` fingerprint in three engines, the report-only benchmarks (`gate-warm`, `tools/bench/bench.mjs`) and an uncached `docker build` | daily plus about 15–25 min (an estimate; it hasn't been timed end to end) |
+| `final` | everything in `daily`, plus `test:final` (`*.final.spec.ts`), the `at-maximums` fingerprint in three engines, the report-only benchmarks (`gate-warm`, `tools/bench/bench.mjs`) and an uncached `docker build` | about 32 min (32.4 min on the first full run, 2026-11-17). Keep the machine awake, as for `daily` |
 
 How the runner behaves:
 - It prints one line per step with its time, and a summary table at the end. Every step's full output, plus `run.log` and `summary.json`, goes under `test-results/<tier>/<stamp>/` (gitignored).
 - `quick` and `regular` stop at the first failing step (unless `--keep-going`); `daily` and `final` run every step.
-- Exit codes: 0 means every gating step passed, 1 means one failed, 2 means a usage or setup error (for example, Postgres not running).
+- Exit codes: 0 means every gating step passed, 1 means one failed, 2 means a usage or setup error (for example, Postgres not running, or the wrong Node version).
 - Options: `--list`, `--only a,b`, `--skip a,b`, `--keep-going`, and `--hook` (quick only).
 - **There are no automatic retries.** A test that fails and then passes on an unchanged tree is logged in `tools/test/quarantine.json` with an owner and a cause. It keeps running in the daily tier until it is fixed or deleted.
 - `unit-web` prints the slowest spec file and warns about any file over 30 s or any test over 5 s. These are warnings; they never fail the run.
@@ -280,7 +280,7 @@ Settings come from `appsettings.json`, `appsettings.Development.json` (local onl
 
 ### Playback tuning (`ClientPlayback`)
 
-Four settings in `src/api/Fireworks.Api/appsettings.json` tune how the Show Builder seeks and catches up. The API serves them at `GET /api/client-config` (see [API reference](#api-reference)). Production and Development use the same values, so the section is only in `appsettings.json`.
+Five settings in `src/api/Fireworks.Api/appsettings.json` tune how the Show Builder seeks, catches up and warms up. The API serves them at `GET /api/client-config` (see [API reference](#api-reference)). Production and Development use the same values, so the section is only in `appsettings.json`.
 
 Treat the timings below as rough: they come from measurement runs on one machine, and an older machine will be slower. "The 60 s show" is the 50-cue fixture `schema/fixtures/valid/show/done-when-60s-50.json`. "The extreme show" is 600 s with 1000 cues at the particle cap.
 
@@ -290,6 +290,7 @@ Treat the timings below as rough: they come from measurement runs on one machine
 | `CatchingUpDelayMs` | 300 | 0–5000 | How long a seek must run before the "Catching up…" notice appears. | Short seeks never flash the notice, but a long one goes unexplained for longer. At 2000 a 1.5 s seek shows no notice at all. | The notice appears sooner. At 0 it flickers on for every seek, even ones that end in the next frame. |
 | `CheckpointIntervalSeconds` | 10 | 1–60 | Show time between the snapshots the builder takes, so that a later seek can start from the nearest snapshot instead of from 0 s. | Fewer snapshots and less memory, but a seek can have up to this much show time left to simulate after it lands on one. | Seeks land closer to their target, so they finish faster, but there are more snapshots and more memory, and the cap below is reached sooner. |
 | `CheckpointMemoryMiB` | 64 | 8–512 | The memory cap for those snapshots. When the snapshots would go over it, the builder spaces them further apart. One snapshot is at most about 2.56 MB. | More snapshots fit before spacing widens, so busy shows seek faster, but the tab can hold more memory. | Less memory, but busy shows get sparser snapshots and slower seeks. Under 64 MiB the extreme show widened its spacing from 10 s to 40 s and peaked at 35.6 MiB; a lower cap widens it further. |
+| `WarmUpDelayMs` | 1000 | 0–5000 | How long the builder waits, with no edit and no seek, before it starts warming up: simulating the rest of the show in the background so that later seeks start from a nearby snapshot. Each edit or seek restarts the wait. | Less background CPU while you edit in bursts, but the first seeks after a pause are cold for longer. | Warm-up starts sooner after each change, but during continuous editing it keeps restarting and spends CPU on snapshots the next edit throws away. At 0 it starts at once, with no wait. |
 
 Once snapshots exist, the median seek was about 0.14 s for 600 s of presets and about 3.6 s for the extreme show.
 
@@ -316,7 +317,7 @@ The contract is [`docs/fireworks-app/schema.md`](docs/fireworks-app/schema.md): 
 | `/api/auth/callback/google` | Answered by the Google handler. Success sets the session cookie and 302s to `returnUrl`. Cancel goes to `/signin?error=cancelled&returnUrl=…`; any other failure to `/signin?error=failed&returnUrl=…` (`returnUrl` is left out when the login state can't be read). |
 | `POST /api/auth/logout` | Always 204, with a deleting `Set-Cookie`. 20 a minute per IP, shared with login. |
 | `GET /api/me` | Anonymous allowed. `{ userId, displayName, isAuthenticated, canWrite, signedInWith }`; signed out it is `null, null, false, false, null`. `canWrite` always equals `isAuthenticated`; `signedInWith` is `"google"` or `null`. |
-| `GET /api/client-config` | Anonymous, read-only, `no-store`. `{ playback: { seekBudgetMs, catchingUpDelayMs, checkpointIntervalSeconds, checkpointMemoryMiB }, loginProviders: [{ "id": "google", "name": "Google" }] }`. `loginProviders` is empty only in Development or Testing with no Google client configured. |
+| `GET /api/client-config` | Anonymous, read-only, `no-store`. `{ playback: { seekBudgetMs, catchingUpDelayMs, checkpointIntervalSeconds, checkpointMemoryMiB, warmUpDelayMs }, loginProviders: [{ "id": "google", "name": "Google" }] }`. `loginProviders` is empty only in Development or Testing with no Google client configured. |
 
 **Writes.** Every unsafe request (any method except GET, HEAD, OPTIONS and TRACE) on any path is refused with **403** when the browser says it came from another origin (`Sec-Fetch-Site` other than `same-origin`, or a foreign `Origin`). There is no CORS policy in any environment. Every write, and `GET api/me/creations`, needs a session: signed out, it is **401** (never a redirect).
 
