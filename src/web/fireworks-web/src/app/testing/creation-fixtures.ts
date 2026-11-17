@@ -20,6 +20,22 @@ export const ME_TEST_WINDOW: MeResponse = {
 };
 export const ME_READ_ONLY: MeResponse = { ...ME_TEST_WINDOW, canWrite: false };
 export const ME_SIGNED_IN: MeResponse = { ...ME_TEST_WINDOW, isAuthenticated: true };
+/** Phase 8: exactly what `api/me` answers anonymous (Bowser B1 item 2). */
+export const ME_ANONYMOUS: MeResponse = {
+  userId: null,
+  displayName: null,
+  isAuthenticated: false,
+  canWrite: false,
+  signedInWith: null,
+};
+/** Phase 8: a real signed-in account. */
+export const ME_ADA: MeResponse = {
+  userId: '019a0000-0000-7000-8000-000000000001',
+  displayName: 'Ada Lovelace',
+  isAuthenticated: true,
+  canWrite: true,
+  signedInWith: 'google',
+};
 
 /** A saved shell as `GET api/creations/{code}` returns it. */
 export function creationResponse(overrides: Partial<CreationResponse> = {}): CreationResponse {

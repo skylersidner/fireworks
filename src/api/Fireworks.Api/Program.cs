@@ -8,21 +8,22 @@ using Fireworks.Api.Services.Identity;
 using Fireworks.Api.Services.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Fail fast on missing configuration.
-// ConnectionStrings and Cors live in appsettings.Development.json only, so these guards actually
+// ConnectionStrings lives in appsettings.Development.json only, so this guard actually
 // fire on a production deploy that forgets ConnectionStrings__Postgres, instead of silently
 // resolving a committed local placeholder and dying later inside MigrateAsync() with a socket error.
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
     ?? throw new InvalidOperationException("ConnectionStrings:Postgres must be configured.");
 
-// Same idea for identity (plan §3.4): Identity:DefaultUserId is read and validated here, eagerly,
-// so a missing or malformed id stops the process before it opens a database connection. See
-// AddFireworksIdentity for why this is not ValidateOnStart().
-builder.Services.AddFireworksIdentity(builder.Configuration);
+// Same idea for sign-in (plan Phase 8): Auth:Providers:Google is read and validated here, eagerly,
+// so a bad value stops the process before it opens a database connection. Outside Development and
+// Testing a missing, placeholder or stub client (or any stub endpoint override) throws, and any
+// leftover Identity:* key throws (Boo A33, A34). Registers the cookie session, the Google handler,
+// the fail-closed fallback policy, DataProtection keys in Postgres and ICurrentUser.
+builder.Services.AddFireworksIdentity(builder.Configuration, builder.Environment);
 
 // Same for the client playback knobs (ClientPlayback, served by GET api/client-config): an
 // out-of-range value stops the process here with its own message, before the database. See
@@ -51,29 +52,13 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IMeService, MeService>();
 builder.Services.AddFireworksCreations();
 
-// Per-endpoint, IP-partitioned fixed windows on the creation endpoints only (no global limiter),
-// so /health/live is never throttled. See FireworksRateLimiting.
+// Per-endpoint fixed windows (no global limiter), so /health/live is never throttled; keyed by
+// user when signed in, else by IP; the auth policy is by IP. See FireworksRateLimiting.
 builder.Services.AddFireworksRateLimiting(builder.Configuration);
 
-// 4. CORS is Development-only: production is single-origin and needs no cross-origin policy at all.
-// Note this half uses builder.Environment (before Build()); the UseCors half below uses
-// app.Environment. Guarding only one of the two leaves UseCors pointing at a policy that does not
-// exist, which throws on the first request.
-if (builder.Environment.IsDevelopment())
-{
-    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-        ?? throw new InvalidOperationException("Cors:AllowedOrigins must be configured.");
-
-    builder.Services.AddCors(options =>
-    {
-        options.AddPolicy("FrontendDev", policy =>
-        {
-            policy.WithOrigins(allowedOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        });
-    });
-}
+// 4. No CORS, in any environment (Boo A14). The dev client calls the API through the ng serve proxy
+// on its own origin, and a cross-origin policy next to a cookie session is an antiforgery-token
+// trigger (Boo A17).
 
 // 5. Build.
 var app = builder.Build();
@@ -123,11 +108,9 @@ app.UseFireworksResponseHeaders();
 // 7. Exception handler (ProblemDetails body, no stack trace).
 app.UseExceptionHandler();
 
-// 8. Development only: CORS and HTTPS redirection.
+// 8. Development only: HTTPS redirection.
 if (app.Environment.IsDevelopment())
 {
-    app.UseCors("FrontendDev");
-
     // Development-only. Railway's edge is HTTPS-only and already 301s plain HTTP itself, and always
     // sets X-Forwarded-Proto: https, so this has no job in Production. Inside the container it is
     // inert anyway (Kestrel binds HTTP only, so no port is resolvable) — but only until someone sets
@@ -137,8 +120,8 @@ if (app.Environment.IsDevelopment())
 }
 
 // 9. Static files (the Angular build in wwwroot) are served by middleware and short-circuit before
-// routing. When Phase 8 adds UseAuthentication/UseAuthorization, they go after UseRouting below,
-// so the SPA's JS/CSS stay anonymous with no configuration. One StaticFileOptions for these and the
+// routing and before UseAuthorization (step 11a), so the SPA's JS/CSS stay anonymous with no
+// configuration. One StaticFileOptions for these and the
 // fallback (step 16): hashed bundles immutable, every other served file no-cache (Boo P7-S4).
 var staticFileOptions = SpaHosting.CreateStaticFileOptions();
 app.UseFireworksStaticFiles(staticFileOptions);
@@ -156,27 +139,25 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// 11a. Rate limiting. After UseRouting, because the policies are endpoint metadata
-// ([EnableRateLimiting]) and the limiter can only see them once an endpoint is selected; after
-// forwarded headers (step 6), because it partitions on the client address. Phase 8's
-// UseAuthentication/UseAuthorization go between UseRouting and this, so it can partition by user.
+// 11a. Identity: UseAuthentication (the Google callback, /api/auth/callback/google, completes here,
+// before any endpoint), the CSRF guard on every unsafe request (403), then UseAuthorization (the
+// fail-closed fallback policy: 401). After UseRouting, because policies are endpoint metadata.
+// Logs a Warning whenever stub OAuth endpoints are active (Boo A35).
+app.UseFireworksIdentity();
+
+// 11b. Rate limiting. After UseRouting, because the policies are endpoint metadata
+// ([EnableRateLimiting]); after forwarded headers (step 6), because it partitions on the client
+// address; after identity (11a), because it partitions by user when signed in. So a 401 or a guard
+// 403 isn't counted: neither touches the database.
 app.UseRateLimiter();
 
-// 12. Migrate on start, then make sure the default user exists. This runs before the app listens,
-// so a failed migration is a failed deploy (Railway's healthcheck never goes green), not a
-// half-working app.
+// 12. Migrate on start. This runs before the app listens, so a failed migration is a failed deploy
+// (Railway's healthcheck never goes green), not a half-working app. No seeding: users are
+// provisioned on first sign-in.
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<FireworksDbContext>();
-    var defaultUserOptions = scope.ServiceProvider.GetRequiredService<IOptions<DefaultUserOptions>>().Value;
-    await FireworksDbInitializer.InitializeAsync(dbContext, defaultUserOptions);
-
-    // Every test window shows up in the Railway logs (Boo S28): while this is on, anyone who can
-    // reach the site can list, change and delete every creation.
-    if (defaultUserOptions.AllowAnonymousWrites && !app.Environment.IsDevelopment())
-    {
-        app.Logger.LogWarning("Anonymous writes are ON (Identity:AllowAnonymousWrites=true). Anyone who can reach this site can create, change and delete every creation.");
-    }
+    await FireworksDbInitializer.InitializeAsync(dbContext);
 }
 
 // 13. Liveness and readiness. Answered by the health checks as text/plain — never by the SPA
@@ -198,14 +179,14 @@ app.MapControllers();
 //
 // Side effect worth knowing rather than filing as a bug later: app.Map maps every HTTP method, so
 // an unsupported method on a real route (DELETE /api/me) lands here as 404 rather than 405.
-// Read-limited like every other /api read, so a scanner walking 404s is throttled too (Boo S19).
-app.Map("/api/{**rest}", () => Results.NotFound()).RequireRateLimiting(FireworksRateLimiting.ReadPolicy);
+// Read-limited like every other /api read, so a scanner walking 404s is throttled too (Boo S19), and
+// anonymous, so a 404 stays a 404 rather than a 401 that tells a scanner a route exists.
+app.MapFireworksApiNotFound();
 
 // 16. SPA fallback, last. Deep links (/designer, /s/{code}) get index.html and Angular routes them;
 // /s/{**rest} and /c/{**rest} take a dotted last segment too (/c/..%2Fme), so the app's not-found
 // page answers instead of a bare 404 (Boo P7-S7). Same StaticFileOptions as step 9 (no-cache).
-// When Phase 8 adds a fallback authorization policy, these endpoints need AllowAnonymous or every
-// deep link 401s before any HTML is served.
+// Anonymous, or every deep link would 401 under the fallback policy before any HTML is served.
 app.MapFireworksSpaFallback(staticFileOptions);
 
 app.Run();

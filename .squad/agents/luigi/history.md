@@ -62,3 +62,21 @@
 - **Yoshi's F1 fix changes seek cost after a mixed run** (`yoshi-phase6-timeline-driver.md` addendum, 2026-11-16). `TimelineDriver.beforeStep` clears the run key on any step under another width, starBudget or capacity, and a null key takes no checkpoints until reset or restore. The stage still does not re-seek on resize. A seek after a resize and back may now run from 0 or from an exact checkpoint. Check the warm-up expectations in `fireworks-stage.phase7.spec.ts` if you touch that path.
 - **Your record's kill count needs correcting** (Toad's F4, `toad-interlude-t3-property-tests.md`). `luigi-interlude-spec-split.md` counts T21 and T27 as killed by regular, but your `results-new-reg.jsonl` shows both SURVIVED (88/88). Correct it in place with an addendum.
 - **Open decision with Rosalina (7g.2):** Firefox makes the scrollable `designer-panel` and `builder-panel` asides tab stops before the skip link. This is engine behavior, not a product defect. Whether the panel gets `tabindex="-1"` or the gate expects the stop is yours and Rosalina's (`toad-interlude-final-tier.md` point 3).
+
+### 2026-11-16 — Phase 8 B2: client-side sign-in (record `luigi-phase8-client-sign-in.md`)
+
+- **Files:**
+  - `core/`: `sign-in.ts` (the only `location.assign`; `isSafeInternalUrl` mirrors `SafeReturnUrl` row for row, including `/%zz`; marker `fireworks.signin.v1`; `setSignInNavigationForTesting`), `auth-interceptor.ts` (401 → one `load()`, never retries; `isSignedOutError` lives in `self-handled-request.ts`), `save-session.ts` (`prompt`, `refreshing`, `returned`, `start()`). `session.ts` gains `settled()`, `signOut()`, `isAuthenticated`, `displayName` and `signedInWith`.
+  - `shared/sign-in/`: `google-sign-in-button`, `sign-in-dialog`, `account-control`, `identity-focus.ts` (`watchIdentityFocus`), `sign-in-copy.ts`.
+  - `pages/signin/signin-page.ts`. The test-mode banner is deleted.
+  - Fixtures: `ME_ANONYMOUS` and `ME_ADA` in `testing/creation-fixtures.ts`.
+  - Mutant set: `tools/mutants/sets/phase8-client.mjs`.
+- **Running-app find:** `SaveSession` first captured the "restored" source in `start()`, which runs after the `/c/` handoff, so a fresh link copy got a redundant refresh GET. Capture page-entry state in the flow's constructor, before the page body runs (regression spec in `designer-save.spec.ts`, mutant R2).
+- **Traps:**
+  - Specs that compare save-status text need the bidi isolates (`⁨…⁩`) around names.
+  - `readSource` drops an empty `updatedAt`, so the 428-without-request path is reachable only in `creation-save.spec`.
+  - `/health/live` is self-handled too, so no toast.
+  - The local Playwright has no bundled Chromium; launch with `channel: 'chrome'`, as `lib/common.mjs` does.
+  - A first visit shows the flashing notice, which keeps focus on return, so rigs must pre-set `fireworks.flashNotice.v1`.
+- **Rig:** `--interactive` stub links read `Continue as dev-alice` and `Cancel`. 4200 → 5180 → stub on 127.0.0.1:5190.
+- **Regular tier:** 176.2 s wall (228.8 s on the first run), 1,774 web tests. Mutants `phase8-client`: 17 KILLED; S3 survived as an equivalent mutant (the decoded check covers a raw `//`).

@@ -1,7 +1,7 @@
 # Fireworks Sandbox — Initial Implementation Plan
 
 **Stack:** .NET 11 + Angular 22, mirroring `monster-of-the-week-net-angular`.
-**Status:** Phase 0 complete (2026-11-12). Skyler has decided OQ1, 2, 4, 5, 11, 12, 17 and 20. Every other question in §5 uses its recommended default, except OQ19, which waits for Phase 8.
+**Status:** Phase 0 complete (2026-11-12). Skyler has decided OQ1, 2, 4, 5, 11, 12, 17, 19 (Google sign-in, 2026-11-16) and 20. Every other question in §5 uses its recommended default.
 
 ## 1. Overview
 
@@ -611,9 +611,11 @@ Before Phase 8 starts, find a way to test shows that doesn't depend on playing t
 - Client:
   - Login/logout UI.
   - `session.ts` reads real claims.
-  - A guard on `/mine`.
+  - `/mine` signed out renders the sign-in prompt in place, with no guard or redirect and no list call (design `phase-8.md` §7, confirmed in `phase-8-auth.md` §6.3).
   - The designer prompts for login when an anonymous user clicks Save. Their draft carries over through the localStorage draft.
 - Add DataProtection key persistence (as in the reference) if cookie auth is used.
+
+**Phase 8 rulings (Skyler, 2026-11-16; design `docs/fireworks-app/design/phase-8-auth.md`):** OQ19 = **Google sign-in only** (external OAuth with the reference's cookie session; no passwords, no email stored); the interim default user's creations stay **read-only**, with an optional one-line SQL to claim them for Skyler's account; the **test-mode banner is removed** (replaced by a server test that `canWrite == isAuthenticated`); sessions last **30 days, sliding**. Coordinator default: local dev and tests use a stub OAuth server by default, a real Google dev app is an optional override, and Production refuses the stub at startup. If-Match → 412/428 lands in Phase 8 per schema.md §11.4. **Further rulings (Skyler, 2026-11-16):** signing out keeps the local draft; the Google display name is stored (shown only to that user; no email, picture or tokens); no absolute session cap for now (add with sign-out-everywhere or account deletion). Requirements: `records/boo-phase8-security-requirements.md` (A1–A44); UX: `docs/fireworks-app/design/phase-8.md`.
 
 **Done when:**
 - Anonymous users can play but get a login prompt when they try to save.

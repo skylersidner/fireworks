@@ -3,6 +3,7 @@ using Fireworks.Api.Services;
 using Fireworks.Api.Services.Creations;
 using Fireworks.Api.Services.RateLimiting;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -29,9 +30,9 @@ namespace Fireworks.Api.Controllers;
 /// </para>
 ///
 /// <para>
-/// <b>No <c>[Authorize]</c> before Phase 8</b>: no authentication scheme is registered, so a failing
-/// policy would have nothing to Forbid with and would throw. The service's <c>CanWrite</c> check is
-/// the gate.
+/// <b>Authorization (Phase 8):</b> every action here is covered by the fail-closed fallback policy
+/// (anonymous is 401) except the share-code GET, which is <c>[AllowAnonymous]</c>. The service's
+/// <c>CanWrite</c> check stays as defense in depth. Order on a write: schema.md §2.6.
 /// </para>
 ///
 /// <para>
@@ -42,8 +43,15 @@ namespace Fireworks.Api.Controllers;
 /// <c>*</c>) with a bodiless 304 carrying the same <c>ETag</c> and <c>Cache-Control</c>, and its
 /// 200 and 304 are <c>private, no-cache</c> (Boo P7-S5): kept out of shared caches, revalidated on
 /// every view, so a PUT is seen on the next load. Every other <c>/api</c> response, this GET's
-/// errors included, keeps <see cref="ResponseHeaders"/>'s <c>no-store</c>. <c>If-Match</c> is not
-/// read before Phase 8 (§11.4).
+/// errors included, keeps <see cref="ResponseHeaders"/>'s <c>no-store</c>.
+/// </para>
+///
+/// <para>
+/// <b>Phase 8 (schema.md §2.1.1, §11.4):</b> the owner gets <c>"&lt;updatedAt&gt;"</c> and everyone
+/// else <c>"&lt;updatedAt&gt;-p"</c>, and <c>If-None-Match</c> is compared against the viewer's own
+/// tag, so an owner's cached representation never answers a 304 for anyone else. The share GET's
+/// 200 and 304 send <c>Vary: Cookie</c> (Boo P7-S18, A25). PUT requires <c>If-Match</c>: missing is
+/// 428, anything but the current strong owner tag is 412 with the current <c>ETag</c>.
 /// </para>
 /// </summary>
 [ApiController]
@@ -74,6 +82,7 @@ public sealed class CreationsController(ICreationService creationService, IOptio
     }
 
     [HttpGet(ItemRoute)]
+    [AllowAnonymous]
     [EnableRateLimiting(FireworksRateLimiting.ReadPolicy)]
     public async Task<ActionResult<CreationResponse>> Get(string shareCode, CancellationToken cancellationToken)
     {
@@ -86,6 +95,7 @@ public sealed class CreationsController(ICreationService creationService, IOptio
 
         var etag = Tag(result.Value!);
         Response.Headers.CacheControl = ShareCodeGetCacheControl;
+        Response.Headers.Vary = "Cookie";
         return MatchesIfNoneMatch(etag)
             ? StatusCode(StatusCodes.Status304NotModified)
             : Ok(result.Value);
@@ -96,7 +106,8 @@ public sealed class CreationsController(ICreationService creationService, IOptio
     [EnableRateLimiting(FireworksRateLimiting.WritePolicy)]
     public async Task<ActionResult<CreationResponse>> Update(string shareCode, CancellationToken cancellationToken)
     {
-        var result = await creationService.UpdateOwnedAsync(shareCode, new HttpCreationRequestBody(Request), cancellationToken);
+        var ifMatch = IfMatchPrecondition.Parse(Request.Headers.IfMatch, jsonOptions.Value.JsonSerializerOptions);
+        var result = await creationService.UpdateOwnedAsync(shareCode, ifMatch, new HttpCreationRequestBody(Request), cancellationToken);
         return result.IsSuccess ? Ok(Tagged(result.Value!)) : ToErrorResult(result.Error!);
     }
 
@@ -138,18 +149,22 @@ public sealed class CreationsController(ICreationService creationService, IOptio
     private string?[]? Raw(string name) =>
         Request.Query.TryGetValue(name, out var values) ? values.ToArray() : null;
 
+    /// <summary>The suffix that marks a non-owner's representation's tag (schema.md §2.1.1).</summary>
+    public const string NonOwnerTagSuffix = "-p";
+
     /// <summary>
-    /// <c>"</c> + <c>updatedAt</c> as the body serializes it + <c>"</c>. Through the body's own
-    /// options and converter, never <c>ToString("O")</c>: that pads to seven fractional digits, while
-    /// STJ trims trailing zeros, so the tag would differ from the body (schema.md §2.1.1). Every
-    /// character it can produce (<c>0-9 - : T . +</c>) is legal in an entity tag.
+    /// <c>"</c> + <c>updatedAt</c> as the body serializes it (+ <c>-p</c> for a non-owner) + <c>"</c>.
+    /// Through the body's own options and converter, never <c>ToString("O")</c>: that pads to seven
+    /// fractional digits, while STJ trims trailing zeros, so the tag would differ from the body
+    /// (schema.md §2.1.1). Every character it can produce (<c>0-9 - : T . + p</c>) is legal in an
+    /// entity tag.
     /// </summary>
-    internal static EntityTagHeaderValue EntityTagFor(DateTimeOffset updatedAt, JsonSerializerOptions options) =>
-        new('"' + JsonSerializer.SerializeToElement(updatedAt, options).GetString() + '"');
+    internal static EntityTagHeaderValue EntityTagFor(DateTimeOffset updatedAt, JsonSerializerOptions options, bool isOwner = true) =>
+        new('"' + JsonSerializer.SerializeToElement(updatedAt, options).GetString() + (isOwner ? "" : NonOwnerTagSuffix) + '"');
 
     private EntityTagHeaderValue Tag(CreationResponse creation)
     {
-        var etag = EntityTagFor(creation.UpdatedAt, jsonOptions.Value.JsonSerializerOptions);
+        var etag = EntityTagFor(creation.UpdatedAt, jsonOptions.Value.JsonSerializerOptions, creation.IsOwner);
         Response.Headers.ETag = etag.ToString();
         return etag;
     }
@@ -168,6 +183,13 @@ public sealed class CreationsController(ICreationService creationService, IOptio
         EntityTagHeaderValue.TryParseList(Request.Headers.IfNoneMatch, out var candidates)
         && candidates.Any(candidate => candidate.Equals(EntityTagHeaderValue.Any) || candidate.Compare(etag, useStrongComparison: false));
 
+    /// <summary>412 with the current owner tag, so the client can offer a deliberate GET-then-PUT.</summary>
+    private ActionResult PreconditionFailed(ServiceError error)
+    {
+        Response.Headers.ETag = EntityTagFor(error.CurrentUpdatedAt!.Value, jsonOptions.Value.JsonSerializerOptions).ToString();
+        return StatusCode(StatusCodes.Status412PreconditionFailed, new { message = error.Message });
+    }
+
     private ActionResult<T> ToActionResult<T>(ServiceResult<T> result) =>
         result.IsSuccess ? Ok(result.Value) : ToErrorResult(result.Error!);
 
@@ -184,6 +206,8 @@ public sealed class CreationsController(ICreationService creationService, IOptio
             ServiceErrorType.UnsupportedMediaType => StatusCode(StatusCodes.Status415UnsupportedMediaType),
             ServiceErrorType.PayloadTooLarge => StatusCode(StatusCodes.Status413PayloadTooLarge),
             ServiceErrorType.Conflict => Conflict(new { message = error.Message }),
+            ServiceErrorType.PreconditionRequired => StatusCode(StatusCodes.Status428PreconditionRequired, new { message = error.Message }),
+            ServiceErrorType.PreconditionFailed => PreconditionFailed(error),
             _ => BadRequest()
         };
 }

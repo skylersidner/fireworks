@@ -3,11 +3,14 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { PRESETS } from '../../../../../engine/model/presets';
 import { BROWSER_STORAGE, MATCH_MEDIA } from '../../../../core/browser';
+import { authInterceptor } from '../../../../core/auth-interceptor';
 import { httpErrorInterceptor } from '../../../../core/http-error-interceptor';
 import { NotificationService } from '../../../../core/notifications';
 import {
   CODE_A,
   CODE_B,
+  ME_ADA,
+  ME_ANONYMOUS,
   ME_READ_ONLY,
   ME_TEST_WINDOW,
   creationResponse,
@@ -19,7 +22,12 @@ import { MemoryStorage } from '../../../../testing/memory-storage';
 import { doneWhenShow } from '../../../../testing/show-fixtures';
 import { SHARE_COPIED, SHARE_COPIED_UNSAVED } from '../../../../shared/save-copy';
 import { EMPTY_SAVE_NOTE, formatTime } from '../../shared/show-copy';
-import { SHOW_DRAFT_KEY } from '../../shared/show-draft';
+import {
+  SHOW_DRAFT_KEY,
+  serializeShowDraft,
+  FIT_VIEW,
+  DEFAULT_ACTIVE,
+} from '../../shared/show-draft';
 import { embeddable } from '../../shared/show-edit';
 import { SHOW_DRAFT_DEBOUNCE_MS, ShowBuilderStore } from './show-builder.store';
 import { MY_SHELLS_PAGE_SIZE, ShowLibraryFlow } from './show-library';
@@ -56,7 +64,9 @@ describe('Show save and library flows', () => {
     ledger = [];
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(withInterceptors([httpErrorInterceptor, recorder(ledger)])),
+        provideHttpClient(
+          withInterceptors([httpErrorInterceptor, authInterceptor, recorder(ledger)]),
+        ),
         provideHttpClientTesting(),
         ShowBuilderStore,
         ShowSaveFlow,
@@ -225,6 +235,107 @@ describe('Show save and library flows', () => {
       save.save('save');
       expect(save.canWrite()).toBe(false);
       expect(ledger).toEqual([]);
+    });
+  });
+
+  describe('Phase 8: identity, If-Match and the restore refresh (schema.md §11.2, §11.4)', () => {
+    function seedDraft(source: typeof OWNED | null) {
+      const show = doneWhenShow();
+      storage.setItem(
+        SHOW_DRAFT_KEY,
+        serializeShowDraft({
+          show,
+          nextCueId: show.cues.length + 1,
+          selectedCueId: null,
+          activeShell: DEFAULT_ACTIVE,
+          view: FIT_VIEW,
+          dirty: true,
+          saved: false,
+          source,
+        }),
+      );
+    }
+
+    it('signed out: prompt; save sends nothing (A40)', () => {
+      seedDraft(OWNED);
+      const { save } = setup(ME_ANONYMOUS);
+      save.start();
+      expect(save.auth.prompt()).toBe(true);
+      save.save('update');
+      save.save('save');
+      save.replace();
+      expect(ledger).toEqual([]);
+    });
+
+    it('signed in with a restored source: exactly one GET; isOwner and name refreshed, updatedAt kept', async () => {
+      seedDraft({ ...OWNED, isOwner: false });
+      const { store, save } = setup(ME_ADA);
+      save.start();
+      expect(save.auth.refreshing()).toBe(true);
+      save.save('save');
+      http
+        .expectOne(`/api/creations/${CODE_A}`)
+        .flush(
+          creationResponse({ kind: 'show', isOwner: true, name: 'Renamed', updatedAt: 'newer' }),
+        );
+      await flush();
+      expect(save.auth.refreshing()).toBe(false);
+      expect(ledger).toEqual([`GET /api/creations/${CODE_A}`]);
+      expect(store.source()).toEqual({ ...OWNED, isOwner: true, name: 'Renamed' });
+      // start() is once only.
+      save.start();
+      expect(ledger).toHaveLength(1);
+    });
+
+    it('Update original sends If-Match; 412 then Replace: GET, then PUT with the fresh tag', async () => {
+      seedDraft(OWNED);
+      const { store, save } = setup(ME_TEST_WINDOW);
+      save.start();
+      save.save('update');
+      const put = http.expectOne(`/api/creations/${CODE_A}`);
+      expect(put.request.headers.get('If-Match')).toBe(`"${OWNED.updatedAt}"`);
+      put.flush({ message: 'x' }, { status: 412, statusText: 'x' });
+      await flush();
+      expect(save.status()?.actions).toEqual(['saveAsNew', 'replace']);
+      expect(store.source()).toEqual(OWNED);
+      save.replace();
+      expect(save.replacing()).toBe(true);
+      expect(save.saving()).toBeNull();
+      http
+        .expectOne(`/api/creations/${CODE_A}`)
+        .flush(creationResponse({ kind: 'show', updatedAt: 'fresh' }));
+      const second = http.expectOne((r) => r.method === 'PUT');
+      expect(second.request.headers.get('If-Match')).toBe('"fresh"');
+      second.flush(creationResponse({ kind: 'show', updatedAt: 'after' }));
+      await flush();
+      expect(ledger).toEqual([
+        `PUT /api/creations/${CODE_A}`,
+        `GET /api/creations/${CODE_A}`,
+        `PUT /api/creations/${CODE_A}`,
+      ]);
+      expect([save.replacing(), save.status(), store.source()?.updatedAt]).toEqual([
+        false,
+        null,
+        'after',
+      ]);
+    });
+
+    it('401: the signed-out row, one api/me reload, no retry', async () => {
+      seedDraft(OWNED);
+      const { save } = setup(ME_TEST_WINDOW);
+      save.save('saveAsNew');
+      http
+        .expectOne(`/api/creations/${CODE_A}/remix`)
+        .flush(null, { status: 401, statusText: 'x' });
+      await flush();
+      http.expectOne('/api/me').flush(ME_ANONYMOUS);
+      await flush();
+      expect(ledger).toEqual([`POST /api/creations/${CODE_A}/remix`, 'GET /api/me']);
+      expect(save.status()?.text).toBe(
+        "Couldn't save: you've been signed out. Sign in to save; your show is kept in this browser.",
+      );
+      expect(save.status()?.actions).toEqual(['signIn']);
+      expect(save.auth.prompt()).toBe(true);
     });
   });
 

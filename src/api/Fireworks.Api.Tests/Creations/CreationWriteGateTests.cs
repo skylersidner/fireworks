@@ -9,8 +9,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Fireworks.Api.Tests.Creations;
 
 /// <summary>
-/// The write gate, enumerated from the router (plan Phase 4 tests, Boo S8): every endpoint with a
-/// non-GET method, plus <c>GET api/me/creations</c>, answers 403 with writes off, given a VALID
+/// The write gate, enumerated from the router (plan Phase 4 tests, Boo S8; Phase 8 A19, A21): every
+/// endpoint with a non-GET method, plus <c>GET api/me/creations</c>, answers <b>401</b> to an
+/// anonymous caller (the fallback policy, before the limiter and the service), given a VALID
 /// body, and makes no repository call. The set comes from <see cref="EndpointDataSource"/>, not a
 /// hand-written list, so a new write action without the gate fails here. Each target is also sent
 /// every <see cref="FormBodies"/> shape, which fails if anything reads the body before the gate.
@@ -32,8 +33,14 @@ public sealed class CreationWriteGateTests
         // The SPA fallbacks ({*path:nonfile}, /s/{**rest}, /c/{**rest}) are not here: they carry GET/HEAD metadata.
     };
 
+    /// <summary>Unsafe endpoints that are anonymous on purpose, each with its reason (Boo A20).</summary>
+    private static readonly Dictionary<string, string> AnonymousWrites = new(StringComparer.Ordinal)
+    {
+        ["POST api/auth/logout"] = "always 204, idempotent (Boo A11); behind the CSRF guard"
+    };
+
     [Fact]
-    public async Task Every_write_endpoint_and_my_creations_are_403_with_writes_off_and_query_nothing()
+    public async Task Every_write_endpoint_and_my_creations_are_401_when_anonymous_and_query_nothing()
     {
         var ledger = new CallLedger();
         await using var h = await FireworksApiHarness.StartAsync(false, FireworksApiHarness.UnthrottledRateLimits,
@@ -49,6 +56,9 @@ public sealed class CreationWriteGateTests
             .SelectMany(e => (e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? [])
                 .Where(m => !HttpMethods.IsGet(m) && !HttpMethods.IsHead(m))
                 .Select(m => (Method: m, Pattern: e.RoutePattern.RawText!)))
+            .ToList();
+        Assert.Equal(AnonymousWrites.Keys, targets.Where(t => AnonymousWrites.ContainsKey($"{t.Method} {t.Pattern}")).Select(t => $"{t.Method} {t.Pattern}"));
+        targets = targets.Where(t => !AnonymousWrites.ContainsKey($"{t.Method} {t.Pattern}"))
             .Append((Method: "GET", Pattern: "api/me/creations"))
             .ToList();
         Assert.Equal(5, targets.Count); // POST create, PUT, DELETE, POST remix, GET list; never vacuous
@@ -64,9 +74,9 @@ public sealed class CreationWriteGateTests
 
             using (var response = method == "GET" || method == "DELETE"
                 ? await h.Client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path))
-                : await CreationApiHarness.SendJsonAsync(h.Client, new HttpMethod(method), path, body))
+                : await CreationApiHarness.SendJsonAsync(h.Client, new HttpMethod(method), path, body, ifMatch: "\"x\""))
             {
-                Assert.True(response.StatusCode == HttpStatusCode.Forbidden, $"{method} {path} -> {(int)response.StatusCode}");
+                Assert.True(response.StatusCode == HttpStatusCode.Unauthorized, $"{method} {path} -> {(int)response.StatusCode}");
                 Assert.Empty(ledger.Calls);
             }
 
@@ -75,8 +85,8 @@ public sealed class CreationWriteGateTests
             foreach (var form in FormBodies.All)
             {
                 ledger.Clear();
-                using var response = await CreationApiHarness.SendRawAsync(h.Client, new HttpMethod(method), path, form.Body, form.ContentType);
-                Assert.True(response.StatusCode == HttpStatusCode.Forbidden,
+                using var response = await CreationApiHarness.SendRawAsync(h.Client, new HttpMethod(method), path, form.Body, form.ContentType, ifMatch: "\"x\"");
+                Assert.True(response.StatusCode == HttpStatusCode.Unauthorized,
                     $"{method} {path} {form.Name} -> {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
                 Assert.Empty(ledger.Calls);
             }
@@ -84,7 +94,7 @@ public sealed class CreationWriteGateTests
     }
 
     [Fact]
-    public async Task With_writes_off_an_invalid_body_is_403_too_because_the_gate_comes_first()
+    public async Task Anonymous_an_invalid_body_is_401_too_because_the_policy_comes_first()
     {
         await using var h = await FireworksApiHarness.StartAsync(false, FireworksApiHarness.UnthrottledRateLimits);
 
@@ -92,21 +102,22 @@ public sealed class CreationWriteGateTests
         using var wrongType = await CreationApiHarness.SendRawAsync(h.Client, HttpMethod.Post, "/api/creations", [1, 2, 3], "text/plain");
         using var oversize = await CreationApiHarness.SendRawAsync(h.Client, HttpMethod.Post, "/api/creations", new byte[300_000]);
 
-        Assert.Equal(HttpStatusCode.Forbidden, notJson.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, wrongType.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, oversize.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, notJson.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, wrongType.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, oversize.StatusCode);
     }
 
     [Fact]
-    public async Task With_writes_off_share_code_reads_stay_public()
+    public async Task Anonymous_share_code_reads_stay_public()
     {
         await using var h = await FireworksApiHarness.StartAsync(false, FireworksApiHarness.UnthrottledRateLimits);
+        await h.SeedLegacyUserAsync();
         await using (var db = h.NewContext())
         {
             db.Creations.Add(new Fireworks.Api.Data.Entities.Creation
             {
                 Id = Guid.NewGuid(), ShareCode = "abcdefgh", Kind = Fireworks.Api.Data.Entities.CreationKind.Shell, Name = "Peony",
-                SchemaVersion = 1, Palette = ["red"], Document = CreationEndpointTests.Peony, OwnerUserId = TestIdentity.UserId
+                SchemaVersion = 1, Palette = ["red"], Document = CreationEndpointTests.Peony, OwnerUserId = TestIdentity.LegacyDefaultUserId
             });
             await db.SaveChangesAsync();
         }

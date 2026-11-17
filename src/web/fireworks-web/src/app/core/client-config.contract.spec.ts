@@ -87,8 +87,10 @@ function importers(sources: Record<string, string>, module: string): string[] {
 const TS_KEYS = Object.keys(DEFAULT_PLAYBACK).sort();
 
 describe('api/client-config contract parity (TS against C#)', () => {
-  it('the C# records carry exactly the TS keys: { playback: { four knobs } }', () => {
-    expect(recordKeys(CONTRACTS, 'ClientConfigResponse')).toEqual(['playback']);
+  it('the C# records carry exactly the TS keys: { playback: { four knobs }, loginProviders }', () => {
+    // loginProviders: [{ id, name }] (schema.md §2.8, Phase 8 B1). The TS model reads it as optional.
+    expect(recordKeys(CONTRACTS, 'ClientConfigResponse')).toEqual(['playback', 'loginProviders']);
+    expect(recordKeys(CONTRACTS, 'LoginProviderConfig')).toEqual(['id', 'name']);
     expect(recordKeys(CONTRACTS, 'ClientPlaybackConfig').sort()).toEqual(TS_KEYS);
     expect(Object.keys(PLAYBACK_LIMITS).sort()).toEqual(TS_KEYS);
     expect(TS_KEYS).toEqual([
@@ -158,9 +160,13 @@ describe('api/client-config contract parity (TS against C#)', () => {
     ).toEqual(['app.config.ts']);
     expect(importers(SOURCES, 'client-config')).toEqual([
       'core/client-config-loader.ts',
+      // `loginProviders` (Phase 8): the /mine prompt, /signin and the sign-in dialog.
+      'features/mine/pages/mine-page/mine-page.ts',
       'features/player/pages/player-page/player-page.ts',
       'features/show/pages/show-builder-page/show-builder.store.ts',
+      'pages/signin/signin-page.ts',
       'shared/fireworks-stage/fireworks-stage.ts',
+      'shared/sign-in/sign-in-dialog.ts',
     ]);
   });
 

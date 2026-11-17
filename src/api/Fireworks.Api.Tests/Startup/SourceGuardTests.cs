@@ -18,19 +18,58 @@ public sealed class SourceGuardTests
             .Select(f => (Path.GetRelativePath(RepoPaths.ApiSource, f).Replace('\\', '/'),
                 string.Join('\n', File.ReadAllLines(f).Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)))));
 
-    [Fact]
-    public void Only_the_identity_module_references_the_default_user_options_type()
+    [Theory]
+    [InlineData("DefaultUserId")]
+    [InlineData("AllowAnonymousWrites")]
+    [InlineData("DefaultUserCurrentUser")]
+    [InlineData("DefaultUserOptions")]
+    [InlineData("EnsureDefaultUserExists")]
+    public void The_interim_default_user_code_path_is_gone(string name)
     {
-        var allowed = new[]
-        {
-            "Program.cs", "Data/FireworksDbInitializer.cs",
-            "Services/Identity/DefaultUserOptions.cs", "Services/Identity/DefaultUserCurrentUser.cs",
-            "Services/Identity/IdentityRegistration.cs", "Services/Identity/ICurrentUser.cs"
-        };
-        var offenders = ApiSources().Where(s => s.Text.Contains("DefaultUserOptions") && !allowed.Contains(s.Relative)).Select(s => s.Relative).ToList();
+        // Design §3.5 / Done-when 3. The stale-config guard's message names the old variables on purpose.
+        var offenders = ApiSources()
+            .Where(s => s.Text.Contains(name, StringComparison.Ordinal) && s.Relative != "Services/Identity/AuthProviderSettings.cs")
+            .Select(s => s.Relative).ToList();
         Assert.Empty(offenders);
-        // Positive control: the scan really sees the files that do use it.
-        Assert.Contains(ApiSources(), s => s.Relative == "Program.cs" && s.Text.Contains("DefaultUserOptions"));
+    }
+
+    [Theory]
+    [InlineData("Identity__AllowAnonymousWrites")]
+    [InlineData("Identity__DefaultUserId")]
+    public void Tools_and_railway_toml_no_longer_set_the_interim_switch(string variable)
+    {
+        // Boo A34: a stale variable would now stop startup.
+        var files = Directory.GetFiles(Path.Combine(RepoPaths.Root, "tools"), "*.*", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}") && (f.EndsWith(".mjs") || f.EndsWith(".py") || f.EndsWith(".sh") || f.EndsWith(".json")))
+            .Append(Path.Combine(RepoPaths.Root, "railway.toml"))
+            .Append(Path.Combine(RepoPaths.Root, "docker-compose.yml"))
+            .Where(File.Exists)
+            .ToList();
+        var offenders = files.Where(f => File.ReadAllText(f).Contains(variable, StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoPaths.Root, f)).ToList();
+        Assert.Empty(offenders);
+        Assert.Contains(files, f => f.EndsWith("lib.mjs", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("AddCors")]
+    [InlineData("UseCors")]
+    public void There_is_no_CORS_policy_in_any_environment(string construct)
+    {
+        // Boo A14, A17: a CORS policy next to a cookie session is an antiforgery-token trigger.
+        Assert.Empty(ApiSources().Where(s => s.Text.Contains(construct, StringComparison.Ordinal)).Select(s => s.Relative));
+    }
+
+    [Fact]
+    public void The_legacy_default_user_id_appears_only_in_migrations_tests_and_the_README()
+    {
+        // Boo A24: never in configuration or startup code.
+        const string legacy = "6933f933-a9e9-443b-b7c7-6e3e01901a34";
+        Assert.Empty(ApiSources().Where(s => s.Text.Contains(legacy, StringComparison.Ordinal)).Select(s => s.Relative));
+        foreach (var file in new[] { "appsettings.json", "appsettings.Development.json" })
+        {
+            Assert.DoesNotContain(legacy, File.ReadAllText(Path.Combine(RepoPaths.ApiSource, file)));
+        }
     }
 
     [Fact]

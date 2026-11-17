@@ -97,6 +97,8 @@ Each item is **must-have** (Phase 4 doesn't pass the gate without it) or **harde
 
 ### Rate limiting
 
+> Superseded in part by boo-phase8-security-requirements.md (A30) on 2026-11-16: the partition is `u:<id>` when signed in, otherwise by IP.
+
 **S17 (must-have). Partitioning: client IP only, before Phase 8** (my Phase 1 record, item 3). The key comes from `HttpContext.Connection.RemoteIpAddress` after `UseForwardedHeaders`:
 - IPv4: the full address.
 - IPv4-mapped IPv6: map it to IPv4 first.
@@ -160,6 +162,8 @@ No `[FromBody]`, no `JsonSerializer.Deserialize` of request input anywhere. A NU
 **S27 (hardening). Logging.** Never log a request body, document, name or issue message at Information or above. Log the issue codes and count, the share code and the outcome. Names are free text (log injection, and the only user-authored content).
 
 ### Interim exposure (plan §3.4, OQ20)
+
+> Superseded in part by boo-phase8-security-requirements.md (A42) on 2026-11-16: the blast-radius text is retired with the test windows.
 
 **S28 (must-have; Bowser writes the runbook, Mario checks the README at the gate). State the blast radius wherever the URL is shared.** With `Identity__AllowAnonymousWrites=true`, **anyone who reaches the site**, not only people Skyler gives the URL to, can:
 - list every creation saved during any test window (`/mine` shows the default user's whole library);

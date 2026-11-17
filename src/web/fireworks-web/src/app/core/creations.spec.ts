@@ -49,7 +49,13 @@ describe('CreationsService', () => {
       { kind: 'shell', document: DOC },
     ],
     ['getByShareCode', (s) => s.getByShareCode(CODE), 'GET', `/api/creations/${CODE}`, null],
-    ['update', (s) => s.update(CODE, DOC), 'PUT', `/api/creations/${CODE}`, { document: DOC }],
+    [
+      'update',
+      (s) => s.update(CODE, DOC, 't0'),
+      'PUT',
+      `/api/creations/${CODE}`,
+      { document: DOC },
+    ],
     ['delete', (s) => s.delete(CODE), 'DELETE', `/api/creations/${CODE}`, null],
     ['remix', (s) => s.remix(CODE, DOC), 'POST', `/api/creations/${CODE}/remix`, { document: DOC }],
     ['listMine', (s) => s.listMine(), 'GET', '/api/me/creations', null],
@@ -67,8 +73,15 @@ describe('CreationsService', () => {
     },
   );
 
+  it('PUT sends If-Match as the token in quotes, one strong tag (schema.md §11.4)', () => {
+    service.update(CODE, DOC, '2026-11-13T21:20:26.65593+00:00').subscribe();
+    const req = http.expectOne(`/api/creations/${CODE}`);
+    expect(req.request.headers.getAll('If-Match')).toEqual(['"2026-11-13T21:20:26.65593+00:00"']);
+    req.flush(null);
+  });
+
   it('PUT and remix bodies carry no kind (it would be an unknown-property 400)', () => {
-    service.update(CODE, DOC).subscribe();
+    service.update(CODE, DOC, 't0').subscribe();
     service.remix(CODE, DOC).subscribe();
     for (const req of http.match(() => true)) {
       expect(Object.keys(req.request.body as object)).toEqual(['document']);
@@ -102,7 +115,7 @@ describe('CreationsService', () => {
   ])('a malformed code %j is a 404 with no request, on every item method', (code) => {
     const errors: unknown[] = [];
     service.getByShareCode(code).subscribe({ error: (e) => errors.push(e) });
-    service.update(code, DOC).subscribe({ error: (e) => errors.push(e) });
+    service.update(code, DOC, 't0').subscribe({ error: (e) => errors.push(e) });
     service.delete(code).subscribe({ error: (e) => errors.push(e) });
     service.remix(code, DOC).subscribe({ error: (e) => errors.push(e) });
     http.expectNone(() => true);
@@ -191,7 +204,10 @@ describe('toCreationError', () => {
   });
 
   it.each([
+    [401, { kind: 'unauthorized', status: 401 }],
     [403, { kind: 'forbidden', status: 403 }],
+    [412, { kind: 'precondition-failed', status: 412 }],
+    [428, { kind: 'precondition-required', status: 428 }],
     [404, { kind: 'not-found', status: 404 }],
     [413, { kind: 'too-large', status: 413 }],
     [0, { kind: 'network', status: 0 }],

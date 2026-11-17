@@ -8,15 +8,16 @@ GET {{Fireworks.Api_HostAddress}}/health/live
 ### "Unhealthy". Read-limited (120 a minute per IP).
 GET {{Fireworks.Api_HostAddress}}/health/ready
 
-### Current user (plan §3.4). 200 { userId, displayName, isAuthenticated: false, canWrite }.
-### canWrite is true in Development (appsettings.Development.json), false in production unless
-### Identity__AllowAnonymousWrites=true is set.
+### Current user (schema.md §2.8). Anonymous: 200 {"userId":null,"displayName":null,
+### "isAuthenticated":false,"canWrite":false,"signedInWith":null}. Signed in: your id and name,
+### true, true, "google". canWrite always equals isAuthenticated.
 GET {{Fireworks.Api_HostAddress}}/api/me
 Accept: application/json
 
 ### Client tuning knobs (Show Builder playback). Anonymous, read-limited, Cache-Control: no-store.
 ### 200 { playback: { seekBudgetMs: 25, catchingUpDelayMs: 300, checkpointIntervalSeconds: 10,
-### checkpointMemoryMiB: 64 } } from the ClientPlayback section; ClientPlayback__SeekBudgetMs=40 overrides.
+### checkpointMemoryMiB: 64 }, loginProviders: [{ id: "google", name: "Google" }] }.
+### loginProviders is [] only in Development/Testing with no Google client configured.
 GET {{Fireworks.Api_HostAddress}}/api/client-config
 Accept: application/json
 
@@ -28,24 +29,43 @@ Accept: application/json
 GET {{Fireworks.Api_HostAddress}}/designer
 
 ### ---------------------------------------------------------------------------------------------
-### Creations (Phase 4, docs/fireworks-app/schema.md §2). Development has canWrite: true. Run them in
-### order: the create request names its response, and later requests read its share code.
+### Sign-in (Phase 8). Open this one in a BROWSER, not here: it is a top-level navigation that 302s
+### to Google (or, in Development, the stub at 127.0.0.1:5190: node tools/fake-oauth/server.mjs),
+### then back to /api/auth/callback/google, which sets the session cookie and 302s to returnUrl.
+### Unknown provider ("Google", "github") is the empty 404. Rate-limited: 20 a minute per IP.
 ### ---------------------------------------------------------------------------------------------
+GET {{Fireworks.Api_HostAddress}}/api/auth/login/google?returnUrl=%2Fshow
+
+### Sign out. Always 204, with a deleting Set-Cookie. GET is the catch-all 404.
+POST {{Fireworks.Api_HostAddress}}/api/auth/logout
+
+### ---------------------------------------------------------------------------------------------
+### Creations (Phase 4, docs/fireworks-app/schema.md §2). Writes need a session: anonymous is 401.
+### Paste the session cookie from the browser (devtools → Application → Cookies: fw.session in
+### Development) into @session below. Run in order: the create request names its response.
+### Requests from this file send no Origin or Sec-Fetch-Site, so the CSRF guard lets them through.
+### ---------------------------------------------------------------------------------------------
+@session = fw.session=PASTE-FROM-BROWSER
 
 ### Create a shell. 201, Location: /api/creations/{shareCode}, body is a CreationResponse.
 # @name create
 POST {{Fireworks.Api_HostAddress}}/api/creations
 Content-Type: application/json
+Cookie: {{session}}
 
 {"kind":"shell","document":{"version":1,"name":"Peony","burstHeight":0.65,"angleJitter":4,"sky":{"gravity":160,"wind":0},"breaks":[{"pattern":"peony","stars":120,"speed":220,"color1":"red","color2":"gold","changeAt":0.65,"burn":1.6,"drag":0.9,"size":1,"trail":"none","effect":"none","delay":0.6}]}}
 
-### Read it back. Public: no identity needed. 200, isOwner true, remixedFrom null.
+### Read it back. Public: no identity needed. With your cookie: isOwner true and ETag "<updatedAt>";
+### without it: isOwner false and ETag "<updatedAt>-p". Vary: Cookie either way.
 GET {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}
 Accept: application/json
 
-### Update original (owner only). 200, same share code, newer updatedAt.
+### Update original (owner only). If-Match is required: missing → 428; anything but the current
+### strong owner tag (a stale one, *, W/"…", "…-p") → 412 with the current ETag. 200, newer updatedAt.
 PUT {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}
 Content-Type: application/json
+Cookie: {{session}}
+If-Match: "{{create.response.body.updatedAt}}"
 
 {"document":{"version":1,"name":"Big Peony","burstHeight":0.7,"angleJitter":4,"sky":{"gravity":160,"wind":0},"breaks":[{"pattern":"peony","stars":200,"speed":240,"color1":"blue","color2":"none","changeAt":0.65,"burn":1.6,"drag":0.9,"size":1,"trail":"tail","effect":"none","delay":0.6}]}}
 
@@ -53,6 +73,7 @@ Content-Type: application/json
 # @name remix
 POST {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}/remix
 Content-Type: application/json
+Cookie: {{session}}
 
 {"document":{"version":1,"name":"Peony remix","burstHeight":0.6,"angleJitter":6,"sky":{"gravity":160,"wind":-20},"breaks":[{"pattern":"ring","stars":90,"speed":200,"color1":"rainbow","color2":"none","changeAt":0.6,"burn":1.4,"drag":0.9,"size":1,"trail":"glitter","effect":"crackle","delay":0.6}]}}
 
@@ -60,17 +81,20 @@ Content-Type: application/json
 ### clamped (pageSize 1..100); kind must be exactly shell or show.
 GET {{Fireworks.Api_HostAddress}}/api/me/creations?page=1&pageSize=24&kind=shell
 Accept: application/json
+Cookie: {{session}}
 
 ### Invalid document. 400 { message, errors: [{ path, code, message }], truncated: false }:
 ### (breaks[0].stars, out-of-range) and (foo, unknown-property).
 POST {{Fireworks.Api_HostAddress}}/api/creations
 Content-Type: application/json
+Cookie: {{session}}
 
 {"kind":"shell","document":{"version":1,"name":"Peony","burstHeight":0.65,"angleJitter":4,"foo":1,"breaks":[{"pattern":"peony","stars":401,"speed":220,"color1":"red","color2":"gold","changeAt":0.65,"burn":1.6,"drag":0.9,"size":1,"trail":"none","effect":"none","delay":0.6}]}}
 
 ### Wrong content type. 415 (an explicit check, not [Consumes]; a missing Content-Type is 415 too).
 POST {{Fireworks.Api_HostAddress}}/api/creations
 Content-Type: text/plain
+Cookie: {{session}}
 
 {"kind":"shell","document":{}}
 
@@ -79,6 +103,7 @@ GET {{Fireworks.Api_HostAddress}}/api/creations/abcdefgl
 
 ### Delete (owner only). 204; a second DELETE is 404. The remix survives with remixedFrom: null.
 DELETE {{Fireworks.Api_HostAddress}}/api/creations/{{create.response.body.shareCode}}
+Cookie: {{session}}
 
 ### The remix after its source is gone. 200, remixedFrom null.
 GET {{Fireworks.Api_HostAddress}}/api/creations/{{remix.response.body.shareCode}}

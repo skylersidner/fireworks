@@ -473,6 +473,18 @@ export class ShellDesignerStore {
     this.sourceState.set(null);
   }
 
+  /**
+   * The restore refresh (schema.md §11.2 writer 4): the server's `isOwner` and `name` for the
+   * current source, **keeping `updatedAt`** (the If-Match base). Ignored for another share code.
+   */
+  refreshSource(fresh: Pick<CreationSource, 'shareCode' | 'isOwner' | 'name'>): void {
+    this.sourceState.update((current) =>
+      current && current.shareCode === fresh.shareCode
+        ? { ...current, isOwner: fresh.isOwner, name: fresh.name }
+        : current,
+    );
+  }
+
   /** Writes any pending draft now (debounce end, pagehide, page destroy). */
   flushDraft(): void {
     const json = this.pendingDraft;

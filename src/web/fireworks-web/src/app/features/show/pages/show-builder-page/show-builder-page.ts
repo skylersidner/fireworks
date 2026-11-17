@@ -55,7 +55,10 @@ import {
   type TimelineFrameHook,
 } from '../../../../shared/fireworks-stage/fireworks-stage';
 import { RangeRowComponent } from '../../../../shared/range-row';
-import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
+import { AccountControlComponent } from '../../../../shared/sign-in/account-control';
+import { watchIdentityFocus } from '../../../../shared/sign-in/identity-focus';
+import { SignInDialogComponent } from '../../../../shared/sign-in/sign-in-dialog';
+import type { SignInFrom } from '../../../../core/sign-in';
 import { ApiBannerComponent, BannerFocus } from '../../../../shared/api-banner/api-banner';
 import { readDraft } from '../../../designer/shared/designer-draft';
 import { percent, percentText, plain, windText } from '../../../../shared/formats';
@@ -186,7 +189,8 @@ interface LibraryItem {
     SaveStatusComponent,
     ScrubOverviewComponent,
     ShowTimelineComponent,
-    TestModeBannerComponent,
+    AccountControlComponent,
+    SignInDialogComponent,
   ],
   providers: [ShowBuilderStore, ShowSaveFlow, ShowLibraryFlow],
   templateUrl: './show-builder-page.html',
@@ -545,6 +549,20 @@ export class ShowBuilderPageComponent {
         { injector: this.injector },
       );
     });
+    watchIdentityFocus({
+      injector: this.injector,
+      host: this.host.nativeElement,
+      returned: this.saveFlow.auth.returned,
+      barKey: computed(
+        () =>
+          `${this.saveFlow.auth.refreshing()}|${this.saveFlow.auth.prompt()}|${this.saveFlow.choices().join(',')}`,
+      ),
+      busy: computed(() => this.saveFlow.saving() !== null || this.saveFlow.replacing()),
+      flashNoticeVisible: this.store.flashNoticeVisible,
+      heading: () => this.byTest('panel-heading'),
+    });
+    // After any `/c/` working copy is applied: the return marker and the restore refresh.
+    this.saveFlow.start();
     // Stage size, for the selected cue's marker (§8.2).
     afterNextRender(() => {
       const el = this.stageBox()?.nativeElement;
@@ -1203,9 +1221,20 @@ export class ShowBuilderPageComponent {
     );
   }
 
+  /** The sign-in dialog's variant while it is open (phase-8.md §5.3). */
+  protected readonly signInDialog = signal<SignInFrom | null>(null);
+
+  protected openSignIn(variant: SignInFrom): void {
+    this.signInDialog.set(variant);
+  }
+
   protected onStatusAction(action: SaveStatusAction): void {
     if (action === 'reload') location.reload();
     else if (action === 'retry') this.saveFlow.retry();
+    else if (action === 'signIn') this.openSignIn('save');
+    else if (action === 'replace') this.saveFlow.replace();
+    // 412: Save as new is the remix (phase-8.md §9.2); after a PUT 404 the source is gone.
+    else if (this.saveFlow.choices().includes('saveAsNew')) this.saveFlow.save('saveAsNew');
     else this.saveFlow.save('save');
   }
 
@@ -1365,8 +1394,8 @@ export class ShowBuilderPageComponent {
    * commits first, through its own blur/change commit and notes, so its value is in the save.
    */
   private onSaveShortcut(event: KeyboardEvent, el: Element | null): void {
-    if (!this.saveFlow.canWrite()) return;
-    if (!this.store.pending() && this.saveFlow.saving() === null) {
+    if (!this.saveFlow.canWrite() && !this.saveFlow.auth.prompt()) return;
+    if (!this.store.pending() && !this.saveFlow.busy()) {
       const id = el instanceof HTMLInputElement ? el.dataset['testid'] : undefined;
       if (id === 'show-duration') this.commitDuration(el as HTMLInputElement);
       else if (id === 'inspector-t') this.commitLaunch(el as HTMLInputElement);
@@ -1374,15 +1403,17 @@ export class ShowBuilderPageComponent {
     }
     const outcome = saveShortcut({
       canWrite: this.saveFlow.canWrite(),
-      dialogOpen: this.store.pending() !== null,
-      saving: this.saveFlow.saving() !== null,
+      prompt: this.saveFlow.auth.prompt(),
+      dialogOpen: this.store.pending() !== null || this.signInDialog() !== null,
+      saving: this.saveFlow.busy(),
       saved: this.store.saved(),
       cannotSave: this.saveFlow.cannotSave(),
       choices: this.saveFlow.choices(),
     });
     if (outcome.kind === 'pass') return;
     event.preventDefault();
-    if (outcome.kind === 'save') this.save(outcome.choice);
+    if (outcome.kind === 'prompt') this.openSignIn('save');
+    else if (outcome.kind === 'save') this.save(outcome.choice);
     else if (outcome.kind === 'announce') this.store.announcement.set(outcome.text);
     else if (outcome.kind === 'choose') {
       this.byTest('save-update')?.focus();

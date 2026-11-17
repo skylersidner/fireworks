@@ -8,6 +8,7 @@ import {
 
 const base: SaveShortcutState = {
   canWrite: true,
+  prompt: false,
   dialogOpen: false,
   saving: false,
   saved: false,
@@ -22,6 +23,19 @@ describe('saveShortcut (Ctrl/⌘+S)', () => {
     expect(saveShortcut({ ...base, canWrite: false, choices: ['update', 'saveAsNew'] })).toEqual({
       kind: 'pass',
     });
+  });
+
+  it('signed out with a bar (phase-8.md §5.5): opens the sign-in dialog, after dialog and saving', () => {
+    const out = { ...base, canWrite: false, prompt: true };
+    expect(saveShortcut(out)).toEqual({ kind: 'prompt' });
+    expect(saveShortcut({ ...out, choices: ['update', 'saveAsNew'] })).toEqual({ kind: 'prompt' });
+    expect(saveShortcut({ ...out, saved: true })).toEqual({ kind: 'prompt' });
+    expect(saveShortcut({ ...out, dialogOpen: true })).toEqual({ kind: 'hold' });
+    expect(saveShortcut({ ...out, saving: true })).toEqual({ kind: 'hold' });
+    // An empty show stays unsaveable signed out: its note, no dialog (§5.1).
+    expect(saveShortcut({ ...out, cannotSave: 'x' })).toEqual({ kind: 'announce', text: 'x' });
+    // canWrite wins over a stale prompt flag.
+    expect(saveShortcut({ ...base, prompt: true })).toEqual({ kind: 'save', choice: 'save' });
   });
 
   it('a dialog open or a save in flight: held, nothing announced', () => {

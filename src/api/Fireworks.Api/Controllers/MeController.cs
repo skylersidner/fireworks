@@ -1,6 +1,7 @@
 using Fireworks.Api.Contracts;
 using Fireworks.Api.Services;
 using Fireworks.Api.Services.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -9,7 +10,9 @@ namespace Fireworks.Api.Controllers;
 [ApiController]
 public sealed class MeController(IMeService meService) : ControllerBase
 {
+    /// <summary>Anonymous (Boo A20): it answers "nobody" rather than 401.</summary>
     [HttpGet("api/me")]
+    [AllowAnonymous]
     [EnableRateLimiting(FireworksRateLimiting.ReadPolicy)]
     public async Task<ActionResult<MeResponse>> Get(CancellationToken cancellationToken)
     {

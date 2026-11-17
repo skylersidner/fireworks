@@ -21,9 +21,13 @@ public sealed class ClientConfigStartupTests
         {
             ["ASPNETCORE_ENVIRONMENT"] = "Production",
             ["ASPNETCORE_URLS"] = $"http://127.0.0.1:{ApiProcess.FreeLoopbackPort()}",
-            ["ConnectionStrings__Postgres"] = UnreachablePostgres,
-            ["Identity__DefaultUserId"] = TestIdentity.UserId.ToString()
+            ["ConnectionStrings__Postgres"] = UnreachablePostgres
         };
+        foreach (var (key, value) in TestIdentity.ProductionGoogleEnvironment)
+        {
+            environment[key] = value;
+        }
+
         foreach (var (key, value) in playback)
         {
             environment[$"ClientPlayback__{key}"] = value;

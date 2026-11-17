@@ -65,10 +65,14 @@ Each item has a verification method that Toad (or I) can run after implementatio
   - A 403 is followed by exactly one `GET api/me` and no further writes.
   - A 429 is the single write, with nothing after it.
 
+> Superseded by boo-phase8-security-requirements.md (A40) on 2026-11-16: write requests need `canWrite`, and a signed-out Save only opens the sign-in prompt.
+
 **C9 (must-have). Write controls need `session.canWrite()`, never `isOwner` alone.** Update original needs `canWrite && source.isOwner`. Delete on `/mine` needs `canWrite`. With `canWrite` false, no Save, Update, Delete or "Save as new" control renders anywhere, including the player, even though every interim response says `isOwner: true`. `/mine` makes no call in that state (plan §3.4).
 - *Verify:* a spec with `me.canWrite: false` and a response with `isOwner: true` finds no write control in the DOM, zero write requests and zero `GET api/me/creations`. Running app, Production with writes off: the player shows only Remix, and the designer has no Save.
 
 ### Share-link exposure
+
+> Superseded in part by boo-phase8-security-requirements.md (A43) on 2026-11-16: `remixedFrom` renders on the player only, when signed in and owner.
 
 **C10 (must-have). `remixedFrom` is not rendered anywhere in Phase 5** (player, `/mine`, designer, toasts). It stays in the model, and no template or copy function reads it.
 - *Why:* the accepted interim exposure is an API field. Rendering it would put the original's unlisted code, or a link to it, in front of every viewer of every remix link and into their screenshots. A "Remixed from" UI, if wanted, needs `isAuthenticated && isOwner` and waits for Phase 8. That is a question for Skyler, not a Phase 5 default.
@@ -93,6 +97,8 @@ Each item has a verification method that Toad (or I) can run after implementatio
 - *Verify:* grep `console.` in new Phase 5 files and expect no `name` or `document` arguments.
 
 ### Interim exposure (plan §3.4, S28)
+
+> Superseded by boo-phase8-security-requirements.md (A42) on 2026-11-16: the test-mode banner is removed, replaced by the `canWrite == isAuthenticated` invariant.
 
 **C17 (must-have; promotes S28's hardening bullet now that Save UI ships). Show a test-mode banner when `canWrite && !isAuthenticated`.** It appears on every page that shows a write control (designer, player, `/mine`). Rosalina writes the copy, which must say that anyone who can reach the site can change or delete every saved creation and that a share link can be changed to play something else.
 - *Verify:* a spec with `{canWrite: true, isAuthenticated: false}` shows the banner on all three pages. `{canWrite: false}` and `{canWrite: true, isAuthenticated: true}` (the Phase 8 shape) show none. Running app with writes on: the banner is visible.

@@ -177,7 +177,8 @@ public sealed class ETagTests
     [Fact]
     public async Task A_conditional_GET_is_still_rate_limited()
     {
-        await using var h = await StartAsync(readsPerMinute: 2);
+        // 3: the sign-in helper's api/me spends one.
+        await using var h = await StartAsync(readsPerMinute: 3);
         var code = await ResponseHeaderTests.CreateAsync(h.Client);
         using var first = await GetAsync(h, code);
         using var second = await GetAsync(h, code, ETagOf(first));
@@ -187,22 +188,5 @@ public sealed class ETagTests
 
         Assert.Equal(HttpStatusCode.TooManyRequests, third.StatusCode);
         Assert.Equal("no-store", HeaderExpectations.CacheControl(third));
-    }
-
-    /// <summary>No If-Match before Phase 8 (Skyler Q7.4): a stale precondition doesn't stop the PUT.</summary>
-    [Fact]
-    public async Task If_Match_is_ignored()
-    {
-        await using var h = await StartAsync();
-        var code = await ResponseHeaderTests.CreateAsync(h.Client);
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/creations/{code}")
-        {
-            Content = new StringContent($"{{\"document\":{CreationEndpointTests.Peony}}}", System.Text.Encoding.UTF8, "application/json")
-        };
-        request.Headers.TryAddWithoutValidation("If-Match", "\"1999-01-01T00:00:00+00:00\"");
-
-        using var response = await h.Client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

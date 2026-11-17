@@ -20,7 +20,7 @@ namespace Fireworks.Api.Tests.Support;
 internal sealed class ApiProcess : IAsyncDisposable
 {
     private static readonly string[] ScrubbedPrefixes =
-        ["ASPNETCORE_", "DOTNET_ENVIRONMENT", "DOTNET_URLS", "ConnectionStrings__", "Identity__", "Cors__", "RateLimiting__", "RateLimits__", "ClientPlayback__"];
+        ["ASPNETCORE_", "DOTNET_ENVIRONMENT", "DOTNET_URLS", "ConnectionStrings__", "Identity__", "Auth__", "Cors__", "RateLimiting__", "RateLimits__", "ClientPlayback__"];
 
     private readonly Process process;
     private readonly StringBuilder output = new();

@@ -1,4 +1,4 @@
-import { HttpClient, HttpContext } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -27,16 +27,17 @@ export class ApiService {
     );
   }
 
+  /** `headers` carries `If-Match` for Update original (schema.md §11.4). */
   put<TRequest, TResponse>(
     path: string,
     body: TRequest,
     context?: HttpContext,
+    headers?: HttpHeaders,
   ): Observable<TResponse> {
-    return this.httpClient.put<TResponse>(
-      this.toUrl(path),
-      body,
-      context ? { context } : undefined,
-    );
+    return this.httpClient.put<TResponse>(this.toUrl(path), body, {
+      ...(context ? { context } : {}),
+      ...(headers ? { headers } : {}),
+    });
   }
 
   delete(path: string, context?: HttpContext): Observable<void> {

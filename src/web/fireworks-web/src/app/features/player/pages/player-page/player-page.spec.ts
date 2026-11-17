@@ -337,13 +337,34 @@ describe('Player /s/:code', () => {
       expect(ledger).toEqual([`GET /api/creations/${CODE_A}`, `GET /api/creations/${CODE_A}`]);
     });
 
+    it('no test-mode banner in any state (Boo A42)', async () => {
+      const { root } = await play(creationResponse(), { me: ME_TEST_WINDOW });
+      expect(root.querySelector('[data-testid="test-mode-banner"]')).toBeNull();
+      expect(root.textContent).not.toMatch(/Test mode/);
+    });
+
+    it('signed in and the owner: "Remixed from the original", a /s/ link (Boo A43; phase-8.md §10)', async () => {
+      const { byTest } = await play(creationResponse({ isOwner: true, remixedFrom: CODE_C }), {
+        me: ME_SIGNED_IN,
+      });
+      const link = byTest('player-remixed-from')!;
+      expect(link.textContent?.trim()).toBe('the original');
+      expect(link.getAttribute('href')).toBe(`/s/${CODE_C}`);
+      expect(link.parentElement?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Fireworks Sandbox · Remixed from the original',
+      );
+    });
+
     it.each([
-      ['writes on, not signed in', ME_TEST_WINDOW, true],
-      ['writes off', ME_READ_ONLY, false],
-      ['signed in', ME_SIGNED_IN, false],
-    ])('test-mode banner, %s → %s (Boo C17)', async (_n, me, shown) => {
-      const { byTest } = await play(creationResponse(), { me });
-      expect(!!byTest('test-mode-banner')).toBe(shown);
+      ['anonymous with a stubbed isOwner: true', ME_TEST_WINDOW, true, CODE_C],
+      ['signed in, not the owner', ME_SIGNED_IN, false, CODE_C],
+      ['signed in, the owner, a malformed code', ME_SIGNED_IN, true, '../me'],
+      ['signed in, the owner, no original', ME_SIGNED_IN, true, null],
+    ])('%s: no "Remixed from"', async (_n, me, isOwner, remixedFrom) => {
+      const { root } = await play(creationResponse({ isOwner, remixedFrom }), { me });
+      expect(root.querySelector('[data-testid="player-remixed-from"]')).toBeNull();
+      expect(root.textContent).not.toContain('Remixed from');
+      if (remixedFrom) expect(root.innerHTML).not.toContain(remixedFrom);
     });
   });
 

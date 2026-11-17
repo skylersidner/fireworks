@@ -5,7 +5,10 @@
 // Usage: BASE=http://localhost:5180 [CODES='{"shell":"..","show":".."}' | CODES_FILE=codes.json]
 //        [ENGINES=chromium] [NEG=1] node gate-keyboard.mjs
 //   ENGINES: chromium by default (Skyler 2026-11-15: regular runs and the gate use one browser);
-//            the daily run may pass chromium,firefox,webkit.
+//            the daily run may pass chromium,firefox,webkit. Per engine: clipboard permissions are
+//            granted in Chromium only; WebKit walks with Option+Tab (macOS plain Tab skips links and
+//            buttons). The scrollable panels carry tabindex="-1" (phase-8.md §12.5), so no engine
+//            adds a panel tab stop; one is a failure like any other stray stop.
 //   NEG=focus: control for the focus-recovery checks (kind "focus"). The init script makes
 //          HTMLElement.prototype.focus a no-op for the app (every programmatic recovery stops) and
 //          mirrors aria-disabled="true" onto native `disabled` (the pre-K5/K9 defect).
@@ -19,7 +22,7 @@
 // Exit 0 when every check passes (NEG: when every check fails). Writes keyboard-<engine>.json with
 // each page's walk order for the §3.1 comparison.
 import { chromium, firefox, webkit } from 'playwright';
-import { loadCodes, outPath } from './lib/common.mjs';
+import { SAVE_SUBJECT, loadCodes, outPath, signInContext } from './lib/common.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +41,25 @@ const engines = {
 const only = (process.env.ENGINES ?? 'chromium').split(',');
 
 const results = [];
+// The engine under test (set per launch in the loop at the bottom).
+let ENGINE = '';
+// WebKit on macOS: plain Tab moves only between text fields and selects (the "Press Tab to highlight
+// each item" system setting is off by default); Option+Tab moves through every control.
+const tabKey = () => (ENGINE === 'webkit' ? 'Alt+Tab' : 'Tab');
+// No known engine tab stops (phase-8.md §12.5, Rosalina R12): the panels are tabindex="-1", so
+// Firefox's scrollable-container stop is gone. NOTE lines stay for any future engine difference.
+const notes = [];
+function note(name, detail) {
+  if (notes.some((n) => n.name === name)) return;
+  notes.push({ name, detail });
+  console.log(`NOTE ${name} :: ${detail}`);
+}
+/** Signs ctx in as the SAVE codes' owner; in WebKit (no Secure cookie on http, probe P3) notes the skip. */
+async function signedIn(ctx, part) {
+  if (ENGINE === 'webkit') { note(`${part} skipped in webkit`, 'needs a session, and WebKit stores no Secure cookie on http (probe P3; phase-8-auth.md)'); return false; }
+  await signInContext(ctx, BASE, SAVE_SUBJECT);
+  return true;
+}
 // Every §3.1 control the walks list (NEG=walk pulls these out of the Tab order).
 const LISTED = ['nav-show', 'nav-mine', 'launch', 'replay', 'clear', 'add-break', 'json-copy', 'json-apply', 'json-text', 'skip-link', 'nav-designer', 'new-show', 'show-name', 'show-duration', 'play', 'back-to-start', 'scrub', 'zoom-out', 'zoom-fit', 'zoom-in', 'add-cue', 'toolbar-delete', 'undo', 'redo', 'timeline', 'mine-retry', 'mine-more', 'player-remix', 'player-replay', 'card-open', 'card-play', 'card-share', 'card-delete', 'back-to-designer', 'message-home', 'mine-error-retry'];
 // kind: 'focus' (programmatic recovery), 'walk' (native Tab), 'nat' (no move needed), 'pre' (setup).
@@ -169,7 +191,7 @@ async function tabWalk(page, label, mustReach) {
   const steps = [];
   let bodySteps = 0, invisible = 0, outOfOrder = 0;
   for (let i = 0; i < dom.length; i++) {
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(tabKey());
     const s = await page.evaluate((i) => {
       const el = document.activeElement;
       const cs = el && el !== document.body ? getComputedStyle(el) : null;
@@ -221,6 +243,10 @@ async function designer(browser, walks) {
   await page.goto(BASE + '/');
   await present(page, '[data-testid="add-break"]');
   await stageRunning(page);
+  // The preview loop's first launch enables Replay last (stats seed). Settle it before the walk
+  // reads the DOM: in slower engines it flipped mid-walk, and every later step was off by one.
+  const replayOn = await until(page, () => document.querySelector('[data-testid="replay"]')?.disabled === false, null, 15000);
+  check('/ Replay last is enabled (preview loop launched) before the walk', !!replayOn, '', 'pre');
   walks.push(await tabWalk(page, '/', ['nav-show', 'nav-mine', 'launch', 'replay', 'clear', 'add-break', 'json-copy', 'json-apply', 'json-text']));
 
   // K1: start from one break.
@@ -259,7 +285,7 @@ async function builderFresh(browser, walks) {
   await stageRunning(page);
   // 7g.2 / K8: first Tab = the skip link, visible once focused; Enter → Play; no scroll.
   await page.evaluate(() => { const s = document.createElement('span'); s.tabIndex = -1; document.body.prepend(s); window.__focus.call(s); s.addEventListener('blur', () => s.remove(), { once: true }); });
-  await page.keyboard.press('Tab');
+  await page.keyboard.press(tabKey());
   const skip = await page.evaluate(() => {
     const el = document.activeElement;
     const r = el.getBoundingClientRect();
@@ -388,6 +414,8 @@ async function builderK9(browser, walks) {
     if (p.status !== 200) return route.fulfill({ status: p.status, contentType: 'application/problem+json', body: JSON.stringify({ status: p.status, title: 'toad' }) });
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: p.items, page: p.page, pageSize: 24, totalCount: p.total }) });
   });
+  // Phase 8 (A44): signed out, My shells makes no list call at all, so the routed list needs a session.
+  if (!(await signedIn(ctx, 'K9 My shells'))) { await ctx.close(); return; }
   const page = await ctx.newPage();
   await page.goto(BASE + '/show');
   const retry = await present(page, '[data-testid="mine-retry"]', 20000);
@@ -468,7 +496,10 @@ async function player(browser, walks) {
 async function mine(browser, walks) {
   // Walk, then K7 (toast ×) with two Share toasts.
   const ctx = await newCtx(browser);
-  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  // Firefox and WebKit reject these permission names (gate-roundtrip.mjs grants them the same way).
+  if (ENGINE === 'chromium') await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  // Phase 8: /mine lists only the signed-in account's creations; the SAVE codes belong to SAVE_SUBJECT.
+  if (!(await signedIn(ctx, '/mine'))) { await ctx.close(); return; }
   const page = await ctx.newPage();
   await page.goto(BASE + '/mine');
   const card = await present(page, '[data-testid="mine-card"]', 20000);
@@ -501,6 +532,7 @@ async function mine(browser, walks) {
     await new Promise((r) => setTimeout(r, 800));
     return route.continue();
   });
+  await signInContext(ctx2, BASE, SAVE_SUBJECT);
   const p2 = await ctx2.newPage();
   await p2.goto(BASE + '/mine');
   const err = await present(p2, '[data-testid="mine-error-retry"]', 20000);
@@ -542,6 +574,7 @@ let launchFail = 0;
 for (const name of only) {
   let browser;
   try { browser = await engines[name](); } catch (e) { console.log(name, 'LAUNCH FAIL', e.message.split('\n')[0]); launchFail++; continue; }
+  ENGINE = name;
   console.log(`== ${name} ${NEG ? '(NEG)' : ''} ${BASE}`);
   const walks = [];
   const sections = process.env.SECTIONS?.split(','); // e.g. SECTIONS=builderFresh,builderK9 (dev only; the gate runs all)
@@ -554,6 +587,7 @@ for (const name of only) {
 const passed = results.filter((r) => r.pass).length;
 const failed = results.length - passed;
 const nat = results.filter((r) => r.kind === 'nat').map((r) => r.name);
+if (notes.length) console.log(`${notes.length} known engine difference(s), not counted as failures: ${notes.map((n) => n.name).join(' | ')}`);
 if (NEG) {
   const target = results.filter((r) => r.kind === NEG);
   const survivors = target.filter((r) => r.pass);

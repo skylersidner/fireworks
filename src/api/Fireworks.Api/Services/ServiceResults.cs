@@ -26,7 +26,17 @@ public enum ServiceErrorType
     UnsupportedMediaType,
 
     /// <summary>413: the body is over the endpoint's limit (schema.md §2.5).</summary>
-    PayloadTooLarge
+    PayloadTooLarge,
+
+    /// <summary>428: a PUT without <c>If-Match</c> (schema.md §11.4). A header check, before the body.</summary>
+    PreconditionRequired,
+
+    /// <summary>
+    /// 412: the owner's PUT carried a tag that isn't the current one (or can never match: <c>*</c>,
+    /// a list, a weak or <c>-p</c> tag, an unparseable one). Only after the owner-filtered 404, so
+    /// a non-owner never sees it. <see cref="ServiceError.CurrentUpdatedAt"/> carries the current tag.
+    /// </summary>
+    PreconditionFailed
 }
 
 /// <summary>
@@ -34,7 +44,9 @@ public enum ServiceErrorType
 /// controller then writes <c>{ message, errors, truncated }</c> (<c>ValidationErrorResponse</c>,
 /// capped at 100 issues) instead of <c>{ message }</c>.
 /// </summary>
-public sealed record ServiceError(ServiceErrorType Type, string Message, IReadOnlyList<ValidationIssue>? Issues = null);
+/// <paramref name="CurrentUpdatedAt"/> is set only for <see cref="ServiceErrorType.PreconditionFailed"/>: the row's current tag.
+public sealed record ServiceError(
+    ServiceErrorType Type, string Message, IReadOnlyList<ValidationIssue>? Issues = null, DateTimeOffset? CurrentUpdatedAt = null);
 
 public sealed class ServiceResult<T>
 {

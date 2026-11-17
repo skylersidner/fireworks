@@ -29,12 +29,14 @@ namespace Fireworks.Api.Tests.Controllers;
 /// <b>Not <c>Program.cs</c> itself</b> — that needs Npgsql and migrations (the real Program is
 /// exercised as a child process by <c>ProgramStartupTests</c> and, on Postgres,
 /// <c>ProgramOnPostgresTests</c>). This host repeats the Program.cs calls that shape a response:
-/// <c>AddFireworksIdentity</c> and <c>AddFireworksClientConfig</c> over configuration (so identity and the client knobs bind exactly as the app binds them),
+/// <c>AddFireworksIdentity</c> (the cookie session, the Google handler pointed at a per-harness
+/// <see cref="StubOAuthProvider"/>, the fallback policy, DataProtection keys in the SQLite database)
+/// and <c>AddFireworksClientConfig</c> over configuration,
 /// <c>AddProblemDetails</c>, <c>AddFireworksControllers</c> (default JSON options, no form value providers), health checks,
 /// <c>AddFireworksRateLimiting</c> over configuration, <c>UseFireworksResponseHeaders</c>,
 /// <c>UseExceptionHandler</c>, <c>UseFireworksStaticFiles</c> with one shared <c>StaticFileOptions</c>,
-/// explicit routing, <c>UseRateLimiter</c>, <c>MapFireworksHealthChecks</c>, the <c>/api/{**rest}</c>
-/// 404 and <c>MapFireworksSpaFallback</c> — in Program.cs order. Because it re-implements the pipeline, <c>ProgramOnPostgresTests</c> repeats the
+/// explicit routing, <c>UseFireworksIdentity</c>, <c>UseRateLimiter</c>, <c>MapFireworksHealthChecks</c>,
+/// <c>MapFireworksApiNotFound</c> and <c>MapFireworksSpaFallback</c> — in Program.cs order. Because it re-implements the pipeline, <c>ProgramOnPostgresTests</c> repeats the
 /// load-bearing checks (creations round trip, the limiter) against the real Program. Development-only and Production-only steps (CORS, HTTPS
 /// redirection, Swagger, forwarded headers) are left out; none of them changes a response body.
 /// </para>
@@ -51,9 +53,28 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
     private SqliteConnection keepAlive = null!;
     private TempWebRoot webRoot = null!;
     private WebApplication app = null!;
+    private readonly List<SessionClient> sessions = [];
 
     public string ConnectionString { get; private set; } = null!;
+
+    /// <summary>
+    /// The default client: signed in as <see cref="TestIdentity.Owner"/> when the harness was started
+    /// with <c>signedIn: true</c> (its own cookie jar, <see cref="Owner"/>), otherwise anonymous.
+    /// </summary>
     public HttpClient Client { get; private set; } = null!;
+
+    /// <summary>Always anonymous: no cookies, no redirects followed.</summary>
+    public HttpClient AnonymousClient { get; private set; } = null!;
+
+    /// <summary>The signed-in default session, or null when started anonymous.</summary>
+    public SessionClient? Owner { get; private set; }
+
+    /// <summary>The signed-in default user's id (throws when started anonymous).</summary>
+    public Guid OwnerUserId => Owner?.UserId ?? throw new InvalidOperationException("The harness was started anonymous.");
+
+    public StubOAuthProvider Stub { get; private set; } = null!;
+
+    public Uri BaseAddress => new(app.Urls.Single());
 
     /// <summary>Rate limits high enough that no functional test is ever throttled by accident.</summary>
     public static readonly IReadOnlyDictionary<string, string?> UnthrottledRateLimits = new Dictionary<string, string?>
@@ -68,8 +89,6 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
     /// <summary>The temporary wwwroot; tests drop extra files (hashed bundles, a favicon) into it.</summary>
     public string WebRootPath => webRoot.Path;
 
-    /// <param name="allowAnonymousWrites">The interim write switch, bound through configuration exactly as the app binds it.</param>
-    /// <param name="configuration">Extra configuration (rate limits); the production defaults apply to anything not given.</param>
     /// <summary>
     /// Test-only: a request carrying this header gets it as <c>Connection.RemoteIpAddress</c>, so
     /// rate-limit partitions can be tested from one loopback client. Set directly on the connection,
@@ -85,23 +104,29 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
     /// </summary>
     public const string TestSchemeHeader = "X-Test-Scheme";
 
-    /// <param name="allowAnonymousWrites">The interim write switch, bound through configuration exactly as the app binds it.</param>
+    /// <param name="signedIn">Sign <see cref="Client"/> in through the stub as <see cref="TestIdentity.Owner"/>.</param>
     /// <param name="configuration">Extra configuration (rate limits); the production defaults apply to anything not given.</param>
     /// <param name="configureServices">Test-only replacements, applied after the app's registrations (e.g. a recording repository).</param>
     /// <param name="clientIpOverride">Honor <see cref="TestClientIpHeader"/>.</param>
     /// <param name="schemeOverride">Honor <see cref="TestSchemeHeader"/>.</param>
     /// <param name="environmentName">The host environment ("Testing" unless a test is about Development-only behaviour).</param>
     /// <param name="registerResponseHeaders">False only for the negative control that shows the header tests see the middleware.</param>
+    /// <param name="withGoogle">False: no Google client configured (Development and Testing allow it; <c>loginProviders: []</c>).</param>
+    /// <param name="loggerProvider">A capturing logger (Boo A39); otherwise no logging.</param>
     public static async Task<FireworksApiHarness> StartAsync(
-        bool allowAnonymousWrites = false,
+        bool signedIn = false,
         IReadOnlyDictionary<string, string?>? configuration = null,
         Action<IServiceCollection>? configureServices = null,
         bool clientIpOverride = false,
         bool schemeOverride = false,
         string environmentName = "Testing",
-        bool registerResponseHeaders = true)
+        bool registerResponseHeaders = true,
+        bool withGoogle = true,
+        Microsoft.Extensions.Logging.ILoggerProvider? loggerProvider = null,
+        bool registerIdentityPipeline = true)
     {
         var harness = new FireworksApiHarness();
+        harness.Stub = await StubOAuthProvider.StartAsync();
         harness.ConnectionString = $"DataSource=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
         harness.keepAlive = new SqliteConnection(harness.ConnectionString);
         await harness.keepAlive.OpenAsync();
@@ -117,13 +142,29 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
             WebRootPath = harness.webRoot.Path
         });
         builder.Logging.ClearProviders();
-        builder.Configuration.AddInMemoryCollection(TestIdentity.Configuration(allowAnonymousWrites));
+        if (loggerProvider is not null)
+        {
+            builder.Logging.AddProvider(loggerProvider);
+            builder.Logging.SetMinimumLevel(LogLevel.Trace);
+        }
+
+        if (withGoogle && (environmentName is "Testing" or "Development"))
+        {
+            builder.Configuration.AddInMemoryCollection(harness.Stub.Configuration);
+        }
+        else if (environmentName is not ("Testing" or "Development"))
+        {
+            // Production refuses the stub (Boo A33): a real-shaped client, no overrides. Nothing can sign in.
+            builder.Configuration.AddInMemoryCollection(TestIdentity.ProductionGoogleEnvironment
+                .ToDictionary(kv => kv.Key.Replace("__", ":"), kv => (string?)kv.Value));
+        }
+
         if (configuration is not null)
         {
             builder.Configuration.AddInMemoryCollection(configuration);
         }
 
-        builder.Services.AddFireworksIdentity(builder.Configuration);
+        builder.Services.AddFireworksIdentity(builder.Configuration, builder.Environment);
         builder.Services.AddFireworksClientConfig(builder.Configuration);
         builder.Services.AddFireworksHealthChecks();
         builder.Services.AddProblemDetails();
@@ -174,24 +215,75 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
         var staticFileOptions = SpaHosting.CreateStaticFileOptions();
         harness.app.UseFireworksStaticFiles(staticFileOptions);
         harness.app.UseRouting();
+        if (registerIdentityPipeline)
+        {
+            harness.app.UseFireworksIdentity();
+        }
+
         harness.app.UseRateLimiter();
 
         await using (var setup = harness.NewContext())
         {
+            // No seeding since Phase 8: users are provisioned on first sign-in.
             await setup.Database.EnsureCreatedAsync();
-            // The same seeding call FireworksDbInitializer makes after MigrateAsync.
-            await FireworksDbInitializer.EnsureDefaultUserExistsAsync(setup, TestIdentity.Options(allowAnonymousWrites));
         }
 
         harness.app.MapFireworksHealthChecks();
         harness.app.MapControllers();
-        harness.app.Map("/api/{**rest}", () => Results.NotFound()).RequireRateLimiting(FireworksRateLimiting.ReadPolicy);
+        harness.app.MapFireworksApiNotFound();
         harness.app.MapFireworksSpaFallback(staticFileOptions);
         await harness.app.StartAsync();
 
         // Port 0 asks the OS for a free port; after start, Urls holds the one Kestrel bound.
-        harness.Client = new HttpClient { BaseAddress = new Uri(harness.app.Urls.Single()) };
+        harness.AnonymousClient = new HttpClient(new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false })
+        {
+            BaseAddress = harness.BaseAddress
+        };
+        harness.Client = harness.AnonymousClient;
+        if (signedIn)
+        {
+            harness.Owner = await harness.SignInAsync(TestIdentity.Owner);
+            harness.Client = harness.Owner.Http;
+        }
+
         return harness;
+    }
+
+    /// <summary>A fresh, anonymous browser-shaped client with its own jar.</summary>
+    public SessionClient NewSession()
+    {
+        var session = new SessionClient(BaseAddress);
+        sessions.Add(session);
+        return session;
+    }
+
+    /// <summary>A new session signed in through the stub as <paramref name="subject"/>; throws unless the sign-in completed.</summary>
+    public async Task<SessionClient> SignInAsync(string subject)
+    {
+        var session = NewSession();
+        var result = await session.SignInAsync(subject);
+        if (session.UserId == Guid.Empty && session.HasSession)
+        {
+            // A host whose api/me is replaced (a forced-500 test double): read the provisioned row.
+            await using var db = NewContext();
+            session.UserId = await db.Users.Where(u => u.ExternalSubject == subject).Select(u => u.Id).SingleAsync();
+        }
+
+        if (session.UserId == Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                $"Sign-in as {subject} did not complete: {(int)result.Callback.StatusCode} {result.Location}; stub token failures: {string.Join(", ", Stub.TokenFailures)}");
+        }
+
+        return session;
+    }
+
+    /// <summary>Inserts the pre-Phase 8 default user's row (no external identity), as an old local database has it.</summary>
+    public async Task SeedLegacyUserAsync()
+    {
+        await using var db = NewContext();
+        db.Users.Add(new Fireworks.Api.Data.Entities.User { Id = TestIdentity.LegacyDefaultUserId, DisplayName = "Default user" });
+        await db.SaveChangesAsync();
     }
 
     public FireworksDbContext NewContext() =>
@@ -199,7 +291,13 @@ internal sealed class FireworksApiHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        Client.Dispose();
+        foreach (var session in sessions)
+        {
+            session.Dispose();
+        }
+
+        AnonymousClient.Dispose();
+        await Stub.DisposeAsync();
         await app.StopAsync();
         await app.DisposeAsync();
         await keepAlive.DisposeAsync();

@@ -40,8 +40,10 @@ public static class HealthEndpoints
     public static WebApplication MapFireworksHealthChecks(this WebApplication app)
     {
         app.MapHealthChecks(LivePath, new HealthCheckOptions { Predicate = _ => false })
+            .AllowAnonymous()
             .DisableRateLimiting();
         app.MapHealthChecks(ReadyPath, new HealthCheckOptions { Predicate = r => r.Tags.Contains(ReadyTag) })
+            .AllowAnonymous()
             .RequireRateLimiting(FireworksRateLimiting.ReadPolicy);
         return app;
     }

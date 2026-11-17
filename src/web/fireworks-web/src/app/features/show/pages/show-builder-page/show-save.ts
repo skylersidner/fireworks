@@ -4,10 +4,13 @@ import { normalizeShow } from '../../../../../engine/model/normalize';
 import { validateShow } from '../../../../../engine/model/validate';
 import {
   MAX_BODY_BYTES,
+  replaceCreation,
   saveChoices,
   saveCreation,
   type SaveChoice,
+  type SaveOutcome,
 } from '../../../../core/creation-save';
+import { SaveSession } from '../../../../core/save-session';
 import { CreationsService } from '../../../../core/creations';
 import { NotificationService } from '../../../../core/notifications';
 import { SessionService } from '../../../../core/session';
@@ -35,6 +38,8 @@ import { ShowBuilderStore, type ShowSaveSnapshot } from './show-builder.store';
  *  - The document sent is the show through `normalizeShow` (a blank name saves as "Custom"), then
  *    `validateShow` must pass, then the 256 KiB check, then one request (plus at most one fallback).
  *  - Body keys are `kind`, `document` for a POST and `document` for PUT and remix (creations.ts).
+ *  - Identity as in DesignerSaveFlow (phase-8.md §5, §6, §9; Boo A40, A41): signed out the bar's
+ *    one Save prompts sign-in; a 401 never retries; a 412 offers Save as new and Replace.
  */
 @Injectable()
 export class ShowSaveFlow {
@@ -44,6 +49,19 @@ export class ShowSaveFlow {
   private readonly notifications = inject(NotificationService);
 
   readonly canWrite = this.session.canWrite;
+  readonly auth = new SaveSession({
+    session: this.session,
+    creations: this.creations,
+    notifications: this.notifications,
+    path: '/show',
+    source: () => this.store.source(),
+    refresh: (fresh) => this.store.refreshSource(fresh),
+    forget: () => this.store.forgetSource(),
+  });
+  readonly replacing = signal(false);
+  readonly busy = computed(
+    () => this.saving() !== null || this.replacing() || this.auth.refreshing(),
+  );
   readonly choices = computed(() => saveChoices(this.store.source()));
   readonly saving = signal<SaveChoice | null>(null);
   readonly status = signal<SaveStatus | null>(null);
@@ -61,11 +79,23 @@ export class ShowSaveFlow {
       this.store.show();
       untracked(() => this.blockedLink.set(null));
     });
-    inject(DestroyRef).onDestroy(() => this.request?.unsubscribe());
+    inject(DestroyRef).onDestroy(() => {
+      this.request?.unsubscribe();
+      this.authStart?.unsubscribe();
+    });
   }
 
+  private authStart: Subscription | null = null;
+
+  /** The page calls this once, after applying any `/c/` working copy (SaveSession.start). */
+  start(): void {
+    this.authStart ??= this.auth.start();
+  }
+
+  readonly flushDraft = (): void => this.store.flushDraft();
+
   save(choice: SaveChoice): void {
-    if (this.saving() !== null || !this.session.canWrite()) return;
+    if (this.busy() || !this.session.canWrite()) return;
     if (this.cannotSave() !== null) return;
     const source = this.store.source();
     if (!saveChoices(source).includes(choice)) return;
@@ -102,11 +132,50 @@ export class ShowSaveFlow {
       return;
     }
     this.status.set(null);
+    this.run(choice, request$, sent, source?.name ?? '', document);
+  }
+
+  /** 412's Replace (phase-8.md §9.2), as in DesignerSaveFlow. */
+  replace(): void {
+    if (this.busy() || !this.session.canWrite()) return;
+    if (this.cannotSave() !== null) return;
+    const source = this.store.source();
+    if (!source?.isOwner) return;
+    this.blockedLink.set(null);
+    this.lastChoice = 'update';
+    const sent = this.store.snapshotForSave();
+    const document = saveDocumentOf(sent);
+    const checked = validateShow(document);
+    if (!checked.ok) {
+      this.status.set(
+        invalidStatus(checked.errors, (i) => showIssueReason(i, document), false, 'show'),
+      );
+      return;
+    }
+    this.replacing.set(true);
+    this.run(
+      null,
+      replaceCreation(this.creations, source.shareCode, 'show', document),
+      sent,
+      source.name,
+      document,
+    );
+  }
+
+  private run(
+    choice: SaveChoice | null,
+    request$: ReturnType<typeof saveCreation>,
+    sent: ShowSaveSnapshot,
+    sourceName: string,
+    document: ShowDocument,
+  ): void {
     this.saving.set(choice);
-    this.request = request$.subscribe((outcome) => {
+    this.request = request$.subscribe((outcome: SaveOutcome) => {
       this.saving.set(null);
+      this.replacing.set(false);
       this.request = null;
       if (outcome.ok) {
+        this.status.set(null);
         this.store.completeSave(outcome.source, sent);
         if (outcome.fellBack) this.status.set(fellBackStatus(outcome.response.name));
         else {
@@ -126,12 +195,11 @@ export class ShowSaveFlow {
         saveFailureStatus(
           outcome.error,
           outcome.request,
-          source?.name ?? '',
+          sourceName,
           (i) => showIssueReason(i, document),
           'show',
         ),
       );
-      if (outcome.error.kind === 'forbidden') this.session.load().subscribe();
     });
   }
 

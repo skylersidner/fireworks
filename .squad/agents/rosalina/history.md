@@ -72,3 +72,33 @@
 ### 2026-11-16 — Interlude cross-agent update (Scribe)
 
 - **Open decision with Luigi (7g.2).** Firefox makes the scrollable `designer-panel` and `builder-panel` asides tab stops before the skip link. This is engine behavior, not a product defect (`toad-interlude-final-tier.md` point 3). The question is whether the panels get `tabindex="-1"`, or whether `gate-keyboard` should expect the stop. Toad fixes the script side; the decision is yours with Luigi.
+
+### 2026-11-16: Phase 8 design-review (8.0b, sign-in UX)
+- Wrote `docs/fireworks-app/design/phase-8.md`. Record: `records/rosalina-phase-8-design-review.md`.
+- Yoshi's design doc and record still say "GitHub and Google". Skyler ruled Google only, so check provider wording against the plan's rulings, not the design doc.
+- Rulings:
+  - Signed-out Save is a modal, initially focused on the Google button.
+  - The return is marked by a `sessionStorage` intent flag. There is no auto-save.
+  - 412 offers `Replace the newer version`. Stale `updatedAt` makes Update original a dead end otherwise.
+  - `/mine` shows its prompt in place.
+  - "Remixed from" appears on the player only.
+  - Firefox asides get `tabindex="-1"`.
+- Google branding (fetched 2026-11-16):
+  - Themes: Light `#FFFFFF`/`#747775`/`#1F1F1F`, Dark `#131314`/`#8E918F`/`#E3E3E3`, Neutral `#F2F2F2`.
+  - Font: Google Sans Medium 14/20. Padding: 12/10/12px.
+  - Text: "Sign in/up with Google" or "Continue with Google". Never "Google" alone.
+  - The G is unmodified.
+  - The CSP has no `font-src`, so fonts are blocked (`default-src 'none'`). Self-hosting needs Boo.
+- Code facts:
+  - `CreationListItem` has no `remixedFrom`.
+  - The save bar's `@for` over `choices()` drops focus whenever choices change. Watch every async `source` change.
+  - The player's banner sits in wrapper divs (l.86, l.193), so delete the wrappers too.
+- Pattern: after a full-page round trip (OAuth), a page can't know it was returned to. Use a short-lived `sessionStorage` intent flag (path plus age check, deleted on read, try/catch) to drive the focus and announcement.
+
+### 2026-11-16: Phase 8 B2 post-implementation design check
+- Result: pass except the G (rejected). Wrote phase-8.md §15 and record `rosalina-phase8-b2-design-check.md`.
+- **Brand assets drift.** Google's `signin-assets.zip` (files dated 2026-04-15) now draws the **gradient G**: an alpha mask over a `foreignObject` conic gradient, plus blur ellipses. The classic flat four-colour G is out of date. Always download the bundle and render it next to the code; don't trust "the standard G". The bundle unzips into `scratchpad/gassets/x/` with `curl` (it's public).
+- The fix route: take the bundle's Light/Square/no-text SVG, drop the two `M4 0.5H36` chrome paths, crop to `viewBox="10 10 20 20"`, and serve it as an `<img>` file. It renders in Chromium as `<img>`, and WebKit and Firefox are unverified.
+- The CSP has `style-src 'self' 'unsafe-inline'` (Skyler, 2026-11-15), so static `style="…"` attributes in templates work.
+- Measured under coarse at 390×844: the account `Sign in`, the Google button, `Not now` and `/signin` `Go back` are all 44px. `message-page`'s actions row is `gap-2` (6.5px), which my spec didn't cover. It's minor.
+- Script: `scratchpad/pw/ros-p8.mjs` (desktop dialog, focus open and Escape, computed font, coarse sizes, `/signin`).

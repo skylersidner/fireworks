@@ -4,12 +4,17 @@
  * by hand, and flag any drift to Bowser. ASP.NET serializes camelCase.
  */
 
-/** `MeResponse(Guid? UserId, string? DisplayName, bool IsAuthenticated, bool CanWrite)`. */
+/**
+ * `MeResponse(Guid? UserId, string? DisplayName, bool IsAuthenticated, bool CanWrite,
+ * string? SignedInWith)`. Anonymous is `null, null, false, false, null`. `signedInWith` is optional
+ * here (absent reads as `null`; bowser-phase8-server-auth.md); the server always sends it.
+ */
 export interface MeResponse {
   userId: string | null;
   displayName: string | null;
   isAuthenticated: boolean;
   canWrite: boolean;
+  signedInWith?: string | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -112,7 +117,18 @@ export interface ClientPlaybackConfig {
   checkpointMemoryMiB: number;
 }
 
-/** `ClientConfigResponse(ClientPlaybackConfig Playback)`: `GET api/client-config`, anonymous. */
+/** `LoginProviderConfig(string Id, string Name)`: today only `{ id: 'google', name: 'Google' }`. */
+export interface LoginProviderConfig {
+  id: string;
+  name: string;
+}
+
+/**
+ * `ClientConfigResponse(ClientPlaybackConfig Playback, IReadOnlyList<LoginProviderConfig>
+ * LoginProviders)`: `GET api/client-config`, anonymous. `loginProviders` is optional here (absent
+ * means `[]`); it is empty only in Development or Testing without a client (Boo A33).
+ */
 export interface ClientConfigResponse {
   playback: ClientPlaybackConfig;
+  loginProviders?: LoginProviderConfig[];
 }

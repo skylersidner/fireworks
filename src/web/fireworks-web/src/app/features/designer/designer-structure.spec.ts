@@ -4,7 +4,7 @@
  * from the source tree. Fails on: a legacy forms API or a ControlValueAccessor in the designer or
  * the shared controls; a presentational component that injects the store; identity or HTTP in the
  * designer or `src/app/shared` outside the allowlist (the Save flow, the `/c/` page, the designer
- * and builder pages' ApiStatusService, the test-mode banner's SessionService). The builder page is
+ * and builder pages' ApiStatusService, the account control's SessionService). The builder page is
  * held to exactly its ApiStatusService hits by the allowlist, not listed with the stores. The app-wide unsafe-sink ban
  * (Boo C1) is `src/app/unsafe-sinks.spec.ts`.
  */
@@ -237,6 +237,7 @@ describe('designer structure', () => {
     'features/designer/pages/designer-page/designer-save.ts': [
       'import core/creation-save',
       'import core/creations',
+      'import core/save-session',
       'import core/session',
       'inject(CreationsService)',
       'inject(SessionService)',
@@ -262,6 +263,7 @@ describe('designer structure', () => {
     'features/show/pages/show-builder-page/show-save.ts': [
       'import core/creation-save',
       'import core/creations',
+      'import core/save-session',
       'import core/session',
       'inject(CreationsService)',
       'inject(SessionService)',
@@ -274,19 +276,21 @@ describe('designer structure', () => {
       'inject(CreationsService)',
       'inject(SessionService)',
     ],
-    // canWrite && !isAuthenticated (Boo C17); identity comes only from SessionService.
-    'shared/test-mode-banner.ts': ['import core/session', 'inject(SessionService)'],
+    // The account control (phase-8.md §2): the name, Sign in, and Sign out (`api/auth/logout`).
+    'shared/sign-in/account-control.ts': ['import core/session', 'inject(SessionService)'],
   };
 
   it('derives the banned core modules (health and api-status included)', () => {
     expect([...BANNED_CORE].sort()).toEqual([
       'api',
       'api-status',
+      'auth-interceptor',
       'client-config-loader',
       'creation-save',
       'creations',
       'health',
       'open-creation',
+      'save-session',
       'session',
     ]);
     expect(BANNED_INJECTABLES).toEqual(

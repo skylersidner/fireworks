@@ -16,11 +16,12 @@ restartPolicyMaxRetries = 10
 #   ConnectionStrings__Postgres = Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};
 #                                 Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};
 #                                 Password=${{Postgres.PGPASSWORD}}
-#   Identity__AllowAnonymousWrites = true   ONLY while testing saves; delete it afterwards
-#                                           (unset means false: production writes are off, OQ20).
-#                                           While true, anyone who reaches the URL can edit or
-#                                           delete every creation — don't share the URL during
-#                                           that window.
+#   Auth__Providers__Google__ClientId      the Google Cloud web client's id (README, "Sign-in")
+#   Auth__Providers__Google__ClientSecret  its secret (a secret variable; never committed)
+#   The Google client must list https://<this domain>/api/auth/callback/google as a redirect URI.
+#   Production refuses to start without both, with the stub placeholders, or with any
+#   Auth__Providers__Google__*Endpoint override, and it refuses any leftover Identity__* variable
+#   (the Phase 8 sign-in replaced the default user; delete any such variable).
 #
 # Compose that string from the addon's individual variables. Do NOT use ${{Postgres.DATABASE_URL}}:
 # Railway exposes it as a postgresql:// URI and Npgsql cannot parse that form.

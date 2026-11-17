@@ -26,6 +26,14 @@ public enum InsertOutcome
     RemixSourceGone
 }
 
+/// <summary>What <see cref="ICreationRepository.UpdateOwnedAsync"/> found true after the attempt.</summary>
+/// <param name="Updated">The updated creation, when the update happened.</param>
+/// <param name="CurrentUpdatedAt">When the row is present and owned but its <c>updated_at</c> wasn't the expected one: the current value (412).</param>
+public sealed record UpdateOutcome(Creation? Updated, DateTimeOffset? CurrentUpdatedAt)
+{
+    public static readonly UpdateOutcome NotFound = new(null, null);
+}
+
 public interface ICreationRepository
 {
     /// <summary>The creation with this share code, any owner, with its remix source loaded; or <c>null</c>. Not tracked.</summary>
@@ -45,11 +53,16 @@ public interface ICreationRepository
 
     /// <summary>
     /// Replaces the content of the creation with this share code and owner (filtered together in
-    /// one query) and bumps <c>updated_at</c>; <c>null</c> when there is no such row for this owner.
+    /// one query) and bumps <c>updated_at</c>, <b>only if</b> its <c>updated_at</c> is still
+    /// <paramref name="expectedUpdatedAt"/>: the comparison is in the UPDATE's own WHERE clause
+    /// (<c>updated_at</c> is a concurrency token), never a read followed by a write (schema.md §2.6
+    /// step 8). Outcomes: updated; <see cref="UpdateOutcome.NotFound"/> when there is no such row
+    /// for this owner; or the current <c>updated_at</c> when the row is there but changed (412).
     /// Writes only the content columns and <c>updated_at</c>: never <c>remixed_from_id</c>, which
     /// the database may have nulled since the load (ON DELETE SET NULL).
     /// </summary>
-    Task<Creation?> UpdateOwnedAsync(string shareCode, Guid ownerUserId, CreationContent content, CancellationToken cancellationToken);
+    Task<UpdateOutcome> UpdateOwnedAsync(
+        string shareCode, Guid ownerUserId, CreationContent content, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken);
 
     /// <summary>Deletes the creation with this share code and owner; <c>false</c> when there was no such row for this owner.</summary>
     Task<bool> DeleteOwnedAsync(string shareCode, Guid ownerUserId, CancellationToken cancellationToken);
@@ -118,15 +131,15 @@ public sealed class CreationRepository(FireworksDbContext dbContext) : ICreation
         }
     }
 
-    public async Task<Creation?> UpdateOwnedAsync(
-        string shareCode, Guid ownerUserId, CreationContent content, CancellationToken cancellationToken)
+    public async Task<UpdateOutcome> UpdateOwnedAsync(
+        string shareCode, Guid ownerUserId, CreationContent content, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken)
     {
         var creation = await dbContext.Creations
             .Include(c => c.RemixedFrom)
             .SingleOrDefaultAsync(c => c.ShareCode == shareCode && c.OwnerUserId == ownerUserId, cancellationToken);
         if (creation is null)
         {
-            return null;
+            return UpdateOutcome.NotFound;
         }
 
         creation.Name = content.Name;
@@ -146,22 +159,27 @@ public sealed class CreationRepository(FireworksDbContext dbContext) : ICreation
         entry.Property(c => c.Palette).IsModified = true;
         entry.Property(c => c.Document).IsModified = true;
 
+        // If-Match: the concurrency token's ORIGINAL value is what the UPDATE's WHERE compares, so
+        // it is the client's tag, not the value just loaded. Even when the two already differ, the
+        // UPDATE runs and matches zero rows: one code path, decided by the database.
+        entry.Property(c => c.UpdatedAt).OriginalValue = expectedUpdatedAt;
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
-            return creation;
+            return new UpdateOutcome(creation, null);
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Zero rows updated: a concurrent DELETE won. If the row is really gone, that's the
-            // honest answer (404), not a 500.
+            // Zero rows: a concurrent DELETE won, or updated_at isn't the expected tag (a stale
+            // client, or a concurrent PUT that won). Re-check the desired state
+            // (boo-race-guards-check-desired-state.md): present and owned is 412, else 404.
             dbContext.Entry(creation).State = EntityState.Detached;
-            if (!await dbContext.Creations.AnyAsync(c => c.ShareCode == shareCode && c.OwnerUserId == ownerUserId, cancellationToken))
-            {
-                return null;
-            }
-
-            throw;
+            var current = await dbContext.Creations.AsNoTracking()
+                .Where(c => c.ShareCode == shareCode && c.OwnerUserId == ownerUserId)
+                .Select(c => (DateTimeOffset?)c.UpdatedAt)
+                .SingleOrDefaultAsync(cancellationToken);
+            return current is { } updatedAt ? new UpdateOutcome(null, updatedAt) : UpdateOutcome.NotFound;
         }
     }
 

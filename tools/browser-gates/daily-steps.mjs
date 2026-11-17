@@ -47,6 +47,11 @@ export function dailySteps({ codes, gone, tier = 'daily' }) {
     s('reduced-motion-neg', ['gate-reduced-motion.mjs'], { env: { ENGINES: 'chromium', NEG: '1' } }),
     s('follow-chromium', ['gate-follow.mjs'], { env: { ENGINES: 'chromium' } }),
     s('follow-neg', ['gate-follow.mjs'], { env: { ENGINES: 'chromium', NEG: '1' } }),
+    // Phase 8 B3 (Toad): CSRF from a :5190 page, the CSP-clean sign-in, the two-account walk.
+    s('auth-chromium', ['gate-auth.mjs']),
+    s('auth-neg-csrf', ['gate-auth.mjs'], { env: { PARTS: 'csrf', NEG: 'csrf' }, expectExit: 1, mustSay: /CSRF LANDED: signed out, list changed/ }),
+    s('auth-neg-csp', ['gate-auth.mjs'], { env: { PARTS: 'csp', NEG: 'csp' }, expectExit: 1, mustSay: /CSP VIOLATION: .*\/mine script-src/ }),
+    s('auth-neg-walk', ['gate-auth.mjs'], { env: { PARTS: 'walk', NEG: 'walk' }, expectExit: 1, mustSay: /OWNERSHIP NOT ENFORCED: .*PUT of alice's code is 404.*DELETE of alice's code is 404/ }),
     s('player-vt', ['player-virtual-time.mjs']),
     s('player-vt-neg-frozen', ['player-virtual-time.mjs'], { env: { PAUSE: '0', PHASES: 'frozen' }, expectExit: 1, mustSay: /MOVED/ }),
     s('player-vt-neg-ended', ['player-virtual-time.mjs'], { env: { NEG_HIDE_ENDED: '1', PHASES: 'ff', MAX_FF: '200' }, expectExit: 1, mustSay: /did not end under virtual time/ }),
@@ -61,7 +66,12 @@ export function dailySteps({ codes, gone, tier = 'daily' }) {
   for (const e of ['firefox', 'webkit']) {
     steps.push(
       s(`csp-${e}`, ['gate-csp.mjs'], { env: { ENGINES: e } }),
-      s(`roundtrip-${e}`, ['gate-roundtrip.mjs', e], { env: { JSON_ENGINE: e }, timeoutS: 1200 }),
+      // WebKit stores no Secure cookie on http (probe P3; phase-8-auth.md: local sign-in is a
+      // Chromium/Firefox check), so it can't Save on the Testing instance: it plays a code saved
+      // from Node and copies its Show JSON anonymously; a fresh Chromium profile applies and saves.
+      e === 'webkit'
+        ? s(`roundtrip-${e}`, ['gate-roundtrip.mjs', e, codes.show], { env: { JSON_ENGINE: 'chromium' }, timeoutS: 1200 })
+        : s(`roundtrip-${e}`, ['gate-roundtrip.mjs', e], { env: { JSON_ENGINE: e }, timeoutS: 1200 }),
       s(`keyboard-${e}`, ['gate-keyboard.mjs'], { env: { ENGINES: e }, gate: 'report' }),
       s(`reduced-motion-${e}`, ['gate-reduced-motion.mjs'], { env: { ENGINES: e }, gate: 'report' }),
       s(`follow-${e}`, ['gate-follow.mjs'], { env: { ENGINES: e }, gate: 'report' }),

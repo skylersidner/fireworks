@@ -7,6 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startStub, apiEnvFor as stubApiEnv } from '../fake-oauth/server.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const WEB = path.join(ROOT, 'src', 'web', 'fireworks-web');
@@ -125,17 +126,21 @@ export async function freePort() {
 
 /**
  * Starts `dotnet Fireworks.Api.dll` from the last `dotnet build`, serving the last `ng build`'s
- * wwwroot, in Production (the real headers: no Server, HSTS only behind https) with
- * Identity__AllowAnonymousWrites=true and its own database (migrations apply at boot).
- * Returns { base, port, db, stop() }. stop() kills only this process and drops only this database.
+ * wwwroot, as ASPNETCORE_ENVIRONMENT=Testing (every non-Development behaviour: no Server, HSTS only
+ * behind https, Secure __Host- cookies; plus the stub allowance, Boo A36) with sign-in pointed at
+ * a fresh tools/fake-oauth stub on 127.0.0.1, and its own database (migrations apply at boot).
+ * Production would refuse the stub. Returns { base, port, db, stubBase, stop() }. stop() kills only
+ * this process and its stub and drops only this database.
  */
 export async function startApi({ db, logFile }) {
   if (!fs.existsSync(API_DLL)) throw new Error(`${path.relative(ROOT, API_DLL)} is missing: run dotnet build first`);
   if (!fs.existsSync(path.join(API_PROJECT, 'wwwroot', 'index.html'))) throw new Error('wwwroot/index.html is missing: run ng build first');
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
+  const stub = await startStub();
   const out = fs.openSync(logFile, 'a');
-  const env = { ...baseEnv(), ASPNETCORE_ENVIRONMENT: 'Production', ASPNETCORE_URLS: base, ConnectionStrings__Postgres: pgConn(db), Identity__AllowAnonymousWrites: 'true' };
+  const env = { ...baseEnv(), ASPNETCORE_ENVIRONMENT: 'Testing', ASPNETCORE_URLS: base, ConnectionStrings__Postgres: pgConn(db), ...stubApiEnv(stub.base) };
+  for (const k of Object.keys(env)) if (/^(Identity__|Auth__Providers__Google__)/.test(k) && !(k in stubApiEnv(stub.base))) delete env[k];
   delete env.ASPNETCORE_HTTP_PORTS;
   delete env.PORT;
   const child = spawn('dotnet', [API_DLL], { cwd: API_PROJECT, env, stdio: ['ignore', out, out] });
@@ -148,6 +153,7 @@ export async function startApi({ db, logFile }) {
       if (!exited) child.kill('SIGKILL');
     }
     fs.closeSync(out);
+    await stub.close();
     return dropDb(db);
   };
   const end = Date.now() + 90000;
@@ -158,5 +164,5 @@ export async function startApi({ db, logFile }) {
     if (Date.now() > end) { await stop(); throw new Error(`the API was not ready within 90 s; see ${path.relative(ROOT, logFile)}`); }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return { base, port, db, pid: child.pid, stop };
+  return { base, port, db, pid: child.pid, stubBase: stub.base, stop };
 }

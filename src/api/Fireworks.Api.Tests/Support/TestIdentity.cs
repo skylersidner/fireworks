@@ -1,19 +1,27 @@
-using Fireworks.Api.Services.Identity;
-
 namespace Fireworks.Api.Tests.Support;
 
 internal static class TestIdentity
 {
-    /// <summary>Deliberately NOT the id committed in appsettings.json, so a test that passes
-    /// cannot be reading the committed value by accident.</summary>
-    public static readonly Guid UserId = Guid.Parse("0b6c1f0e-3d7a-4c55-9a51-2f8e7d4c9a10");
+    /// <summary>The stub subjects the two-account suites sign in as (Boo A22).</summary>
+    public const string Alice = "alice-sub-1001";
+    public const string Bob = "bob-sub-2002";
 
-    public static DefaultUserOptions Options(bool allowAnonymousWrites = false) =>
-        new() { DefaultUserId = UserId, AllowAnonymousWrites = allowAnonymousWrites };
+    /// <summary>The subject the harness's default signed-in <c>Client</c> uses.</summary>
+    public const string Owner = "owner-sub-0001";
 
-    public static Dictionary<string, string?> Configuration(bool allowAnonymousWrites = false) => new()
+    /// <summary>
+    /// The pre-Phase 8 default user's id, committed until Phase 8 and still the owner of legacy rows in
+    /// local databases (design §4). Seeded only by tests; no code path resolves to it (Boo A23).
+    /// </summary>
+    public static readonly Guid LegacyDefaultUserId = Guid.Parse("6933f933-a9e9-443b-b7c7-6e3e01901a34");
+
+    /// <summary>
+    /// A non-sentinel Google client for real-Program child processes in Production (Boo A33: the
+    /// stub pair and a missing client both refuse to start). Not a credential.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> ProductionGoogleEnvironment = new Dictionary<string, string>
     {
-        ["Identity:DefaultUserId"] = UserId.ToString(),
-        ["Identity:AllowAnonymousWrites"] = allowAnonymousWrites ? "true" : "false"
+        ["Auth__Providers__Google__ClientId"] = "test-client.apps.googleusercontent.example",
+        ["Auth__Providers__Google__ClientSecret"] = "test-secret-not-a-real-one"
     };
 }

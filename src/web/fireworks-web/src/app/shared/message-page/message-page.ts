@@ -30,7 +30,7 @@ import { StaticSkylineComponent } from '../static-skyline';
       @for (line of body(); track $index; let first = $first) {
         <p class="m-0 text-body text-muted" [class.mt-2]="!first">{{ line }}</p>
       }
-      <div class="mt-4 flex flex-wrap gap-2"><ng-content /></div>
+      <div class="mt-4 flex flex-wrap gap-[8px]"><ng-content /></div>
     </div>
     <app-static-skyline />
   `,

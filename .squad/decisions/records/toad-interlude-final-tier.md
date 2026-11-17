@@ -14,4 +14,10 @@
 ## Boundary
 - A new heavy case goes to `*.final.spec.ts` or a `tier === 'final'` block in `daily-steps.mjs`, never into daily. Moving a fingerprint case between tiers is a name-list edit; changing its recorded `tier` is a reviewed re-record.
 - The F1 floor holds at the fixed regular seed only; the margin is thin (2 key backs, 1 failing case per F1 mutant). If the generator's stream changes, re-check the kill with the fast screen.
-- Open: `keyboard-firefox` and `keyboard-webkit` are report-only notes because of gate-script problems (see the history entry). They are not product defects.
+- Open (resolved 2026-11-16, see Update): `keyboard-firefox` and `keyboard-webkit` were report-only because of gate-script problems.
+
+## Update (2026-11-16): keyboard gate runs in all three engines
+- **Fixed** in `tools/browser-gates/gate-keyboard.mjs`: clipboard permissions are granted in Chromium only (as `gate-roundtrip.mjs` does); WebKit walks with `Alt+Tab` (Option+Tab), so links and buttons are real stops; Firefox's scrollable `designer-panel`/`builder-panel` tab stops are listed in `ENGINE_STOPS`, skipped (not counted) and printed as `NOTE known engine difference` lines. A skip applies only when the stop is one of those test IDs and is not in the DOM-derived walk.
+- **Gate race found and fixed:** the `/` walk read the DOM while Replay last was still disabled; the preview loop's first launch enabled it mid-walk in Firefox and WebKit, which shifted every later step by one. The walk now waits for Replay to be enabled, and that wait is a `pre` check, so Chromium is 79/79 (was 78/78).
+- **Results at :5180:** Chromium 79/79, Firefox 79/79 (+2 NOTEs), WebKit 79/79. In Chromium, NEG=walk fails 45/45 and NEG=focus fails 23/23, with no survivors.
+- **Boundary:** the Firefox panel stops are still open for Rosalina and Luigi (`tabindex="-1"` or not). If they change the product, delete the `ENGINE_STOPS` entry. Any new engine stop needs its own entry and a reason; a broad skip is not allowed.

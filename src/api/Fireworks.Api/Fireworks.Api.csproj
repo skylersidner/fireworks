@@ -4,6 +4,8 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- dotnet user-secrets: a real Google dev client in Development (Boo A32; README "Sign-in"). -->
+    <UserSecretsId>fireworks-api-6c1d0b7e-2f4a-4e55-9a3b-8d1f0c2e7a41</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,6 +17,8 @@
       stable Npgsql 11 ships. (The old System.Security.Cryptography.Pkcs pin is gone: EF Design 10.0.15
       no longer pulls Pkcs at all, and the transitive vulnerability audit is clean.)
     -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="11.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.15" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -25,10 +29,10 @@
 
   <ItemGroup>
     <!--
-      Development settings never ship. appsettings.Development.json turns anonymous writes on
-      (plan §5 OQ20), so a container started with ASPNETCORE_ENVIRONMENT=Development must not find
-      it. Without it the app falls back to appsettings.json, which has AllowAnonymousWrites=false
-      and no connection string, so it fails closed at startup.
+      Development settings never ship. appsettings.Development.json points sign-in at the stub OAuth
+      server, so a container started with ASPNETCORE_ENVIRONMENT=Development must not find it.
+      Without it the app falls back to appsettings.json, which has no connection string and no
+      Google client, so it fails closed at startup.
     -->
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
   </ItemGroup>

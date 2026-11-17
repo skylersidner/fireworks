@@ -39,7 +39,9 @@ public sealed class CreationRepositoryTests
             Assert.Null(await repository.FindOwnedAsync("AAAAAAAA", B, default));
             Assert.NotNull(await repository.FindOwnedAsync("AAAAAAAA", A, default));
             Assert.NotNull(await repository.FindByShareCodeAsync("AAAAAAAA", default));
-            Assert.Null(await repository.UpdateOwnedAsync("AAAAAAAA", B, Content("Hijacked"), default));
+            var current = (await repository.FindByShareCodeAsync("AAAAAAAA", default))!.UpdatedAt;
+            // Not owned: NotFound even with the right tag (never the 412 that would confirm it exists).
+            Assert.Equal(UpdateOutcome.NotFound, await repository.UpdateOwnedAsync("AAAAAAAA", B, Content("Hijacked"), current, default));
             Assert.False(await repository.DeleteOwnedAsync("AAAAAAAA", B, default));
         }
 
@@ -52,7 +54,8 @@ public sealed class CreationRepositoryTests
         await using (var db = database.NewContext())
         {
             var repository = new CreationRepository(db);
-            var updated = await repository.UpdateOwnedAsync("AAAAAAAA", A, Content("Mine"), default);
+            var current = (await repository.FindByShareCodeAsync("AAAAAAAA", default))!.UpdatedAt;
+            var updated = (await repository.UpdateOwnedAsync("AAAAAAAA", A, Content("Mine"), current, default)).Updated;
             Assert.Equal("Mine", updated!.Name);
             Assert.True(updated.UpdatedAt > updated.CreatedAt);
             Assert.True(await repository.DeleteOwnedAsync("AAAAAAAA", A, default));
@@ -70,11 +73,37 @@ public sealed class CreationRepositoryTests
 
         await using var context = database.NewContext();
         var repository = new CreationRepository(context);
+        var initial = (await repository.FindByShareCodeAsync("AAAAAAAA", default))!.UpdatedAt;
         // Values captured: both calls return the same tracked instance.
-        var first = (await repository.UpdateOwnedAsync("AAAAAAAA", A, Content("Same"), default))!.UpdatedAt;
+        var first = (await repository.UpdateOwnedAsync("AAAAAAAA", A, Content("Same"), initial, default)).Updated!.UpdatedAt;
         await Task.Delay(5);
-        var second = (await repository.UpdateOwnedAsync("AAAAAAAA", A, Content("Same"), default))!.UpdatedAt;
+        var second = (await repository.UpdateOwnedAsync("AAAAAAAA", A, Content("Same"), first, default)).Updated!.UpdatedAt;
         Assert.True(second > first);
+    }
+
+    [Fact]
+    public async Task A_stale_tag_writes_nothing_and_reports_the_current_updated_at()
+    {
+        await using var database = await SqliteTestDatabase.CreateAsync();
+        await using (var db = database.NewContext())
+        {
+            await new CreationRepository(db).TryInsertAsync(NewRow(A, "AAAAAAAA"), default);
+        }
+
+        DateTimeOffset current;
+        await using (var db = database.NewContext())
+        {
+            current = (await db.Creations.SingleAsync()).UpdatedAt;
+            var outcome = await new CreationRepository(db).UpdateOwnedAsync("AAAAAAAA", A, Content("Stale"), current.AddTicks(-10), default);
+            Assert.Null(outcome.Updated);
+            Assert.Equal(current, outcome.CurrentUpdatedAt);
+        }
+
+        await using (var db = database.NewContext())
+        {
+            var row = await db.Creations.SingleAsync();
+            Assert.Equal(("Peony", current), (row.Name, row.UpdatedAt));
+        }
     }
 
     [Fact]

@@ -43,6 +43,10 @@ public sealed class CreationServiceTests
             Service = new CreationService(User, Repository, Codes, Logger);
         }
 
+        /// <summary>The If-Match a client that last read <paramref name="code"/> would send (its current tag); any instant when it doesn't exist.</summary>
+        public IfMatchPrecondition IfMatch(string code) =>
+            new(true, Repository.Rows.SingleOrDefault(r => r.ShareCode == code)?.UpdatedAt ?? DateTimeOffset.UnixEpoch);
+
         public Rig As(Guid? userId, bool canWrite = true)
         {
             User.UserId = userId;
@@ -73,7 +77,7 @@ public sealed class CreationServiceTests
         ServiceError? error = operation switch
         {
             "create" => (await rig.Service.CreateAsync(body, default)).Error,
-            "update" => (await rig.Service.UpdateOwnedAsync("AAAAAAAA", body, default)).Error,
+            "update" => (await rig.Service.UpdateOwnedAsync("AAAAAAAA", rig.IfMatch("AAAAAAAA"), body, default)).Error,
             "delete" => (await rig.Service.DeleteOwnedAsync("AAAAAAAA", default)).Error,
             "remix" => (await rig.Service.RemixAsync("AAAAAAAA", body, default)).Error,
             _ => (await rig.Service.ListMineAsync(new CreationListQuery(["abc"], null, ["bogus"]), default)).Error
@@ -130,9 +134,9 @@ public sealed class CreationServiceTests
         var row = rig.Repository.Seed(UserA, "AAAAAAAA");
         var before = (row.Name, row.Document, row.UpdatedAt, string.Join(",", row.Palette));
 
-        var update = await rig.Service.UpdateOwnedAsync("AAAAAAAA", DocumentBody(), default);
+        var update = await rig.Service.UpdateOwnedAsync("AAAAAAAA", rig.IfMatch("AAAAAAAA"), DocumentBody(), default);
         var delete = await rig.Service.DeleteOwnedAsync("AAAAAAAA", default);
-        var unknown = await rig.Service.UpdateOwnedAsync("BBBBBBBB", DocumentBody(), default);
+        var unknown = await rig.Service.UpdateOwnedAsync("BBBBBBBB", rig.IfMatch("BBBBBBBB"), DocumentBody(), default);
 
         Assert.Equal(ServiceErrorType.NotFound, update.Error?.Type);
         Assert.Equal(ServiceErrorType.NotFound, delete.Error?.Type);
@@ -148,7 +152,7 @@ public sealed class CreationServiceTests
         var rig = new Rig("AAAAAAAA").As(UserA);
         await rig.Service.CreateAsync(CreateBody(), default);
 
-        var update = await rig.Service.UpdateOwnedAsync("AAAAAAAA", DocumentBody(Peony.Replace("\"Peony\"", "\"Renamed\"")), default);
+        var update = await rig.Service.UpdateOwnedAsync("AAAAAAAA", rig.IfMatch("AAAAAAAA"), DocumentBody(Peony.Replace("\"Peony\"", "\"Renamed\"")), default);
         Assert.True(update.IsSuccess);
         Assert.Equal("Renamed", update.Value!.Name);
 
@@ -162,12 +166,65 @@ public sealed class CreationServiceTests
         var rig = new Rig().As(UserA);
         rig.Repository.Seed(UserA, "AAAAAAAA", CreationKind.Shell);
 
-        var withKind = await rig.Service.UpdateOwnedAsync("AAAAAAAA", Body($"{{\"kind\":\"show\",\"document\":{Peony}}}"), default);
+        var withKind = await rig.Service.UpdateOwnedAsync("AAAAAAAA", rig.IfMatch("AAAAAAAA"), Body($"{{\"kind\":\"show\",\"document\":{Peony}}}"), default);
         Assert.Equal(["kind :: unknown-property"], withKind.Error!.Issues!.Select(i => $"{i.Path} :: {i.Code}"));
 
         var showDocument = SchemaFixtures.LoadDocument("valid/show/minimal").DocumentRawText;
-        var mismatch = await rig.Service.UpdateOwnedAsync("AAAAAAAA", DocumentBody(showDocument), default);
+        var mismatch = await rig.Service.UpdateOwnedAsync("AAAAAAAA", rig.IfMatch("AAAAAAAA"), DocumentBody(showDocument), default);
         Assert.Contains("breaks :: break-count", mismatch.Error!.Issues!.Select(i => $"{i.Path} :: {i.Code}"));
+    }
+
+    // ---- If-Match (schema.md §2.6, §11.4; Boo A29) -----------------------------------------------
+
+    [Fact]
+    public async Task Update_without_If_Match_is_428_before_the_body_and_any_repository_call()
+    {
+        var rig = new Rig().As(UserA);
+        rig.Repository.Seed(UserA, "AAAAAAAA");
+        var body = new RecordingBody("not json at all", hasJsonContentType: false);
+
+        var result = await rig.Service.UpdateOwnedAsync("AAAAAAAA", IfMatchPrecondition.Missing, body, default);
+
+        Assert.Equal(ServiceErrorType.PreconditionRequired, result.Error?.Type);
+        Assert.False(body.WasRead);
+        Assert.Empty(rig.Repository.Ledger.Calls);
+    }
+
+    [Fact]
+    public async Task The_write_gate_comes_before_428()
+    {
+        var rig = new Rig().As(UserA, canWrite: false);
+        var result = await rig.Service.UpdateOwnedAsync("AAAAAAAA", IfMatchPrecondition.Missing, DocumentBody(), default);
+        Assert.Equal(ServiceErrorType.Forbidden, result.Error?.Type);
+    }
+
+    [Fact]
+    public async Task A_stale_or_unmatchable_tag_is_412_for_the_owner_with_the_current_tag_and_404_for_anyone_else()
+    {
+        var rig = new Rig().As(UserA);
+        var row = rig.Repository.Seed(UserA, "AAAAAAAA");
+        var current = row.UpdatedAt;
+
+        var stale = await rig.Service.UpdateOwnedAsync("AAAAAAAA", new IfMatchPrecondition(true, current.AddSeconds(-1)), DocumentBody(), default);
+        var unmatchable = await rig.Service.UpdateOwnedAsync("AAAAAAAA", IfMatchPrecondition.Unmatchable, DocumentBody(), default);
+        Assert.Equal((ServiceErrorType.PreconditionFailed, current), (stale.Error!.Type, stale.Error.CurrentUpdatedAt!.Value));
+        Assert.Equal((ServiceErrorType.PreconditionFailed, current), (unmatchable.Error!.Type, unmatchable.Error.CurrentUpdatedAt!.Value));
+        Assert.Equal("Seeded", row.Name);
+
+        rig.As(UserB);
+        foreach (var condition in new[] { new IfMatchPrecondition(true, current), IfMatchPrecondition.Unmatchable })
+        {
+            Assert.Equal(ServiceErrorType.NotFound, (await rig.Service.UpdateOwnedAsync("AAAAAAAA", condition, DocumentBody(), default)).Error?.Type);
+        }
+    }
+
+    [Fact]
+    public async Task A_412_needs_a_valid_document_first()
+    {
+        var rig = new Rig().As(UserA);
+        rig.Repository.Seed(UserA, "AAAAAAAA");
+        var result = await rig.Service.UpdateOwnedAsync("AAAAAAAA", IfMatchPrecondition.Unmatchable, DocumentBody("{\"version\":1}"), default);
+        Assert.Equal(ServiceErrorType.Validation, result.Error?.Type);
     }
 
     // ---- remix (S10, S11, remixedFrom) ----------------------------------------------------------
@@ -279,7 +336,7 @@ public sealed class CreationServiceTests
         foreach (var bad in new[] { code, kelvin })
         {
             Assert.Equal(ServiceErrorType.NotFound, (await rig.Service.GetAsync(bad, default)).Error?.Type);
-            Assert.Equal(ServiceErrorType.NotFound, (await rig.Service.UpdateOwnedAsync(bad, DocumentBody(), default)).Error?.Type);
+            Assert.Equal(ServiceErrorType.NotFound, (await rig.Service.UpdateOwnedAsync(bad, rig.IfMatch(bad), DocumentBody(), default)).Error?.Type);
             Assert.Equal(ServiceErrorType.NotFound, (await rig.Service.DeleteOwnedAsync(bad, default)).Error?.Type);
             Assert.Equal(ServiceErrorType.NotFound, (await rig.Service.RemixAsync(bad, DocumentBody(), default)).Error?.Type);
         }
@@ -405,5 +462,18 @@ public sealed class CreationServiceTests
                 Warnings.Add(formatter(state, exception));
             }
         }
+    }
+}
+
+/// <summary>A body that records whether anything read it.</summary>
+internal sealed class RecordingBody(string text, bool hasJsonContentType) : ICreationRequestBody
+{
+    public bool WasRead { get; private set; }
+    public bool HasJsonContentType { get; } = hasJsonContentType;
+
+    public Task<ReadOnlyMemory<byte>?> ReadAsync(CancellationToken cancellationToken)
+    {
+        WasRead = true;
+        return Task.FromResult<ReadOnlyMemory<byte>?>(System.Text.Encoding.UTF8.GetBytes(text));
     }
 }

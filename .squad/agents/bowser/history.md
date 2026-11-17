@@ -2,53 +2,57 @@
 
 ## Core Context
 
-- **Project:** Fireworks Sandbox. Design, save, share and play fireworks shells (and later timed shows) in the browser.
-- **Stack:** Angular 22.2 (standalone, zoneless, signals, Signal Forms, Tailwind 4), PixiJS 8.23.0 (pinned), .NET 11 API with EF Core and Postgres 18 (`jsonb`), Docker, Railway.
-- **Owner:** Skyler Sidner.
-- **Plan:** `plans/initial-implementation.md`. Phases 0–8. Identity model in §3.4: anonymous play, persistence owned by a user ID, and a configured default user until the Phase 8 auth pass.
-- **Architecture reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular`. Mirror its structure and conventions; never its domain.
-- **Prototype:** `prototypes/fireworks-prototype.html` is the visual and behavioral parity oracle. Background is in `docs/fireworks-app/context.md`.
-- **Your focus here:** Phases 0 to 7 are built. Open: the Railway window (deferred by Skyler on 2026-11-15); Mario's note 1 (the precompressed `.br` and `.gz` siblings in `wwwroot`, your decision); Phase 8's `Vary` and `If-Match` 412.
-- **Validator traps (Phase 3):** name length counts code points (`string.EnumerateRunes()`), never `Length`. The C# walker mirrors normalize's paths, kinds and codes. On .NET 11, `TryGetDouble` is true for `1e400` (check `double.IsFinite`); `AllowDuplicateProperties=false` throws with no path (detect duplicates in the walker; last value wins); `GetString`, `JsonProperty.Name` and `ValueEquals` throw on lone surrogates (gate with `Utf8.IsValid`); `.NET $` matches before a trailing `\n` (use `\z`). Read `Request.Body` in the action, not `[FromBody] JsonElement`. Postgres 18 `jsonb` rejects `\u0000` and lone surrogate escapes; `varchar(80)` counts characters. Record: `decisions/records/bowser-phase3-validator-feasibility.md`; skill `skills/cross-language-validator-parity`.
-- **Phase 3 contract surface (binds the walker and the harness):** property-name paths follow schema.md §6.2 rule 11 (plain names bare; others `parent["name"]`; unpaired surrogates as U+FFFD), matching `childPath` in `normalize.ts`. Server-only fixtures in `schema/fixtures/server-only/*.json` are `{ description, body, status 400|413|415, errors?, contentType?, byteMarkers? }`; send raw bytes, never re-serialized, so duplicate keys survive (`schema/README.md`).
-- **Phase 1 and identity (folded):** `ICurrentUser` carries `CanWrite`. Identity config is validated eagerly in `AddFireworksIdentity`, not `ValidateOnStart()`. Key files: `src/api/Fireworks.Api/Services/Identity/{DefaultUserOptions,ICurrentUser,DefaultUserCurrentUser,IdentityRegistration}.cs`, `Controllers/MeController.cs`, `Data/Entities/User.cs`. The names avoid CS0433 and the ASP.NET Identity clash. Default user id is in `appsettings.json`; the test id is `TestIdentity.UserId`.
-- **Phase 0 rulings (folded):** `Identity:AllowAnonymousWrites` is false in `appsettings.json`, true in Development; `api/me` includes `canWrite`. `.dockerignore` excludes `.squad/`, `.claude/`, `plans/`, `prototypes/`. Angular 4200, API 5180. `CreationListItem` carries the palette.
-- **Build and packaging (folded):** TFM `net11.0`; Docker `sdk:11.0`/`aspnet:11.0`. EF Core stays 10.x (Npgsql EF has no stable 11.x); bump the EF packages together, never alone (`bowser-net11-retarget.md`). Dockerfile `USER $APP_UID` (uid 1654). Publish excludes `appsettings.Development.json`; the app fails closed without `ConnectionStrings:Postgres` and `Cors:AllowedOrigins`. Compose binds `127.0.0.1:5433:5432`. `ForwardLimit = 1` is explicit.
-- **Environment (folded):** no `timeout` on macOS (use a background PID and a perl sleep loop); probe loops in `bash`. Trial changes go in an rsync copy under the scratchpad. Run the gated suite and mutants only when no build runs (Docker memory is tight). Host port 8080 is taken; map to `127.0.0.1:18080`.
-- Carried over from the previous project: the role only. Lessons are in `.squad/decisions/README.md`.
-
-### Folded from Phases 4 to 6 (summarized 2026-11-14 and 2026-11-15)
-
-- **Layout:** `Controllers/CreationsController.cs`; `Services/Creations/*` (`CreationService`, `CreationDocumentValidator`, `CreationEnvelopeReader`, `JsonWalk`, `CreationDocuments`, `CreationLimits`, `CreationListQuery`); `Repositories/CreationRepository.cs`. `AddFireworksControllers()` (`Services/ControllersRegistration.cs`) is the only `AddControllers()`; it removes the form value providers, so form bodies can't reach binders before the gate. `Program.cs` and `FireworksApiHarness` both call it.
-- **Write order:** 429, gate 403, 415, 413, envelope 400, owner-filtered lookup 404, document 400. Routing precedes the gate. The body is read in the service (`ICreationRequestBody`), never by `[FromBody]`. `remixedFrom = isOwner ? source : null` (S13, no CanWrite term).
-- **Measured traps:** Postgres's default collation sorts `'a' < 'B'`, so `share_code` uses `COLLATE "C"`. The list reads `Request.Query`, because `[FromQuery] string?` mangles `kind`. EF SQLite can't ORDER BY `DateTimeOffset` (a model-only converter).
-- **Writes:** `UpdateOwnedAsync` marks four properties (`Name`, `SchemaVersion`, `Palette`, `Document`), not `State = Modified`, so a stale `remixed_from_id` isn't written back. `TryInsertAsync` returns `InsertOutcome { Inserted, ShareCodeTaken, RemixSourceGone }`. A concurrent DELETE is re-checked against the desired state and becomes 404 (`Creations/CreationSourceDeletedMidWriteTests.cs`).
-- **Connection close:** a response whose declared `Content-Length` is over `MaxRequestBodySize` sends `Connection: close` (403, 415, 429 and the catch-all 404 included). Phase 7 extends it to chunked bodies.
-- **Logging and replicas:** `Microsoft.EntityFrameworkCore.Database.Command` is `Warning` in `appsettings.json`. One replica until migrations take a lock (`42P07`). Run a newly extended test alone a few times; pooled-connection bugs hide in the full suite.
-- **Phase 6 review-fix (`bowser-phase6-review-fixes.md`):** `ApiBannerComponent` takes `message` (default `API_BANNER_DESIGNER`); the builder passes `BUILDER_API_BANNER`. Undo and Redo use `[attr.aria-disabled]` with page guards; ⌘Z still calls the store. The notice focuses its first button in `afterNextRender`, only when focus is on body. `FLASH_SPACING_STEPS` = 41 (`FLASH_SPACING_SECONDS` = 41/120). The 2c.8 allowlist for `show-builder-page.ts` is `import core/api-status` and `inject(ApiStatusService)`. The 6k.2 recipe: `docker build`, `CREATE DATABASE`, `docker run -p 127.0.0.1:18080:8080` with `ConnectionStrings__Postgres`, `Cors__AllowedOrigins__0` and `Identity__AllowAnonymousWrites=true`. Playwright's `force: true` proves a press is ignored.
-- **Client playback (`bowser-phase6-client-playback-config.md`):** `Services/ClientConfig/{ClientPlaybackOptions,ClientConfigRegistration}.cs`; `Controllers/ClientConfigController.cs`; `ClientConfigResponse` and `ClientPlaybackConfig` in `Contracts/ApiContracts.cs`; the `ClientPlayback` section in `appsettings.json`. Validation is both annotated and eager at registration, because `ValidateOnStart` alone fires after the migrate block. `IOptions<T>` resolves unregistered with class defaults, so only the gated env test shows a served override. `ApiProcess` scrubs `RateLimits__` and `ClientPlayback__`. New-knob rule (`core/client-config.contract.spec.ts`): a knob needs a record field, a `[Range]` with an initializer, an appsettings row and a `PLAYBACK_LIMITS` row.
-- **Railway:** 5i.2 to 5i.5 and Boo C18 were the Railway window, now deferred by Skyler (2026-11-15). Writes are on for a window only; links saved in a window still play.
-
-### Folded from Phase 7 B1 and the review-fix round (summarized 2026-11-15)
-
-- **Layout (`bowser-phase7-server-hardening.md`):** `Services/ResponseHeaders.cs` is the one header middleware (step 6a) and replaces the deleted `ApiResponseHeaders.cs`. `Services/SpaHosting.cs` holds one `StaticFileOptions` for static files and both fallbacks (`/s/{**rest}`, `/c/{**rest}`). `Services/Health/HealthEndpoints.cs`: live runs no checks and is exempt from rate limiting; ready is `DatabaseReadyHealthCheck` (3 s, read-limited). `KestrelLimits.Apply` sets `AddServerHeader = false`. `CreationsController` sets the ETag on GET, POST, PUT and remix, and `ShareCodeGetCacheControl` is `private, no-cache` on 200 and 304. Program.cs and the harness call the same extension methods.
-- **Tests:** `Hardening/{HeaderExpectations,ResponseHeaderTests,CacheControlTests,ETagTests,ApiCacheControlLedgerTests,HealthReadyTests,PipelineEdgeTests}.cs`, plus the gated `ProgramOnPostgresTests.Real_program_serves_the_phase7_headers_caching_etag_and_readiness`. Expected values are literals in `HeaderExpectations`, never the app's constants.
-- **Writers of `Cache-Control` (`bowser-phase7-review-fixes.md`):** five. The exception handler is the fifth: a handled exception (`IExceptionHandlerFeature`) normalizes to `no-store` and drops `Pragma` and `Expires`. Any new writer needs a ledger row in `Hardening/ApiCacheControlLedgerTests`.
-- **Measured traps:** Npgsql ignores a cancelled token while a silent server holds the handshake, so the readiness check waits on its own context with `WaitAsync`. HttpClient re-serializes `Cache-Control` (`no-cache, private`), so compare `NonValidated`. SQLite `CanConnectAsync` never opens a connection. Skill `aspnet-request-gates` items 11 to 14.
-- **Frontend fixes (Luigi's code, fixed under lockout):** Show JSON Copy uses `jsonValue()`; wheel scroll goes through `emitManual`; the designer note is keyed by `seq`; the scrub touch rule is `input.scrub-range[type='range']` (0,2,2); K9 uses `ShowLibraryFlow.pending` with `done` callbacks. Traps: a narrowed `@if` union makes a template mutant fail to compile (mutate the flow instead), and Angular strips whitespace between summary spans.
-- **Operations:** README §Health checks, §Response headers and caching, §Backups and restore (rehearsed: compose dump into a fresh DB, same counts and `max(updated_at)`), §Takedown runbook (list remixes first, since `ON DELETE SET NULL` erases the link).
+- **Project:** Fireworks Sandbox. Design, save, share and play fireworks shells and timed shows in the browser. Stack: Angular 22.2, PixiJS 8.23.0 (pinned), .NET 11 API with EF Core 10.x and Postgres 18 (`jsonb`), Docker, Railway (deferred). Owner: Skyler Sidner.
+- **Plan:** `plans/initial-implementation.md`. **Reference:** `/Users/skylerasidner/personal projects/monster-of-the-week-net-angular` (structure only, never its domain). **Parity oracle:** `prototypes/fireworks-prototype.html`.
+- **Status:** Phases 0–7 built. Phase 8 B1 (server auth) built on 2026-11-16 (below). Open: the Railway window (deferred), Mario's note on the `.br`/`.gz` siblings in `wwwroot`, and Railway-only A31 checks.
+- **Build and packaging:**
+  - TFM `net11.0`. EF stays 10.x, and the EF packages are bumped together (`bowser-net11-retarget.md`). `DataProtection.EntityFrameworkCore` 10.0.15 sits on the same line. `Authentication.Google` is 11.0.0.
+  - Docker `USER $APP_UID`. Publish excludes `appsettings.Development.json`. Compose binds `127.0.0.1:5433`. `ForwardLimit = 1`. Host port 8080 is taken, so use `127.0.0.1:18080`.
+- **Environment:** no `timeout` on macOS. Trial changes go in an rsync copy under the scratchpad. Heavy runs are serial (Docker memory is tight). The dev API on 5180 runs with `dotnet run --project src/api/Fireworks.Api` and `ASPNETCORE_URLS=http://localhost:5180`, logging to `scratchpad/bowser-5180.log`.
+- **Validator traps (Phase 3):**
+  - Code points via `EnumerateRunes`. `TryGetDouble` accepts `1e400`, so check `IsFinite`.
+  - Detect duplicate keys in the walker. Gate the string reads with `Utf8.IsValid`. Anchor with `\z`, not `$`.
+  - Read `Request.Body` in the service, never `[FromBody]`. Postgres `jsonb` rejects `\u0000`.
+  - See `bowser-phase3-validator-feasibility.md` and the skill `cross-language-validator-parity`.
+- **Creations (Phases 4–6):**
+  - `CreationsController`, `Services/Creations/*` and `CreationRepository`. `AddFireworksControllers()` removes the form value providers.
+  - `UpdateOwnedAsync` marks four properties, never `State = Modified`. `share_code` is `COLLATE "C"`. The list reads `Request.Query` raw. SQLite needs a ticks converter to ORDER BY `DateTimeOffset`.
+  - Race guards re-check the desired state. Run one replica (`42P07`).
+  - Client playback knobs are `ClientPlayback`, validated eagerly. A new knob needs a record field, a `[Range]`, an appsettings row and a `PLAYBACK_LIMITS` row.
+- **Phase 7 hardening:**
+  - `Services/ResponseHeaders.cs` is the one header middleware (`no-store` only if unset; `Connection: close` for undrainable bodies). `SpaHosting` shares one `StaticFileOptions`. `HealthEndpoints`: live runs no checks, ready waits with `WaitAsync`. `KestrelLimits` sets `AddServerHeader = false`.
+  - Writers of `Cache-Control`: static options, the share GET (`private, no-cache`), health, the exception handler (normalized to `no-store`), and since Phase 8 the cookie handler (`no-cache,no-store` plus `Pragma` on logout, accepted under A27). Any new writer needs a row in `ApiCacheControlLedgerTests`.
+  - HttpClient re-serializes `Cache-Control`, so compare `NonValidated`. The README has §Backups (now "backups are credentials") and §Takedown.
 
 ## Learnings
 
-### 2026-11-15 — Phase 7 C4 touch fix (Toad's 13px-root finding; addendum in `bowser-phase7-review-fixes.md`)
+### 2026-11-16 — Phase 8 B1: server authentication (record `bowser-phase8-server-auth.md`)
 
-- **Fix:** coarse sizes/gaps are px (`pointer-coarse:min-h-[44px]`, `gap-[8px]`, `size-[44px]` + `touch-manipulation` on the toast ×) in `app.html`, `quality-fields.ts`, `select-row.ts`, `range-row.ts`, `show-builder-page.html` (470, 683), `mine-page.html`, `player-page.html`. The stage marker (`size-11`, any pointer) is `size-[44px]` per §5.2 item 8.
-- **Guard:** `src/app/touch-px-utilities.spec.ts` (file walk like `unsafe-sinks.spec.ts`); live negative control = revert the zoom group to `gap-2`.
-- **Recipe:** `npm run build` writes wwwroot; I restarted 5180 (`dotnet run --project src/api/Fireworks.Api`, `ASPNETCORE_URLS=http://localhost:5180`, Development; log `scratchpad/bowser-5180.log`). Gate: `cd scratchpad/toad-c3/gate && BASE=http://localhost:5180 node gate-touch.mjs` → 18/18; `NEG=1` exits 0 when all 13 fail. Prettier reflows long template class lines (it touched `quality-fields.ts` and `select-row.ts`). Web 1640.
+- **Layout:**
+  - `Services/Identity/{IdentityRegistration, AuthProviderSettings, ClaimsCurrentUser, FireworksClaims, CrossOriginWriteGuard, SafeReturnUrl, UserProvisioning, ICurrentUser}.cs` and `Controllers/AuthController.cs`.
+  - `Services/ApiNotFound.cs` (the catch-all, now anonymous) and `Services/Creations/IfMatchPrecondition.cs`.
+  - Migration `20261116210109_AddExternalIdentity`. `DefaultUser*`, the seeding, CORS and every `Identity` section are deleted. Program and the harness call the same `AddFireworksIdentity(config, env)` and `UseFireworksIdentity()` (11a, before the limiter).
+- **Probes:** P6 (PKCE defaults on; correlation `None`/`Always`; scopes include email), P7 (v3 `sub`), P8 (unknown or wrong-case scheme is a 500), P3 (Chromium and Firefox store `__Host-` on http localhost and 127.0.0.1; WebKit stores nothing).
+- **Traps found by tests and the smoke:**
+  - The fallback policy 401'd endpoint-less static misses, so an anonymous 404 endpoint is set before authorization.
+  - A policy failure on an authenticated principal is a Forbid, mapped to 401 when the id is invalid.
+  - Two layers rejecting the same bad id hid Boo's A18 mutant: one job per layer.
+  - `[ApiController] NotFound()` gives ProblemDetails, so the allowlist uses `EmptyResult`.
+  - A `+01:00` tag for the same instant matched in SQL, so `IfMatchPrecondition` requires `+00:00` and a byte-equal round trip.
+  - An `OnCreatingTicket` throw arrives with null properties, so `returnUrl` is omitted.
+  - The routing 405 endpoint is 401 when anonymous (accepted).
+  - The skill `oauth-cookie-local-rig` has items 9–15.
+- **Tests:**
+  - `Support/{StubOAuthProvider, SessionClient}.cs`. The manual jar fixes `CookieContainer`'s `Secure` drop.
+  - `FireworksApiHarness.StartAsync(signedIn:, withGoogle:, loggerProvider:)` starts a per-harness stub. `Owner`, `AnonymousClient`, `SignInAsync(subject)`, `SeedLegacyUserAsync()`.
+  - `CreationApiHarness.SendRawAsync` auto-adds If-Match from a fresh GET for PUT (pass `ifMatch: null` to omit). Watch for it in call ledgers.
+  - Auth suites live under `Auth/`. The If-Match race runs on Postgres (`IfMatchRacePostgresTests`, 25 rounds).
+  - Mutant set `tools/mutants/sets/phase8-auth.mjs`. Its runner strips `FIREWORKS_TEST_POSTGRES`, so it can't run the race.
+- **Tooling:**
+  - `tools/fake-oauth/server.mjs` (mine for B1, Toad's from B3) provides `startStub`, `apiEnvFor` and `signIn`.
+  - `lib.mjs startApi` runs as Testing with a fresh stub. `common.mjs` has `ensureSession`, `writeHeaders` and `signInContext`. `headers.py` reads `FW_SESSION_COOKIE`. `run.mjs` clears `FW_SESSION_COOKIE` per API instance.
+- **Skyler's preferences shown this batch:** Google only, stub by default, never a dev-only login scheme. The README carries the exact Google console steps and the claim SQL as a runbook.
 
-### 2026-11-15 — Phase 7 post-gate cross-agent update (Scribe)
+### 2026-11-16 — Phase 8 fix round (D1 G logo, message-page gap, R1 mutant)
+- The G is now Google's bundle SVG at `public/brand/google-g.svg`, rendered through `<img>`. Google's zip is at `developers.google.com/static/identity/images/signin-assets.zip`. Unhashed `public/` files get `no-cache` from SpaHosting. Multi-file mutants use `swaps: []` plus `postgres: true`, and Toad's runner has to support that. An `old` anchor must also leave `new` absent, so pull in a nearby comment line when the replacement text already exists in the file.
 
-- **Open for you: the `.br` and `.gz` siblings.** Mario's gate found `*.js.br` and `*.js.gz` in the image's `wwwroot` (from the Web SDK's publish compression). They are not negotiated, but they are dead weight, and they would leak `Content-Encoding` if the app moved to `MapStaticAssets`. Decide: turn off publish compression, or record them as accepted. Never add response compression (P7-S9).
-- **Five writers, not four.** Boo's F1 made the exception handler the fifth `Cache-Control` writer. `bowser-phase7-server-hardening.md` point 2 is marked in place.
-- **Verified on the image:** the dotted-link fallback (`/c/..%2Fme`), `/health/ready` (503 with the database dropped), the chunked `Connection: close`, and the 13 px touch fix (`gate-touch` 18/18; `NEG=1` 13/13 fail).
-- **Carried to you:** Phase 8's `Vary` plus the `"<updatedAt>-p"` tag (P7-S18); `If-Match` 412 waits on schema §11.4. Railway stays deferred, so the backup and restore checks ran locally only.

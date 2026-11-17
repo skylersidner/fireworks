@@ -12,7 +12,7 @@
 //          one dock control gets `order: 1`. Every counted check must FAIL; baselines (fine-pointer
 //          sizes, the fine thumb) are not counted. Exit 0 only if none passes.
 import { chromium, firefox, webkit } from 'playwright';
-import { loadCodes, outPath } from './lib/common.mjs';
+import { SAVE_SUBJECT, loadCodes, outPath, signInContext } from './lib/common.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,6 +66,8 @@ async function open(browser, opts, url, { neg390 = false } = {}) {
       const id = setInterval(() => { if (mess()) clearInterval(id); }, 100);
     }
   }, neg390);
+  // Phase 8: /mine lists only the signed-in account's creations; the SAVE codes belong to SAVE_SUBJECT.
+  if (url === '/mine') await signInContext(ctx, BASE, SAVE_SUBJECT);
   const page = await ctx.newPage();
   await page.goto(BASE + url);
   return { ctx, page };

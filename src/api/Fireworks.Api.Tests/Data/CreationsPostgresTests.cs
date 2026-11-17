@@ -32,7 +32,7 @@ public sealed class CreationsPostgresTests
         }
 
         await using var context = NewContext();
-        await FireworksDbInitializer.InitializeAsync(context, TestIdentity.Options());
+        await FireworksDbInitializer.InitializeAsync(context);
         context.Users.AddRange(new User { Id = A, DisplayName = "A" }, new User { Id = B, DisplayName = "B" });
         await context.SaveChangesAsync();
     }
@@ -108,6 +108,7 @@ public sealed class CreationsPostgresTests
     public async Task Owner_predicates_and_ordinal_tiebreak_hold_on_Postgres()
     {
         await ResetAsync();
+        var tie = DateTimeOffset.Parse("2030-01-01T00:00:00Z");
         await using (var db = NewContext())
         {
             var repository = new CreationRepository(db);
@@ -116,7 +117,6 @@ public sealed class CreationsPostgresTests
                 await repository.TryInsertAsync(CreationRepositoryTests.NewRow(A, code), default);
             }
 
-            var tie = DateTimeOffset.Parse("2030-01-01T00:00:00Z");
             await db.Creations.ExecuteUpdateAsync(s => s.SetProperty(c => c.UpdatedAt, tie));
         }
 
@@ -126,7 +126,7 @@ public sealed class CreationsPostgresTests
         Assert.Equal(["BBBBBBBB", "Zzzzzzzz", "aaaaaaaa"], (await reader.ListOwnedPageAsync(A, null, 0, 10, default)).Select(r => r.ShareCode));
         Assert.Empty(await reader.ListOwnedPageAsync(A, null, int.MaxValue, 100, default));
         Assert.Null(await reader.FindOwnedAsync("aaaaaaaa", B, default));
-        Assert.Null(await reader.UpdateOwnedAsync("aaaaaaaa", B, new CreationContent("x", 1, [], "{}"), default));
+        Assert.Equal(UpdateOutcome.NotFound, await reader.UpdateOwnedAsync("aaaaaaaa", B, new CreationContent("x", 1, [], "{}"), tie, default));
         Assert.False(await reader.DeleteOwnedAsync("aaaaaaaa", B, default));
         Assert.Equal(3, await reader.CountOwnedAsync(A, CreationKind.Shell, default));
     }

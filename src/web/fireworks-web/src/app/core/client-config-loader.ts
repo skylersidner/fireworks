@@ -21,8 +21,15 @@ export class ClientConfigLoader {
   load(): Observable<void> {
     const context = new HttpContext().set(SUPPRESS_ERROR_TOAST, true);
     return this.api.get<ClientConfigResponse>('api/client-config', context).pipe(
-      map((r) => this.store.setPlayback((r as Partial<ClientConfigResponse> | null)?.playback)),
-      catchError(() => of(undefined)),
+      map((r) => {
+        const body = r as Partial<ClientConfigResponse> | null;
+        this.store.setPlayback(body?.playback);
+        this.store.setLoginProviders(body?.loginProviders);
+      }),
+      catchError(() => {
+        this.store.setConfigFailed();
+        return of(undefined);
+      }),
     );
   }
 }

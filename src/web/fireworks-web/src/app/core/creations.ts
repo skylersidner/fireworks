@@ -1,4 +1,4 @@
-import { HttpContext, HttpErrorResponse } from '@angular/common/http';
+import { HttpContext, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, throwError } from 'rxjs';
 import { ApiService } from './api';
@@ -62,13 +62,19 @@ export class CreationsService {
     return this.api.get<CreationResponse>(itemPath(shareCode), inlineErrorContext());
   }
 
-  /** `PUT api/creations/{code}` → 200, "Update original". Owner only; anything else is 404. */
-  update(shareCode: string, document: unknown): Observable<CreationResponse> {
+  /**
+   * `PUT api/creations/{code}` → 200, "Update original". Owner only; anything else is 404. Sends
+   * `If-Match: "<updatedAt>"` (schema.md §11.4): the token the edit started from, as one strong
+   * tag. A stale one is 412, a missing header 428 (never sent: creation-save.ts guards an empty
+   * token).
+   */
+  update(shareCode: string, document: unknown, updatedAt: string): Observable<CreationResponse> {
     if (!isShareCode(shareCode)) return notFoundWithoutRequest(shareCode);
     return this.api.put<UpdateCreationRequest, CreationResponse>(
       itemPath(shareCode),
       { document },
       inlineErrorContext(),
+      new HttpHeaders({ 'If-Match': ifMatchTag(updatedAt) }),
     );
   }
 
@@ -92,8 +98,8 @@ export class CreationsService {
   }
 
   /**
-   * `GET api/me/creations` → 200, newest first. 403 when writes are off: `/mine` checks
-   * `session.canWrite()` and doesn't call this at all in that state (plan Phase 5).
+   * `GET api/me/creations` → 200, newest first. 401 when signed out: `/mine` checks
+   * `session.canWrite()` and doesn't call this at all in that state (phase-8.md §7).
    */
   listMine(query: CreationListQuery = {}): Observable<CreationListPage> {
     const params: string[] = [];
@@ -103,6 +109,11 @@ export class CreationsService {
     const path = params.length ? `/api/me/creations?${params.join('&')}` : '/api/me/creations';
     return this.api.get<CreationListPage>(path, inlineErrorContext());
   }
+}
+
+/** `"<updatedAt>"`: the token verbatim as one strong entity tag (it holds no `"`). */
+export function ifMatchTag(updatedAt: string): string {
+  return `"${updatedAt}"`;
 }
 
 /** The one place an item URL is built. Only ever called with a code that passed `isShareCode`. */
@@ -133,7 +144,11 @@ function notFoundWithoutRequest(shareCode: string): Observable<never> {
  *
  * - `validation` (400): a stale tab or a client bug (§8.3). `errors` and `truncated` come from the
  *   §2.4 body; a 400 without it (a `{ message }` only body) has `errors: []`.
- * - `forbidden` (403): writes are off (`canWrite` false, or it changed since `api/me` loaded).
+ * - `unauthorized` (401): signed out (an expired session, or a sign-out elsewhere). The 401
+ *   interceptor has already reloaded the session; nothing retries (Boo A41).
+ * - `forbidden` (403): the server's cross-origin write check. This client can't trigger it.
+ * - `precondition-failed` (412): Update original against a newer version (schema.md §11.4).
+ * - `precondition-required` (428): a PUT without `If-Match`, only reachable through a client bug.
  * - `not-found` (404): unknown code, deleted, or not owned (indistinguishable by design, §10).
  * - `too-large` (413): over 256 KiB. Through Railway's edge it may arrive as a reset instead, which
  *   is `network` (schema.md §2.5; Boo S5 decides the copy once measured).
@@ -149,7 +164,10 @@ export type CreationError =
       readonly errors: readonly ValidationIssue[];
       readonly truncated: boolean;
     }
+  | { readonly kind: 'unauthorized'; readonly status: 401 }
   | { readonly kind: 'forbidden'; readonly status: 403 }
+  | { readonly kind: 'precondition-failed'; readonly status: 412 }
+  | { readonly kind: 'precondition-required'; readonly status: 428 }
   | { readonly kind: 'not-found'; readonly status: 404 }
   | { readonly kind: 'too-large'; readonly status: 413 }
   | {
@@ -168,8 +186,14 @@ export function toCreationError(error: unknown, now: number = Date.now()): Creat
       return { kind: 'network', status: 0 };
     case 400:
       return validationError(error.error);
+    case 401:
+      return { kind: 'unauthorized', status: 401 };
     case 403:
       return { kind: 'forbidden', status: 403 };
+    case 412:
+      return { kind: 'precondition-failed', status: 412 };
+    case 428:
+      return { kind: 'precondition-required', status: 428 };
     case 404:
       return { kind: 'not-found', status: 404 };
     case 413:

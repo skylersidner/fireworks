@@ -1,8 +1,20 @@
 @switch (notice()) {
-  @case ('unavailable') {
-    <app-message-page heading="My creations isn't available" [body]="unavailableBody">
-      <a routerLink="/" class="btn no-underline" data-testid="message-home">Go to the designer</a>
-    </app-message-page>
+  @case ('signed-out') {
+    @if (signInAvailable()) {
+      <app-message-page heading="My creations" [body]="signedOutBody">
+        <app-google-sign-in-button from="nav" [returnPath]="returnPath()" />
+        <a
+          routerLink="/"
+          class="btn no-underline pointer-coarse:min-h-[44px]"
+          data-testid="message-home"
+          >Go to the designer</a
+        >
+      </app-message-page>
+    } @else {
+      <app-message-page heading="My creations" [body]="signInUnavailableBody">
+        <a routerLink="/" class="btn no-underline" data-testid="message-home">Go to the designer</a>
+      </app-message-page>
+    }
   }
   @case ('session-error') {
     <app-message-page heading="Can't reach the server." [body]="sessionErrorBody">
@@ -20,19 +32,22 @@
   @default {
     <div class="min-h-dvh bg-surface-sunken px-4 py-5">
       <div class="mx-auto max-w-[1100px]">
-        <div class="flex gap-3">
-          <a
-            routerLink="/"
-            class="touch-link text-small text-muted no-underline hover:text-primary"
-            data-testid="nav-designer"
-            >Shell designer</a
-          >
-          <a
-            routerLink="/show"
-            class="touch-link text-small text-muted no-underline hover:text-primary"
-            data-testid="nav-show"
-            >Show Builder</a
-          >
+        <div class="flex items-baseline justify-between gap-3">
+          <div class="flex gap-3">
+            <a
+              routerLink="/"
+              class="touch-link text-small text-muted no-underline hover:text-primary"
+              data-testid="nav-designer"
+              >Shell designer</a
+            >
+            <a
+              routerLink="/show"
+              class="touch-link text-small text-muted no-underline hover:text-primary"
+              data-testid="nav-show"
+              >Show Builder</a
+            >
+          </div>
+          <app-account-control (signIn)="signInDialog.set(true)" />
         </div>
         <h1 class="m-0 mt-2 mb-0.5 text-heading" tabindex="-1" data-testid="mine-heading">
           My creations
@@ -41,7 +56,6 @@
           Shells and shows you've saved. Anyone with a share link can play it; nothing here is
           listed publicly.
         </p>
-        <app-test-mode-banner />
         <p class="sr-only" aria-live="polite" data-testid="mine-announcer">
           {{ pageAnnouncement() }}
         </p>
@@ -231,4 +245,8 @@
     (confirmed)="confirmDelete()"
     (cancelled)="cancelDelete()"
   />
+}
+
+@if (signInDialog()) {
+  <app-sign-in-dialog variant="nav" (closed)="signInDialog.set(false)" />
 }

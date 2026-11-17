@@ -15,7 +15,6 @@ import {
 import { RouterLink } from '@angular/router';
 import { ApiStatusService } from '../../../../core/api-status';
 import type { SaveChoice } from '../../../../core/creation-save';
-import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
 import {
   COARSE_POINTER_QUERY,
   isApplePlatform,
@@ -23,6 +22,10 @@ import {
   mediaQuery,
 } from '../../../../core/browser';
 import { ApiBannerComponent, BannerFocus } from '../../../../shared/api-banner/api-banner';
+import { AccountControlComponent } from '../../../../shared/sign-in/account-control';
+import { watchIdentityFocus } from '../../../../shared/sign-in/identity-focus';
+import { SignInDialogComponent } from '../../../../shared/sign-in/sign-in-dialog';
+import type { SignInFrom } from '../../../../core/sign-in';
 import { BreakFieldsComponent } from '../../shared/break-fields/break-fields';
 import { BreakTabsComponent } from '../../shared/break-tabs/break-tabs';
 import { ConfirmDialogComponent } from '../../../../shared/confirm-dialog';
@@ -89,6 +92,7 @@ const SPACE_OWNERS = [
 @Component({
   selector: 'app-designer-page',
   imports: [
+    AccountControlComponent,
     ApiBannerComponent,
     BreakFieldsComponent,
     BreakTabsComponent,
@@ -104,8 +108,8 @@ const SPACE_OWNERS = [
     SaveBarComponent,
     SaveStatusComponent,
     ShellFieldsComponent,
+    SignInDialogComponent,
     SkyFieldsComponent,
-    TestModeBannerComponent,
   ],
   providers: [ShellDesignerStore, DesignerSaveFlow],
   templateUrl: './designer-page.html',
@@ -174,6 +178,9 @@ export class DesignerPageComponent {
 
   protected readonly blockedNote = shareBlockedNote(isApplePlatform());
 
+  /** The sign-in dialog's variant while it is open (phase-8.md §5.3). */
+  protected readonly signInDialog = signal<SignInFrom | null>(null);
+
   private returnFocus: HTMLElement | null = null;
   /** A link load to fire once the stage is running (phase-5.md §7.2: "fires once like a preset"). */
   private readonly fireWhenRunning = signal<EditableShell | null>(null);
@@ -206,15 +213,26 @@ export class DesignerPageComponent {
         this.fire(shell);
       });
     });
-    // When a save ends with the pressed button disabled (`Saved`), focus moves on (§12.1).
-    let wasSaving = false;
-    effect(() => {
-      const saving = this.saveFlow.saving() !== null;
-      if (wasSaving && !saving) {
-        afterNextRender(() => this.moveFocusOffDisabled(), { injector: this.injector });
-      }
-      wasSaving = saving;
+    // Save, Replace, the restore refresh and the return from sign-in: focus never drops
+    // (§12.1; phase-8.md §6.2, §9).
+    watchIdentityFocus({
+      injector: this.injector,
+      host: this.host.nativeElement,
+      returned: this.saveFlow.auth.returned,
+      barKey: computed(
+        () =>
+          `${this.saveFlow.auth.refreshing()}|${this.saveFlow.auth.prompt()}|${this.saveFlow.choices().join(',')}`,
+      ),
+      busy: computed(() => this.saveFlow.saving() !== null || this.saveFlow.replacing()),
+      flashNoticeVisible: this.store.flashNoticeVisible,
+      heading: () => this.byTest('panel-heading'),
     });
+    // After any `/c/` working copy is applied: the return marker and the restore refresh.
+    this.saveFlow.start();
+  }
+
+  protected openSignIn(variant: SignInFrom): void {
+    this.signInDialog.set(variant);
   }
 
   protected save(choice: SaveChoice): void {
@@ -240,6 +258,19 @@ export class DesignerPageComponent {
     }
     if (action === 'retry') {
       this.saveFlow.retry();
+      return;
+    }
+    if (action === 'signIn') {
+      this.openSignIn('save');
+      return;
+    }
+    if (action === 'replace') {
+      this.saveFlow.replace();
+      return;
+    }
+    if (this.saveFlow.choices().includes('saveAsNew')) {
+      // 412: Save as new is the remix, the same as the bar's (phase-8.md §9.2).
+      this.saveFlow.save('saveAsNew');
       return;
     }
     // 404a: source is null now, so plain Save is the POST (§6); focus back to it (§12.1).
@@ -297,16 +328,6 @@ export class DesignerPageComponent {
     afterNextRender(() => this.byTest('panel-heading')?.focus(), { injector: this.injector });
   }
 
-  private moveFocusOffDisabled(): void {
-    const active = document.activeElement;
-    const stranded =
-      active === null ||
-      active === document.body ||
-      (active instanceof HTMLButtonElement && active.disabled);
-    if (!stranded) return;
-    (this.byTest('save-saveAsNew') ?? this.byTest('share'))?.focus();
-  }
-
   private byTest<T extends HTMLElement = HTMLElement>(id: string): T | null {
     return this.host.nativeElement.querySelector<T>(`[data-testid="${id}"]`);
   }
@@ -345,19 +366,24 @@ export class DesignerPageComponent {
     this.launch();
   }
 
-  /** Ctrl/⌘+S (phase-7.md §3.3, R1): only while the save bar shows; never picks one of two choices. */
+  /**
+   * Ctrl/⌘+S (phase-7.md §3.3, R1; phase-8.md §5.5): only while the save bar shows; never picks one
+   * of two choices; signed out it opens the sign-in dialog.
+   */
   private onSaveShortcut(event: KeyboardEvent): void {
     const outcome = saveShortcut({
       canWrite: this.saveFlow.canWrite(),
-      dialogOpen: this.store.pendingReplace() !== null,
-      saving: this.saveFlow.saving() !== null,
+      prompt: this.saveFlow.auth.prompt(),
+      dialogOpen: this.store.pendingReplace() !== null || this.signInDialog() !== null,
+      saving: this.saveFlow.busy(),
       saved: this.store.saved(),
       cannotSave: null,
       choices: this.saveFlow.choices(),
     });
     if (outcome.kind === 'pass') return;
     event.preventDefault();
-    if (outcome.kind === 'save') this.save(outcome.choice);
+    if (outcome.kind === 'prompt') this.openSignIn('save');
+    else if (outcome.kind === 'save') this.save(outcome.choice);
     else if (outcome.kind === 'announce') this.store.announcement.set(outcome.text);
     else if (outcome.kind === 'choose') {
       this.byTest('save-update')?.focus();

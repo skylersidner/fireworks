@@ -15,7 +15,7 @@
 // delete one cue through the UI), Save through the builder, open /s/{code} in a fresh context and
 // play it to the end. Usage: node done-when.mjs [chromium|firefox|webkit] [code-to-replay]
 import { chromium, firefox, webkit } from 'playwright';
-import { SCHEMA_FIXTURES } from './lib/common.mjs';
+import { SCHEMA_FIXTURES, signInContext } from './lib/common.mjs';
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 const FIXTURE = JSON.parse(readFileSync(`${SCHEMA_FIXTURES}/valid/show/done-when-60s-50.json`, 'utf8'));
@@ -87,6 +87,7 @@ async function showJsonRoundTrip(code, engineB) {
   // B: fresh profile in another engine; paste, Apply (clean builder: no dialog), Save.
   const bb = engineB === which ? browser : await launchFor(engineB);
   const cb = await bb.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+  await signInContext(cb); // Phase 8: Save needs a session
   await cb.addInitScript(() => { try { localStorage.setItem('fireworks.flashNotice.v1', '1'); } catch {} });
   const pbg = await cb.newPage();
   watch(pbg, 'json-B');
@@ -119,6 +120,7 @@ let posted = null;
 try {
   if (!code) {
     const a = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+    await signInContext(a); // Phase 8: Save needs a session; the real redirect flow through the stub
     if (which === 'chromium') await a.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
     // Negative control for the share check: a clipboard that always rejects.
     if (process.env.TOAD_BLOCK_CLIPBOARD) await a.addInitScript(() => { if (navigator.clipboard) navigator.clipboard.writeText = () => Promise.reject(new Error('toad blocked')); });

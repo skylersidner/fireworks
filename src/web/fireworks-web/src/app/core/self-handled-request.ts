@@ -1,4 +1,4 @@
-import { HttpRequest } from '@angular/common/http';
+import { HttpErrorResponse, HttpRequest } from '@angular/common/http';
 
 /**
  * Requests whose failures are handled entirely by whoever made them, and which no global error
@@ -27,4 +27,16 @@ export function isSelfHandledRequest(request: HttpRequest<unknown>): boolean {
 function pathOf(url: string): string {
   const pathAndMore = url.replace(/^[a-z][a-z\d+.-]*:\/\/[^/]*/i, '');
   return pathAndMore.split(/[?#]/, 1)[0] || '/';
+}
+
+/**
+ * True for a 401 from an `/api` call other than `api/me` itself: the server says this visitor is
+ * signed out (an expired session, or a sign-out in another tab). httpErrorInterceptor skips its
+ * generic toast for these and authInterceptor reloads the session; the page words it
+ * (phase-8.md §9.1, §7).
+ */
+export function isSignedOutError(request: HttpRequest<unknown>, error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 401) return false;
+  const path = pathOf(request.url);
+  return /^\/api(\/|$)/.test(path) && path !== '/api/me';
 }

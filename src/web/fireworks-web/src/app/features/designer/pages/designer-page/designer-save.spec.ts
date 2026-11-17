@@ -6,12 +6,20 @@ import { PRESETS } from '../../../../../engine/model/presets';
 import { BROWSER_STORAGE, MATCH_MEDIA } from '../../../../core/browser';
 import type { CreationSource } from '../../../../core/creation-save';
 import { FLASH_NOTICE_KEY } from '../../../../core/device-preferences';
+import { authInterceptor } from '../../../../core/auth-interceptor';
 import { httpErrorInterceptor } from '../../../../core/http-error-interceptor';
+import {
+  SIGN_IN_INTENT_KEY,
+  setSignInNavigationForTesting,
+  writeSignInIntent,
+} from '../../../../core/sign-in';
 import { NotificationService } from '../../../../core/notifications';
 import { STAGE_RENDERER_FACTORY } from '../../../../shared/fireworks-stage/fireworks-stage';
 import {
   CODE_A,
   CODE_B,
+  ME_ADA,
+  ME_ANONYMOUS,
   ME_READ_ONLY,
   ME_SIGNED_IN,
   ME_TEST_WINDOW,
@@ -23,6 +31,7 @@ import { FakeMatchMedia } from '../../../../testing/fake-match-media';
 import { FakeStageRenderers } from '../../../../testing/fake-stage-renderer';
 import { MemoryStorage } from '../../../../testing/memory-storage';
 import { DRAFT_KEY, editableFrom, serializeDraft } from '../../shared/designer-draft';
+import { WorkingCopyHandoff } from '../../shared/working-copy-handoff';
 import { DesignerPageComponent } from './designer-page';
 import { DRAFT_DEBOUNCE_MS, ShellDesignerStore } from './shell-designer.store';
 
@@ -62,7 +71,9 @@ describe('Designer Save and Share', () => {
     TestBed.configureTestingModule({
       imports: [DesignerPageComponent],
       providers: [
-        provideHttpClient(withInterceptors([httpErrorInterceptor, recorder(ledger)])),
+        provideHttpClient(
+          withInterceptors([httpErrorInterceptor, authInterceptor, recorder(ledger)]),
+        ),
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
@@ -148,55 +159,226 @@ describe('Designer Save and Share', () => {
     return req;
   }
 
-  describe('write switch (5b.1; Boo C9)', () => {
+  describe('identity and the save bar (Phase 8; phase-8.md §4, §5.1; Boo A40)', () => {
     it.each([
-      ['writes off', ME_READ_ONLY],
       ['api/me pending', 'pending' as const],
       ['api/me failed', 'error' as const],
-    ])('%s: no save control, no My creations link, the designer still works', async (_n, me) => {
+    ])('%s: no save control; My creations is in the nav; the designer works', async (_n, me) => {
       const { byTest, answer } = await mount(me, OWNED);
-      for (const id of [
-        'save-save',
-        'save-update',
-        'save-saveAsNew',
-        'save-indicator',
-        'nav-mine',
-      ]) {
+      for (const id of ['save-save', 'save-update', 'save-saveAsNew', 'save-indicator']) {
         expect(byTest(id), id).toBeNull();
       }
+      expect(byTest('nav-mine')?.getAttribute('href')).toBe('/mine');
+      expect(byTest('account-sign-in')).toBeNull();
       // Share needs only a source (§5): copying a public link writes nothing.
       expect(byTest('share')).not.toBeNull();
       expect(byTest('launch')).not.toBeNull();
-      if (me === 'pending') answer(ME_READ_ONLY);
+      if (me === 'pending') answer(ME_ANONYMOUS);
       expect(ledger).toEqual([]);
     });
 
-    it('controls appear without a reload once api/me answers canWrite: true', async () => {
-      const { byTest, stable, answer } = await mount('pending');
-      expect(byTest('save-save')).toBeNull();
-      answer(ME_TEST_WINDOW);
-      await stable();
+    it('signed out: one Save (even for an owned source), no indicator, the sign-in note, Sign in', async () => {
+      const { byTest } = await mount(ME_ANONYMOUS, OWNED);
       expect(byTest('save-save')?.textContent?.trim()).toBe('Save');
-      expect(byTest('nav-mine')?.getAttribute('href')).toBe('/mine');
+      expect(byTest('save-save')?.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(byTest('save-update')).toBeNull();
+      expect(byTest('save-saveAsNew')).toBeNull();
+      expect(byTest('save-indicator')).toBeNull();
+      expect(byTest('save-note')?.textContent?.trim()).toBe(
+        'Sign in to save and get a share link. Your work is kept in this browser.',
+      );
+      expect(byTest('share')).not.toBeNull();
+      expect(byTest('account-sign-in')?.textContent?.trim()).toBe('Sign in');
+      expect(byTest('nav-mine')).not.toBeNull();
+      expect(ledger).toEqual([]);
     });
 
-    it('writes off and no source: the panel shows no save bar content at all (§2.1)', async () => {
-      const { byTest } = await mount(ME_READ_ONLY);
-      expect(byTest('save-bar')?.textContent?.trim()).toBe('');
+    it('signed out, Save: the dialog, zero writes; the Google button flushes, then one navigation', async () => {
+      const navigations: string[] = [];
+      const restore = setSignInNavigationForTesting((u) => navigations.push(u));
+      try {
+        const { byTest, stable, editName } = await mount(ME_ANONYMOUS);
+        await editName('Before sign-in');
+        byTest('save-save')!.click();
+        await stable();
+        expect(byTest('sign-in-dialog')).not.toBeNull();
+        expect(byTest('sign-in-dialog')?.textContent).toContain('Sign in to save');
+        expect(document.activeElement?.getAttribute('data-testid')).toBe('google-sign-in');
+        expect(storage.getItem(DRAFT_KEY) ?? '').not.toContain('Before sign-in');
+        byTest('google-sign-in')!.click();
+        await stable();
+        // flushDraft ran before the navigation (no debounce wait).
+        expect(storage.getItem(DRAFT_KEY)).toContain('Before sign-in');
+        expect(navigations).toEqual(['/api/auth/login/google?returnUrl=%2F']);
+        expect(JSON.parse(sessionStorage.getItem(SIGN_IN_INTENT_KEY) ?? 'null')).toMatchObject({
+          from: 'save',
+          path: '/',
+        });
+        expect(byTest('google-sign-in')?.getAttribute('aria-disabled')).toBe('true');
+        expect(ledger).toEqual([]);
+      } finally {
+        restore();
+        sessionStorage.clear();
+      }
+    });
+
+    it('signed out, Not now: the dialog closes, focus returns to Save, nothing sent', async () => {
+      const { byTest, stable } = await mount(ME_ANONYMOUS);
+      byTest('save-save')!.focus();
+      byTest('save-save')!.click();
+      await stable();
+      byTest('sign-in-not-now')!.click();
+      await stable();
+      expect(byTest('sign-in-dialog')).toBeNull();
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('save-save');
+      expect(ledger).toEqual([]);
+    });
+
+    it('the nav Sign in opens the nav variant; signed in, the name and Sign out', async () => {
+      const { byTest, stable } = await mount(ME_ANONYMOUS);
+      byTest('account-sign-in')!.click();
+      await stable();
+      expect(byTest('sign-in-dialog')?.querySelector('h2')?.textContent?.trim()).toBe('Sign in');
+      expect(byTest('sign-in-line-0')?.textContent?.trim()).toBe(
+        "Sign in with Google to save shells and shows and see My creations. Whatever you're working on stays in this browser.",
+      );
+      expect(byTest('sign-in-line-1')?.textContent?.trim()).toBe(
+        'Fireworks Sandbox keeps your name from Google, not your email address.',
+      );
+    });
+
+    it('signed in: the name in <bdi>, Sign out; Sign out posts logout, reloads, toasts, focuses Sign in', async () => {
+      const { byTest, stable } = await mount(ME_ADA);
+      expect(byTest('account-name')?.tagName).toBe('BDI');
+      expect(byTest('account-name')?.textContent?.trim()).toBe('Ada Lovelace');
+      expect(byTest('account-name')?.getAttribute('title')).toBe(
+        'Signed in with Google as Ada Lovelace',
+      );
+      byTest('account-sign-out')!.focus();
+      byTest('account-sign-out')!.click();
+      await stable();
+      expect(byTest('account-sign-out')?.getAttribute('aria-disabled')).toBe('true');
+      respond('/api/auth/logout', null, 204);
+      await stable();
+      respond('/api/me', ME_ANONYMOUS);
+      await stable();
+      expect(ledger).toEqual(['POST /api/auth/logout', 'GET /api/me']);
+      expect(toasts.notifications().map((n) => n.message)).toContain('Signed out.');
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('account-sign-in');
+      expect(byTest('save-save')?.getAttribute('aria-haspopup')).toBe('dialog');
+    });
+
+    it('Sign out failing: the error toast; Sign out stays', async () => {
+      const { byTest, stable } = await mount(ME_ADA);
+      byTest('account-sign-out')!.click();
+      await stable();
+      fail('/api/auth/logout', 0);
+      await stable();
+      expect(ledger).toEqual(['POST /api/auth/logout']);
+      expect(toasts.notifications().map((n) => n.message)).toEqual([
+        "Couldn't sign out: can't reach the server. Try again.",
+      ]);
+      expect(byTest('account-sign-out')).not.toBeNull();
+    });
+
+    it('the test-mode banner is gone in every state (Boo A42)', async () => {
+      for (const me of [ME_TEST_WINDOW, ME_ANONYMOUS, ME_ADA]) {
+        const { el, fixture } = await mount(me);
+        expect(el.querySelector('[data-testid="test-mode-banner"]')).toBeNull();
+        expect(el.textContent).not.toMatch(/Test mode|change or delete any saved/);
+        fixture.destroy();
+        TestBed.inject(HttpTestingController);
+      }
+    });
+
+    it('the panel is not a Tab stop of its own (phase-8.md §12.5)', async () => {
+      const { byTest } = await mount(ME_ANONYMOUS);
+      expect(byTest('designer-panel')?.getAttribute('tabindex')).toBe('-1');
     });
   });
 
-  describe('test-mode banner (Boo C17)', () => {
-    it.each([
-      ['writes on, not signed in', ME_TEST_WINDOW, true],
-      ['writes off', ME_READ_ONLY, false],
-      ['signed in (Phase 8)', ME_SIGNED_IN, false],
-    ])('%s → shown: %s', async (_n, me, shown) => {
-      const { byTest } = await mount(me);
-      expect(!!byTest('test-mode-banner')).toBe(shown);
-      if (shown) {
-        expect(byTest('test-mode-banner')?.textContent).toMatch(/change or delete any saved/);
-      }
+  describe('the restore refresh and the return (schema.md §11.2 writer 4; phase-8.md §6)', () => {
+    afterEach(() => sessionStorage.clear());
+
+    it('signed in with a restored source: exactly one GET; isOwner and name refreshed, updatedAt kept', async () => {
+      const legacy = { ...OWNED, isOwner: false, name: 'Old name' };
+      const { byTest, stable, settleDraft, draft } = await mount(ME_ADA, legacy);
+      // In flight: the one Save is busy.
+      expect(byTest('save-save')?.getAttribute('aria-disabled')).toBe('true');
+      respond(
+        `/api/creations/${CODE_A}`,
+        creationResponse({ isOwner: true, name: 'Willow 3', updatedAt: 'server-newer' }),
+      );
+      await stable();
+      expect(ledger).toEqual([`GET /api/creations/${CODE_A}`]);
+      expect(byTest('save-update')).not.toBeNull();
+      expect(byTest('save-update')?.getAttribute('aria-disabled')).toBeNull();
+      await settleDraft();
+      expect(draft().source).toEqual({ ...OWNED, isOwner: true, name: 'Willow 3' });
+    });
+
+    it('a refresh 404 clears the source; another failure leaves it', async () => {
+      const first = await mount(ME_ADA, OWNED);
+      fail(`/api/creations/${CODE_A}`, 404);
+      await first.stable();
+      await first.settleDraft();
+      expect(first.draft().source).toBeNull();
+      expect(first.byTest('share')).toBeNull();
+    });
+
+    it('a /c/ working copy is a fresh read: no refresh GET, even over a restored source (running-app B2 find)', async () => {
+      TestBed.inject(WorkingCopyHandoff).offer({
+        shell: editableFrom(PRESETS[1]),
+        source: { ...OWNED, shareCode: CODE_B, name: 'Linked' },
+      });
+      const { byTest, settleDraft, draft } = await mount(ME_ADA, OWNED, {
+        shellDirty: false,
+        skyDirty: false,
+      });
+      expect(ledger).toEqual([]);
+      expect(byTest('save-update')?.getAttribute('aria-disabled')).toBeNull();
+      await settleDraft();
+      expect(draft().source.shareCode).toBe(CODE_B);
+    });
+
+    it('signed out, or with no source: no GET (call ledger)', async () => {
+      await mount(ME_ANONYMOUS, OWNED);
+      expect(ledger).toEqual([]);
+      TestBed.resetTestingModule();
+    });
+
+    it('the return from Save: the toast, then focus on the first choice after the refresh; nothing saved (A41)', async () => {
+      writeSignInIntent('save', '/');
+      const { byTest, stable } = await mount(ME_ADA, OWNED);
+      expect(toasts.notifications()).toEqual([]);
+      respond(`/api/creations/${CODE_A}`, creationResponse({ isOwner: true }));
+      await stable();
+      expect(toasts.notifications().map((n) => n.message)).toEqual(['Signed in as Ada Lovelace.']);
+      expect(document.activeElement).toBe(byTest('save-update'));
+      expect(sessionStorage.getItem(SIGN_IN_INTENT_KEY)).toBeNull();
+      expect(ledger).toEqual([`GET /api/creations/${CODE_A}`]);
+    });
+
+    it('the return from the nav: the toast and the h1; a stale or foreign marker does nothing', async () => {
+      writeSignInIntent('nav', '/');
+      const { byTest } = await mount(ME_ADA);
+      expect(toasts.notifications().map((n) => n.message)).toEqual(['Signed in as Ada Lovelace.']);
+      expect(document.activeElement).toBe(byTest('panel-heading'));
+      expect(ledger).toEqual([]);
+    });
+
+    it('a marker for another page, or an old one, is deleted and ignored', async () => {
+      writeSignInIntent('save', '/show');
+      await mount(ME_ADA);
+      expect(toasts.notifications()).toEqual([]);
+      expect(sessionStorage.getItem(SIGN_IN_INTENT_KEY)).toBeNull();
+    });
+
+    it('back signed out (a refused cookie): nothing', async () => {
+      writeSignInIntent('save', '/');
+      await mount(ME_ANONYMOUS);
+      expect(toasts.notifications()).toEqual([]);
+      expect(ledger).toEqual([]);
     });
   });
 
@@ -563,20 +745,131 @@ describe('Designer Save and Share', () => {
       },
     );
 
-    it('403: the copy, then exactly one GET api/me, and the bar hides; the message stays', async () => {
+    it('401: the signed-out copy, exactly one GET api/me (the interceptor), no retry; the bar collapses (A41)', async () => {
+      const { byTest, stable } = await mount(ME_ADA, OWNED);
+      respond(`/api/creations/${CODE_A}`, creationResponse({ isOwner: true }));
+      await stable();
+      byTest('save-update')!.focus();
+      byTest('save-update')!.click();
+      await stable();
+      fail(`/api/creations/${CODE_A}`, 401);
+      await stable();
+      respond('/api/me', ME_ANONYMOUS);
+      await stable();
+      expect(ledger).toEqual([
+        `GET /api/creations/${CODE_A}`,
+        `PUT /api/creations/${CODE_A}`,
+        'GET /api/me',
+      ]);
+      expect(byTest('save-status-text')?.textContent?.trim()).toBe(
+        "Couldn't save: you've been signed out. Sign in to save; your shell is kept in this browser.",
+      );
+      expect(byTest('save-update')).toBeNull();
+      expect(byTest('save-save')?.getAttribute('aria-haspopup')).toBe('dialog');
+      // The pressed button is gone: focus goes to the signed-out Save (§9.1).
+      expect(document.activeElement).toBe(byTest('save-save'));
+      // No generic toast for the 401.
+      expect(toasts.notifications()).toEqual([]);
+      // The block's Sign in opens the Save variant.
+      byTest('save-status-signIn')!.click();
+      await stable();
+      expect(byTest('sign-in-dialog')?.querySelector('h2')?.textContent?.trim()).toBe(
+        'Sign in to save',
+      );
+    });
+
+    it('403 (the cross-origin check): the server-fault copy, no api/me reload', async () => {
       const { byTest, stable } = await mount(ME_TEST_WINDOW, OWNED);
       byTest('save-update')!.click();
       await stable();
-      fail(`/api/creations/${CODE_A}`, 403, { message: 'Writes are off.' });
+      fail(`/api/creations/${CODE_A}`, 403, { message: 'Cross-origin request.' });
       await stable();
-      respond('/api/me', ME_READ_ONLY);
-      await stable();
-      expect(ledger).toEqual([`PUT /api/creations/${CODE_A}`, 'GET /api/me']);
+      expect(ledger).toEqual([`PUT /api/creations/${CODE_A}`]);
       expect(byTest('save-status-text')?.textContent?.trim()).toBe(
-        "Couldn't save: saving has been turned off on this site. Your shell is kept in this browser.",
+        "Couldn't save: something went wrong on the server. Try again in a moment. Your shell is kept in this browser.",
       );
-      expect(byTest('save-update')).toBeNull();
-      expect(byTest('nav-mine')).toBeNull();
+    });
+
+    it('412: the copy, Save as new and Replace; Replace is one GET then one PUT with the fresh tag', async () => {
+      const { byTest, stable, settleDraft, draft } = await mount(ME_TEST_WINDOW, OWNED);
+      byTest('save-update')!.click();
+      await stable();
+      const put = fail(`/api/creations/${CODE_A}`, 412, { message: 'x' }, { ETag: '"t9"' });
+      expect(put.request.headers.get('If-Match')).toBe(`"${OWNED.updatedAt}"`);
+      await stable();
+      expect(byTest('save-status-text')?.textContent?.trim()).toBe(
+        "Couldn't update “\u2068Willow 2\u2069”: it was changed somewhere else (another tab or device) after you opened it. Nothing was saved. Save as new keeps both versions; Replace puts yours on its share link and discards the other changes.",
+      );
+      expect(byTest('save-status-saveAsNew')?.textContent?.trim()).toBe('Save as new');
+      expect(byTest('save-status-replace')?.textContent?.trim()).toBe('Replace the newer version');
+      // The source is unchanged (the edit base stays for If-Match).
+      await settleDraft();
+      expect(draft().source).toEqual(OWNED);
+      byTest('save-status-replace')!.focus();
+      byTest('save-status-replace')!.click();
+      await stable();
+      expect(byTest('save-status-replace')?.textContent?.trim()).toBe('Replacing…');
+      expect(byTest('save-status-replace')?.getAttribute('aria-disabled')).toBe('true');
+      expect(byTest('save-update')?.getAttribute('aria-disabled')).toBe('true');
+      respond(`/api/creations/${CODE_A}`, creationResponse({ updatedAt: 'fresh' }));
+      const second = http.expectOne((r) => r.method === 'PUT');
+      expect(second.request.headers.get('If-Match')).toBe('"fresh"');
+      second.flush(creationResponse({ updatedAt: 'after' }));
+      await stable();
+      expect(ledger).toEqual([
+        `PUT /api/creations/${CODE_A}`,
+        `GET /api/creations/${CODE_A}`,
+        `PUT /api/creations/${CODE_A}`,
+      ]);
+      expect(byTest('save-status')).toBeNull();
+      // The block left with the focused Replace: focus goes to Save as new (§9.2).
+      expect(document.activeElement).toBe(byTest('save-saveAsNew'));
+      await settleDraft();
+      expect(draft().source.updatedAt).toBe('after');
+    });
+
+    it('412, Save as new: the remix, as from the bar', async () => {
+      const { byTest, stable } = await mount(ME_TEST_WINDOW, OWNED);
+      byTest('save-update')!.click();
+      await stable();
+      fail(`/api/creations/${CODE_A}`, 412, { message: 'x' });
+      await stable();
+      byTest('save-status-saveAsNew')!.click();
+      await stable();
+      respond(`/api/creations/${CODE_A}/remix`, creationResponse({ shareCode: CODE_B }), 201);
+      await stable();
+      expect(ledger).toEqual([
+        `PUT /api/creations/${CODE_A}`,
+        `POST /api/creations/${CODE_A}/remix`,
+      ]);
+    });
+
+    it('Replace whose GET says not yours: row 404a, no PUT, source forgotten', async () => {
+      const { byTest, stable } = await mount(ME_TEST_WINDOW, OWNED);
+      byTest('save-update')!.click();
+      await stable();
+      fail(`/api/creations/${CODE_A}`, 412, { message: 'x' });
+      await stable();
+      byTest('save-status-replace')!.click();
+      await stable();
+      respond(`/api/creations/${CODE_A}`, creationResponse({ isOwner: false }));
+      await stable();
+      expect(ledger).toEqual([`PUT /api/creations/${CODE_A}`, `GET /api/creations/${CODE_A}`]);
+      expect(byTest('save-status-text')?.textContent).toMatch(/deleted or is no longer yours/);
+      expect(byTest('share')).toBeNull();
+    });
+
+    it('428: the Reload row (an empty token never reaches a PUT: readSource drops it, creation-save guards it)', async () => {
+      const { byTest, stable } = await mount(ME_TEST_WINDOW, OWNED);
+      byTest('save-update')!.click();
+      await stable();
+      fail(`/api/creations/${CODE_A}`, 428, { message: 'x' });
+      await stable();
+      expect(ledger).toEqual([`PUT /api/creations/${CODE_A}`]);
+      expect(byTest('save-status-text')?.textContent?.trim()).toBe(
+        "Couldn't update “\u2068Willow 2\u2069”: this page is out of date. Reload, then save again. Your shell is kept in this browser.",
+      );
+      expect(byTest('save-status-reload')).not.toBeNull();
     });
 
     it('Try again repeats the failed save; Dismiss clears the block', async () => {

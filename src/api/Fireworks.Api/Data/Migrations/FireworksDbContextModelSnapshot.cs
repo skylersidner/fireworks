@@ -75,6 +75,7 @@ namespace Fireworks.Api.Data.Migrations
                         .UseCollation("C");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
@@ -110,13 +111,52 @@ namespace Fireworks.Api.Data.Migrations
                         .HasColumnType("character varying(80)")
                         .HasColumnName("display_name");
 
+                    b.Property<string>("ExternalProvider")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("external_provider");
+
+                    b.Property<string>("ExternalSubject")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("external_subject");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
                     b.HasKey("Id");
 
-                    b.ToTable("users", (string)null);
+                    b.HasIndex("ExternalProvider", "ExternalSubject")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_external_provider_subject");
+
+                    b.ToTable("users", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_users_external_identity_both_or_neither", "(external_provider IS NULL) = (external_subject IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text")
+                        .HasColumnName("friendly_name");
+
+                    b.Property<string>("Xml")
+                        .HasColumnType("text")
+                        .HasColumnName("xml");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("data_protection_keys", (string)null);
                 });
 
             modelBuilder.Entity("Fireworks.Api.Data.Entities.Creation", b =>

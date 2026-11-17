@@ -26,7 +26,8 @@
 //                       and typecheck)
 // Environment:
 //   SMOKE_BASE=http://… use a running server for the smoke and browser steps instead of starting
-//                       one (it must be Production mode with writes on, on 127.0.0.1, for headers)
+//                       one (it must be Testing with stub OAuth configured, on 127.0.0.1, for headers;
+//                       Production refuses the stub)
 //   FIREWORKS_TEST_PG   Npgsql base string without Database= (default: the compose Postgres on 5433)
 // Exit codes: 0 all gating steps passed; 1 a gating step failed; 2 usage or setup error.
 import fs from 'node:fs';
@@ -149,6 +150,8 @@ function slowReport(runner) {
 
 // ---- The browser steps: our own API instance unless SMOKE_BASE is set ---------------------------
 async function withApi(runner, label, fn) {
+  // A session belongs to one API instance (its database holds the key ring): never reuse one.
+  delete process.env.FW_SESSION_COOKIE;
   if (process.env.SMOKE_BASE) {
     runner.say(`        ${label}: using SMOKE_BASE=${process.env.SMOKE_BASE} (not started or stopped by this run)`);
     return fn(process.env.SMOKE_BASE.replace(/\/$/, ''));
@@ -157,7 +160,7 @@ async function withApi(runner, label, fn) {
   let api;
   try { api = await startApi({ db: smokeDb, logFile: path.join(dir, `api-${label}.log`) }); }
   catch (e) { runner.rows.push({ name: `${label}-api-start`, ok: false, gate: 'fail', ms: Date.now() - t, why: e.message }); runner.say(`  FAIL  ${`${label}-api-start`.padEnd(28)} ${fmtS(Date.now() - t).padStart(8)}  ${e.message}`); return; }
-  runner.say(`        ${label}: started the API (Production, writes on) at ${api.base}, pid ${api.pid}, db ${api.db}, in ${fmtS(Date.now() - t)}`);
+  runner.say(`        ${label}: started the API (Testing, stub OAuth at ${api.stubBase}) at ${api.base}, pid ${api.pid}, db ${api.db}, in ${fmtS(Date.now() - t)}`);
   try { return await fn(api.base); }
   finally {
     const err = await api.stop();
@@ -171,13 +174,13 @@ async function smoke(runner) {
 
 async function browserDaily(runner) {
   const { dailySteps: gateSteps } = await import('../browser-gates/daily-steps.mjs');
-  const { saveCodes } = await import('../browser-gates/lib/common.mjs');
+  const { saveCodes, writeHeaders } = await import('../browser-gates/lib/common.mjs');
   await withApi(runner, 'daily', async (base) => {
-    const codes = await saveCodes(base);
+    const codes = await saveCodes(base); // signs in through this API's stub (FW_SESSION_COOKIE)
     // notfound's "deleted" link: save one shell, then delete it.
-    const r = await fetch(`${base}/api/creations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'shell', document: JSON.parse(fs.readFileSync(path.join(GATES, 'fixtures', 'shellA.json'), 'utf8')).document }) });
+    const r = await fetch(`${base}/api/creations`, { method: 'POST', headers: writeHeaders(), body: JSON.stringify({ kind: 'shell', document: JSON.parse(fs.readFileSync(path.join(GATES, 'fixtures', 'shellA.json'), 'utf8')).document }) });
     const gone = (await r.json()).shareCode;
-    await fetch(`${base}/api/creations/${gone}`, { method: 'DELETE' });
+    await fetch(`${base}/api/creations/${gone}`, { method: 'DELETE', headers: writeHeaders() });
     runner.say(`        daily: codes ${JSON.stringify(codes)}, deleted ${gone}`);
     const port = new URL(base).port;
     for (const st of gateSteps({ codes, gone, tier })) {

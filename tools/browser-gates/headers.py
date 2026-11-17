@@ -23,6 +23,9 @@ SITE = {
     'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
 }
 import os
+# Phase 8: writes need a session. smoke.mjs signs in through the stub and passes the cookie.
+COOKIE = os.environ.get('FW_SESSION_COOKIE')
+AUTH = {'Cookie': COOKIE} if COOKIE else {}
 if os.environ.get('HEADERS_NEG'):
     CSP = CSP.replace("script-src 'self';", "script-src 'self' 'unsafe-eval';"); SITE['content-security-policy'] = CSP
 IMMUTABLE = 'no-cache' if os.environ.get('HEADERS_NEG') else 'public, max-age=31536000, immutable'
@@ -102,17 +105,21 @@ if PHASE == 'main':
         s, h, d, raw = req('GET', p, {'Accept-Encoding': 'gzip, br'})
         check(f'7c.5 {p} with Accept-Encoding: no Content-Encoding', 'content-encoding' not in h, h.get('content-encoding', ''))
     # 7a.4 share GET token
-    s, h, d, raw = req('GET', f'/api/creations/{A}'); show('GET A', s, h, d)
+    # Phase 8: the owner (the smoke's session saved A) gets "<updatedAt>"; anyone else "<updatedAt>-p".
+    s, h, d, raw = req('GET', f'/api/creations/{A}', AUTH); show('GET A', s, h, d)
     upd = re.search(rb'"updatedAt":"([^"]+)"', d).group(1).decode()
     tag = h.get('etag')
     check('7a.4 ETag == quoted raw updatedAt', tag == f'"{upd}"', f'{tag} vs {upd}')
+    check('8 Vary: Cookie on the share GET', h.get('vary') == 'Cookie', h.get('vary'))
+    s2, h2, d2, raw2 = req('GET', f'/api/creations/{A}')
+    check('8 anonymous tag is the -p form', h2.get('etag') == f'"{upd}-p"', h2.get('etag'))
     check('7a.4 private, no-cache', h.get('cache-control') == 'private, no-cache', h.get('cache-control'))
     site('7b.1 api 200 share GET', h, raw)
     s, h, d, raw = req('GET', '/api/creations/abcdefgh'); show('GET unknown', s, h, d)
     check('7a.4 404 no-store', s == 404 and h.get('cache-control') == 'no-store')
     # 7a.5 304 forms
     for label, inm, want in [('tag', tag, 304), ('W/tag', 'W/' + tag, 304), ('list', f'"x", {tag}, "y"', 304), ('*', '*', 304), ('garbage', '"garbage"', 200)]:
-        s, h, d, raw = req('GET', f'/api/creations/{A}', {'If-None-Match': inm})
+        s, h, d, raw = req('GET', f'/api/creations/{A}', {'If-None-Match': inm, **AUTH})
         check(f'7a.5 INM {label} -> {want}', s == want and (len(d) == 0 if want == 304 else len(d) > 0), f'{s} {len(d)}')
         if label == 'tag':
             check('7a.5 304 same ETag, private no-cache', h.get('etag') == tag and h.get('cache-control') == 'private, no-cache', f"{h.get('etag')} {h.get('cache-control')}")
@@ -125,10 +132,17 @@ if PHASE == 'main':
     s, h, d, raw = req('GET', '/api/nope'); show('/api/nope', s, h, d)
     check('/api/nope 404 no-store', s == 404 and h.get('cache-control') == 'no-store'); site('7b.1 /api/nope 404', h, raw)
     body = json.dumps({'kind': 'shell', 'document': {'name': 'x' * 300000}}).encode()
-    s, h, d, raw = req('POST', '/api/creations', {'Content-Type': 'application/json'}, body); show('413', s, h, d)
+    s, h, d, raw = req('POST', '/api/creations', {'Content-Type': 'application/json', **AUTH}, body); show('413', s, h, d)
     check('413 on 300 KB declared', s == 413, s); site('7b.1 413', h, raw)
-    s, h, d, raw = req('POST', '/show'); show('POST /show', s, h, d)
+    s, h, d, raw = req('POST', '/show', AUTH); show('POST /show', s, h, d)
     check('405 on deep link no-store', s == 405 and h.get('cache-control') == 'no-store', f'{s} {h.get("cache-control")}'); site('7b.1 405', h, raw)
+    # Phase 8: anonymous, the fallback policy answers the routing 405 endpoint first (Bowser B1 record).
+    s, h, d, raw = req('POST', '/show'); show('POST /show anonymous', s, h, d)
+    check('401 on anonymous deep-link POST, no-store', s == 401 and h.get('cache-control') == 'no-store', f'{s} {h.get("cache-control")}')
+    s, h, d, raw = req('POST', '/api/creations', {'Content-Type': 'application/json'}, b'{}'); show('anonymous POST', s, h, d)
+    check('8 anonymous write 401, no Location, no Set-Cookie', s == 401 and 'location' not in h and 'set-cookie' not in h, s)
+    s, h, d, raw = req('POST', '/api/creations', {'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site', **AUTH}, b'{}'); show('cross-site POST', s, h, d)
+    check('8 cross-site signed-in write 403 (CSRF guard)', s == 403, s)
     for p in ['/health/live', '/health/ready']:
         s, h, d, raw = req('GET', p); show(p, s, h, d)
         check(f'{p} 200 text/plain Healthy', s == 200 and h.get('content-type', '').startswith('text/plain') and d == b'Healthy', d)
@@ -162,7 +176,7 @@ if PHASE == 'main':
     c = http.client.HTTPConnection('127.0.0.1', PORT, timeout=15)
     def gen():
         for _ in range(30): yield b'{"pad":"' + b'a' * 10000 + b'"}'
-    c.request('POST', '/api/creations', body=gen(), headers={'Content-Type': 'application/json'}, encode_chunked=True)
+    c.request('POST', '/api/creations', body=gen(), headers={'Content-Type': 'application/json', **AUTH}, encode_chunked=True)
     r = c.getresponse(); r.read(); conn = r.getheader('Connection')
     print('chunked 300 KB:', r.status, 'Connection:', conn)
     check('7c.4 chunked 413 + Connection: close', r.status == 413 and (conn or '').lower() == 'close', f'{r.status} {conn}')
@@ -171,14 +185,14 @@ if PHASE == 'main':
     c.close()
 
 elif PHASE == 'put':
-    s, h, d, raw = req('GET', f'/api/creations/{B}'); T = h['etag']
+    s, h, d, raw = req('GET', f'/api/creations/{B}', AUTH); T = h['etag']
     doc = json.loads(d)['document']; doc['name'] = 'Gate7 B edited'
-    s, h, d, raw = req('PUT', f'/api/creations/{B}', {'Content-Type': 'application/json'}, json.dumps({'document': doc}).encode())
+    s, h, d, raw = req('PUT', f'/api/creations/{B}', {'Content-Type': 'application/json', 'If-Match': T, **AUTH}, json.dumps({'document': doc}).encode())
     upd = re.search(rb'"updatedAt":"([^"]+)"', d).group(1).decode()
     print('PUT', s, h.get('etag'), h.get('cache-control'))
     check('7a.6 PUT 200, ETag == quoted body updatedAt, no-store', s == 200 and h.get('etag') == f'"{upd}"' and h.get('cache-control') == 'no-store')
     putTag = h.get('etag')
-    s, h, d, raw = req('GET', f'/api/creations/{B}', {'If-None-Match': T})
+    s, h, d, raw = req('GET', f'/api/creations/{B}', {'If-None-Match': T, **AUTH})
     check('7a.6 old tag gets 200 with new tag == PUT tag', s == 200 and h.get('etag') != T and h.get('etag') == putTag, f'{s} {h.get("etag")} {T}')
 
 elif PHASE == 'burst':

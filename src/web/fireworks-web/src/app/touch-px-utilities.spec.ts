@@ -40,6 +40,9 @@ export const COARSE_REM =
 /** The 44px target spelled as rem anywhere (`size-11` is 35.75px here), coarse or not. */
 export const REM_44 = /(?<![\w-])(?:size|min-[hw]|h|w)-11(?![\w.[-])/g;
 
+/** A rem-based gap utility at any pointer, e.g. `gap-2` (6.5px here). */
+const REM_GAP = /(?<![\w:-])gap(?:-[xy])?-(?:\d+(?:\.\d+)?|px)(?![\w.[-])/;
+
 function hits(re: RegExp, text: string): string[] {
   return [...text.matchAll(re)].map((m) => m[0]);
 }
@@ -70,6 +73,18 @@ describe('touch targets and gaps use px under the 13px root (phase-7.md §5.2)',
       expect(b).toContain('pointer-coarse:size-[44px]');
       expect(b).toContain('pointer-coarse:touch-manipulation');
     }
+  });
+
+  // The message page's action row holds 44px buttons side by side (phase 8 fix round): its gap is
+  // the 8px touch gap at every pointer, so it is raw px (`gap-2` would be 6.5px). The coarse-only
+  // patterns above don't see an unconditional gap, so this pins the row itself.
+  it('the message page action row gaps its buttons by 8px, not a rem gap', () => {
+    const page = files.find((f) => f.path === 'app/shared/message-page/message-page.ts')!.text;
+    const row = /<div class="([^"]*)"><ng-content \/><\/div>/.exec(page)?.[1] ?? '';
+    expect(row.split(/\s+/)).toContain('gap-[8px]');
+    expect(row).not.toMatch(REM_GAP);
+    expect('mt-4 flex flex-wrap gap-2').toMatch(REM_GAP); // negative control: the pre-fix spelling
+    expect('mt-4 flex flex-wrap gap-[8px]').not.toMatch(REM_GAP);
   });
 
   // Negative control: the pre-fix spellings from Toad's C4 finding must trip both patterns, and the

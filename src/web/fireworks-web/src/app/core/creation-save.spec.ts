@@ -6,6 +6,8 @@ import {
   SaveOutcome,
   fallbackPlan,
   planSave,
+  refreshSource,
+  replaceCreation,
   saveChoices,
   saveCreation,
   sourceFrom,
@@ -62,7 +64,12 @@ describe('save decision (pure)', () => {
 
   it.each<[string, CreationSource | null, SaveChoice, unknown]>([
     ['fresh work', null, 'save', { request: 'create' }],
-    ['owner, Update original', owned, 'update', { request: 'update', shareCode: SRC }],
+    [
+      'owner, Update original',
+      owned,
+      'update',
+      { request: 'update', shareCode: SRC, updatedAt: owned.updatedAt },
+    ],
     ['owner, Save as new', owned, 'saveAsNew', { request: 'remix', shareCode: SRC }],
     ['non-owner', notOwned, 'save', { request: 'remix', shareCode: SRC }],
   ])('%s → %j', (_name, source, choice, plan) => {
@@ -84,7 +91,9 @@ describe('save decision (pure)', () => {
   });
 
   it('only a 404 from remix falls back to a plain create; a PUT 404 asks first (phase-5.md §6)', () => {
-    expect(fallbackPlan({ request: 'update', shareCode: SRC }, notFound)).toBeNull();
+    expect(
+      fallbackPlan({ request: 'update', shareCode: SRC, updatedAt: 't' }, notFound),
+    ).toBeNull();
     expect(fallbackPlan({ request: 'remix', shareCode: SRC }, notFound)).toEqual({
       request: 'create',
     });
@@ -98,7 +107,7 @@ describe('save decision (pure)', () => {
       { kind: 'unexpected', status: 500 },
     ];
     for (const e of others) {
-      expect(fallbackPlan({ request: 'update', shareCode: SRC }, e)).toBeNull();
+      expect(fallbackPlan({ request: 'update', shareCode: SRC, updatedAt: 't' }, e)).toBeNull();
       expect(fallbackPlan({ request: 'remix', shareCode: SRC }, e)).toBeNull();
     }
   });
@@ -164,6 +173,8 @@ describe('saveCreation (call ledger)', () => {
     const outcomes = run(owned, 'update');
     const req = http.expectOne(`/api/creations/${SRC}`);
     expect(req.request.body).toEqual({ document: DOC });
+    // If-Match is the edit base, verbatim, as one strong tag (schema.md §11.4).
+    expect(req.request.headers.getAll('If-Match')).toEqual([`"${owned.updatedAt}"`]);
     req.flush(record({ updatedAt: '2026-11-13T21:20:27.000001+00:00' }));
 
     expect(ledger).toEqual([`PUT /api/creations/${SRC}`]);
@@ -278,7 +289,10 @@ describe('saveCreation (call ledger)', () => {
       400,
       { message: 'm', errors: [{ path: 'name', code: 'type', message: 'x' }], truncated: false },
     ],
-    [403, { message: 'Writes are off.' }],
+    [401, null],
+    [403, { message: 'Cross-origin request.' }],
+    [412, { message: 'Changed.' }],
+    [428, { message: 'If-Match required.' }],
     [413, null],
     [429, null],
     [500, null],
@@ -307,5 +321,163 @@ describe('saveCreation (call ledger)', () => {
   it('a caller bug throws before any request', () => {
     expect(() => run(notOwned, 'update')).toThrow();
     expect(ledger).toEqual([]);
+  });
+});
+
+describe('If-Match guard, Replace and the restore refresh (Phase 8; schema.md §11.2, §11.4)', () => {
+  let service: CreationsService;
+  let http: HttpTestingController;
+  let ledger: string[];
+  const recorder: HttpInterceptorFn = (req, next) => {
+    ledger.push(
+      `${req.method} ${req.url}${req.headers.has('If-Match') ? ` If-Match ${req.headers.get('If-Match')}` : ''}`,
+    );
+    return next(req);
+  };
+
+  beforeEach(() => {
+    ledger = [];
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(withInterceptors([recorder])), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(CreationsService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('a source with an empty updatedAt never sends a PUT: 428 without a request (§9.3)', () => {
+    const outcomes: SaveOutcome[] = [];
+    saveCreation(service, {
+      source: { ...owned, updatedAt: '' },
+      choice: 'update',
+      kind: 'shell',
+      document: DOC,
+    }).subscribe((o) => outcomes.push(o));
+    expect(ledger).toEqual([]);
+    expect(outcomes).toEqual([
+      {
+        ok: false,
+        request: 'update',
+        fellBack: false,
+        error: { kind: 'precondition-required', status: 428 },
+      },
+    ]);
+  });
+
+  it("a 412 never retries and never falls back (a stale tag is the visitor's choice)", () => {
+    const outcomes: SaveOutcome[] = [];
+    saveCreation(service, {
+      source: owned,
+      choice: 'update',
+      kind: 'shell',
+      document: DOC,
+    }).subscribe((o) => outcomes.push(o));
+    http
+      .expectOne(`/api/creations/${SRC}`)
+      .flush({ message: 'x' }, { status: 412, statusText: 'Precondition Failed' });
+    expect(ledger).toEqual([`PUT /api/creations/${SRC} If-Match "${owned.updatedAt}"`]);
+    expect(outcomes[0]).toMatchObject({ ok: false, error: { kind: 'precondition-failed' } });
+  });
+
+  function replace(): SaveOutcome[] {
+    const outcomes: SaveOutcome[] = [];
+    replaceCreation(service, SRC, 'shell', DOC).subscribe((o) => outcomes.push(o));
+    return outcomes;
+  }
+
+  it("Replace: one fresh GET, then one PUT with that response's tag (never the stale one, never *)", () => {
+    const outcomes = replace();
+    http.expectOne(`/api/creations/${SRC}`).flush(record({ updatedAt: 'fresh-tag' }));
+    const put = http.expectOne((r) => r.method === 'PUT');
+    expect(put.request.body).toEqual({ document: DOC });
+    put.flush(record({ updatedAt: 'after-put' }));
+    expect(ledger).toEqual([
+      `GET /api/creations/${SRC}`,
+      `PUT /api/creations/${SRC} If-Match "fresh-tag"`,
+    ]);
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toMatchObject({
+      ok: true,
+      request: 'update',
+      source: { ...owned, updatedAt: 'after-put' },
+    });
+  });
+
+  it.each([
+    [
+      'a 404',
+      () => http.expectOne(`/api/creations/${SRC}`).flush(null, { status: 404, statusText: 'x' }),
+    ],
+    [
+      'isOwner: false',
+      () => http.expectOne(`/api/creations/${SRC}`).flush(record({ isOwner: false })),
+    ],
+    [
+      'a show under the code',
+      () => http.expectOne(`/api/creations/${SRC}`).flush(record({ kind: 'show' })),
+    ],
+  ])('Replace whose GET answers %s: row 404a (not-found on update), no PUT', (_n, answer) => {
+    const outcomes = replace();
+    answer();
+    expect(ledger).toEqual([`GET /api/creations/${SRC}`]);
+    expect(outcomes).toEqual([
+      { ok: false, request: 'update', fellBack: false, error: { kind: 'not-found', status: 404 } },
+    ]);
+  });
+
+  it('Replace whose GET fails otherwise: that failure, no PUT', () => {
+    const outcomes = replace();
+    http.expectOne(`/api/creations/${SRC}`).error(new ProgressEvent('error'));
+    expect(ledger).toEqual([`GET /api/creations/${SRC}`]);
+    expect(outcomes[0]).toMatchObject({ ok: false, request: 'update', error: { kind: 'network' } });
+  });
+
+  it('Replace answered 412 again: the same failure, no third request', () => {
+    const outcomes = replace();
+    http.expectOne(`/api/creations/${SRC}`).flush(record({ updatedAt: 'fresh' }));
+    http.expectOne((r) => r.method === 'PUT').flush(null, { status: 412, statusText: 'x' });
+    expect(ledger).toHaveLength(2);
+    expect(outcomes[0]).toMatchObject({ ok: false, error: { kind: 'precondition-failed' } });
+  });
+
+  function refresh(source: CreationSource = { ...owned, isOwner: false, name: 'Old' }) {
+    const out: unknown[] = [];
+    refreshSource(service, source).subscribe((r) => out.push(r));
+    return out;
+  }
+
+  it('refresh: isOwner and name from the response, updatedAt kept (the If-Match base)', () => {
+    const out = refresh();
+    http
+      .expectOne(`/api/creations/${SRC}`)
+      .flush(record({ isOwner: true, name: 'New', updatedAt: 'newer' }));
+    expect(ledger).toEqual([`GET /api/creations/${SRC}`]);
+    expect(out).toEqual([
+      {
+        kind: 'refreshed',
+        source: { ...owned, isOwner: true, name: 'New', updatedAt: owned.updatedAt },
+      },
+    ]);
+  });
+
+  it('refresh: a 404 is gone; any other failure is unchanged', () => {
+    const gone = refresh();
+    http.expectOne(`/api/creations/${SRC}`).flush(null, { status: 404, statusText: 'x' });
+    expect(gone).toEqual([{ kind: 'gone' }]);
+    for (const status of [401, 429, 500]) {
+      const same = refresh();
+      http.expectOne(`/api/creations/${SRC}`).flush(null, { status, statusText: 'x' });
+      expect(same).toEqual([{ kind: 'unchanged' }]);
+    }
+    const network = refresh();
+    http.expectOne(`/api/creations/${SRC}`).error(new ProgressEvent('error'));
+    expect(network).toEqual([{ kind: 'unchanged' }]);
+  });
+
+  it('refresh: a response for another kind is unchanged (never adopted)', () => {
+    const out = refresh();
+    http.expectOne(`/api/creations/${SRC}`).flush(record({ kind: 'show', isOwner: true }));
+    expect(out).toEqual([{ kind: 'unchanged' }]);
   });
 });

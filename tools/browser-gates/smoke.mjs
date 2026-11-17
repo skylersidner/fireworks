@@ -3,8 +3,9 @@
 // regular` starts its own Production-mode API and passes BASE.
 //
 // Usage: BASE=http://127.0.0.1:5190 [CODES=...|CODES_FILE=...] node smoke.mjs
-//   Without CODES it saves the gate fixtures first (lib/common.mjs SAVE_SET), so writes must be on.
-//   headers.py needs a Production server on 127.0.0.1 (no Server header; HSTS only when forwarded).
+//   Without CODES it saves the gate fixtures first (lib/common.mjs SAVE_SET), signed in through the
+//   server's stub OAuth (Phase 8), so the server must be Testing (or Development) with the stub.
+//   headers.py needs a non-Development server on 127.0.0.1 (no Server header; HSTS only when forwarded).
 // Steps (each must pass; every step runs, and the exit code is 1 if any failed):
 //   headers      headers.py main: caching, site headers, CSP, 304s, 413, health (≈1 s)
 //   roundtrip    gate-roundtrip chromium with SKIP_PLAY=1: builder edit, Save, Share, GET equals
@@ -13,11 +14,15 @@
 //                frozen-clock control (≈12 s)
 //   csp          gate-csp, real header, all nine pages, polling instead of fixed waits (≈20 s)
 //   csp-neg      gate-csp MODE=none on three pages: each must show a blocked script (≈6 s)
+//   auth         gate-auth (Phase 8 B3): same-site and cross-site CSRF from a :5190 page, zero
+//                CSP violations across the real /signin -> stub -> /mine flow, and the
+//                walk-alice / walk-bob ownership walk. Its negative controls run in daily.
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
-import { BASE, HERE, loadCodes, saveCodes } from './lib/common.mjs';
+import { BASE, HERE, ensureSession, loadCodes, saveCodes } from './lib/common.mjs';
 
 const t0 = Date.now();
+await ensureSession(BASE);
 const codes = process.env.CODES || process.env.CODES_FILE ? await loadCodes(['shell', 'shellB', 'show', 'short']) : await saveCodes(BASE);
 console.log(`smoke: BASE ${BASE}; codes ${JSON.stringify(codes)}; load ${os.loadavg().map((x) => x.toFixed(1)).join(' ')}`);
 const port = new URL(BASE).port || '80';
@@ -32,6 +37,7 @@ const steps = [
   ['player-vt', process.execPath, ['player-virtual-time.mjs'], {}],
   ['csp', process.execPath, ['gate-csp.mjs'], {}],
   ['csp-neg', process.execPath, ['gate-csp.mjs'], { MODE: 'none', PATHS: '/,/show,/s/<show>' }],
+  ['auth', process.execPath, ['gate-auth.mjs'], {}],
 ];
 const only = process.env.SMOKE_ONLY?.split(',');
 const rows = [];
@@ -45,7 +51,7 @@ for (const [name, cmd, args, extra] of steps) {
   console.log(`\n--- smoke ${name}: ${ok ? 'ok' : `FAIL (exit ${p.status}${p.signal ? ' ' + p.signal : ''})`} in ${((Date.now() - a) / 1000).toFixed(1)} s`);
   // Pass: the verdict lines only. Fail: the whole output.
   const lines = out.trimEnd().split('\n');
-  console.log((ok ? lines.filter((l) => /PASS|FAIL|ok, \d+ fail|caught|frozen|ended after|7k\.3|saved/.test(l)).slice(-8) : lines).join('\n'));
+  console.log((ok ? lines.filter((l) => /PASS|FAIL|ok, \d+ fail|caught|frozen|ended after|7k\.3|saved|gate-auth/.test(l)).slice(-8) : lines).join('\n'));
 }
 const bad = rows.filter((r) => !r.ok);
 console.log(`\nsmoke: ${bad.length ? 'FAIL' : 'PASS'} in ${((Date.now() - t0) / 1000).toFixed(1)} s | ${rows.map((r) => `${r.name} ${r.ok ? 'ok' : 'FAIL'} ${r.s.toFixed(1)}s`).join(' | ')}`);

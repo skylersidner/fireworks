@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.RateLimiting;
+using Fireworks.Api.Services.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fireworks.Api.Services.RateLimiting;
@@ -18,6 +19,7 @@ public sealed record FireworksRateLimitOptions
 
     public WriteLimits Writes { get; init; } = new();
     public ReadLimits Reads { get; init; } = new();
+    public AuthLimits Auth { get; init; } = new();
 
     /// <summary>Creation writes (create, update, delete, remix) per client.</summary>
     public sealed record WriteLimits
@@ -33,12 +35,24 @@ public sealed record FireworksRateLimitOptions
     {
         public int PerMinute { get; init; } = 120;
     }
+
+    /// <summary>Sign-in starts and sign-outs per client IP (Boo A30). Always by IP: it runs before anyone has an id.</summary>
+    public sealed record AuthLimits
+    {
+        public int PerMinute { get; init; } = 20;
+    }
 }
 
 /// <summary>
-/// Fixed-window limits partitioned by client IP (plan Phase 4). Not by user: before Phase 8 every
-/// visitor resolves to the same default <c>UserId</c>, so a user-keyed partition would be one
-/// global bucket any single client could drain. Phase 8 partitions by user when authenticated.
+/// Fixed-window limits (plan Phase 4, Phase 8). Reads and writes are keyed <c>u:&lt;userId&gt;</c>
+/// when signed in (from <see cref="ICurrentUser"/>, after <c>OnValidatePrincipal</c>), otherwise
+/// <c>ip:&lt;address or /64&gt;</c>; the prefixes keep the two kinds of bucket apart (Boo A30). The
+/// <c>auth</c> policy (login and logout) is always by IP.
+///
+/// <para>
+/// Residual, stated (design §3.6): free provider accounts multiply the per-user write budget.
+/// Trigger: more than 100 new users a day or 10,000 in total, then chain an IP window onto writes.
+/// </para>
 ///
 /// <para>
 /// <b>Opt-in per endpoint</b> (<c>[EnableRateLimiting]</c>, and <c>RequireRateLimiting</c> on the
@@ -58,13 +72,14 @@ public static class FireworksRateLimiting
 {
     public const string WritePolicy = "creation-writes";
     public const string ReadPolicy = "creation-reads";
+    public const string AuthPolicy = "auth";
 
     /// <summary>Program.cs and the test harnesses both call this, so a test host limits exactly as the app does.</summary>
     public static IServiceCollection AddFireworksRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
         var options = configuration.GetSection(FireworksRateLimitOptions.SectionName).Get<FireworksRateLimitOptions>()
                       ?? new FireworksRateLimitOptions();
-        if (options.Writes.PerMinute < 1 || options.Writes.PerDay < 1 || options.Reads.PerMinute < 1)
+        if (options.Writes.PerMinute < 1 || options.Writes.PerDay < 1 || options.Reads.PerMinute < 1 || options.Auth.PerMinute < 1)
         {
             throw new InvalidOperationException("RateLimiting limits must be positive.");
         }
@@ -93,17 +108,29 @@ public static class FireworksRateLimiting
             limiter.AddPolicy(ReadPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
                 PartitionKey(context),
                 _ => FixedWindowOptions(options.Reads.PerMinute, TimeSpan.FromMinutes(1))));
+
+            limiter.AddPolicy(AuthPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+                IpPartitionKey(context),
+                _ => FixedWindowOptions(options.Auth.PerMinute, TimeSpan.FromMinutes(1))));
         });
 
         return services;
     }
 
+    /// <summary><c>u:&lt;userId&gt;</c> when signed in, otherwise <see cref="IpPartitionKey"/>.</summary>
+    public static string PartitionKey(HttpContext context) =>
+        (context.RequestServices?.GetService(typeof(ICurrentUser)) as ICurrentUser)?.UserId is { } userId
+            ? "u:" + userId.ToString("D")
+            : IpPartitionKey(context);
+
     /// <summary>
-    /// The client address after forwarded headers. IPv6 is keyed by its /64, the block one
-    /// subscriber is normally given: keying by the full address would let one client rotate through
-    /// 2^64 addresses, each with a fresh bucket. IPv4-mapped IPv6 is keyed as IPv4.
+    /// <c>ip:</c> + the client address after forwarded headers. IPv6 is keyed by its /64, the block
+    /// one subscriber is normally given: keying by the full address would let one client rotate
+    /// through 2^64 addresses, each with a fresh bucket. IPv4-mapped IPv6 is keyed as IPv4.
     /// </summary>
-    public static string PartitionKey(HttpContext context)
+    public static string IpPartitionKey(HttpContext context) => "ip:" + AddressKey(context);
+
+    private static string AddressKey(HttpContext context)
     {
         var address = context.Connection.RemoteIpAddress;
         if (address is null)

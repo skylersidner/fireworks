@@ -47,7 +47,7 @@ import {
 } from '../../../../shared/link-copy';
 import { MessagePageComponent } from '../../../../shared/message-page/message-page';
 import { StaticSkylineComponent } from '../../../../shared/static-skyline';
-import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
+import { SessionService } from '../../../../core/session';
 import { PlayerNoticeComponent } from '../../shared/player-notice';
 import { announcement } from '../../../../shared/announcer';
 
@@ -107,7 +107,10 @@ interface Playing {
  *  - Flashing safety before the first burst (Boo C19): the device-wide notice holds playback until
  *    it's answered, and under `prefers-reduced-motion` the player opens paused (never remembered).
  *  - Remix always shows (Skyler, 2026-11-14): it navigates to `/c/{code}` and writes nothing. No
- *    Save here, and no "Remixed from" anywhere (Boo C10).
+ *    Save here.
+ *  - "Remixed from the original" (phase-8.md §10; Boo A43): only for
+ *    `session.isAuthenticated() && response.isOwner`, and only with a `remixedFrom` that passes the
+ *    share-code pattern, as a `/s/<code>` link. `isOwner` never authorizes anything (C7).
  *  - It never reads or writes the designer draft (acceptance 5f.7). Reduce flashing is the
  *    device-wide choice (core/device-preferences.ts).
  */
@@ -119,7 +122,6 @@ interface Playing {
     PlayerNoticeComponent,
     RouterLink,
     StaticSkylineComponent,
-    TestModeBannerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -142,7 +144,16 @@ export class PlayerPageComponent {
   protected readonly stage = viewChild(FireworksStageComponent);
   private readonly reducedMotion = mediaQuery(REDUCED_MOTION_QUERY);
 
+  private readonly session = inject(SessionService);
   private readonly opened = signal<OpenedCreation | null>(null);
+  /** The original's code for "Remixed from" (A43), or null: never rendered from an unchecked value. */
+  protected readonly lineage = computed<{ code: string } | null>(() => {
+    const opened = this.opened();
+    if (opened?.status !== 'shell' && opened?.status !== 'show') return null;
+    if (!this.session.isAuthenticated() || opened.response.isOwner !== true) return null;
+    const code = opened.response.remixedFrom;
+    return typeof code === 'string' && isShareCode(code) ? { code } : null;
+  });
   protected readonly showLoading = signal(false);
   protected readonly playing = computed<Playing | null>(() => {
     const opened = this.opened();

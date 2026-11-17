@@ -28,8 +28,10 @@ public sealed class PipelineEdgeTests
         return body.ToArray();
     }
 
-    private static byte[] ChunkedHead(string path) => Encoding.ASCII.GetBytes(
-        $"POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n");
+    private static byte[] ChunkedHead(string path, FireworksApiHarness? signedIn = null) => Encoding.ASCII.GetBytes(
+        $"POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n"
+        + (signedIn?.Owner is { } owner ? "Cookie: " + string.Join("; ", owner.Cookies.Select(kv => $"{kv.Key}={kv.Value}")) + "\r\n" : "")
+        + "\r\n");
 
     /// <summary>
     /// A chunked body has no declared length, so the old declared-length rule never fired. Mutant:
@@ -37,13 +39,13 @@ public sealed class PipelineEdgeTests
     /// <c>Connection: close</c> (Boo measured the pooled client's next request failing without it).
     /// </summary>
     [Theory]
-    [InlineData(false, "403")]
+    [InlineData(false, "401")]
     [InlineData(true, "413")]
-    public async Task A_chunked_body_over_the_limit_is_answered_with_Connection_close(bool writes, string status)
+    public async Task A_chunked_body_over_the_limit_is_answered_with_Connection_close(bool signedIn, string status)
     {
-        await using var h = await FireworksApiHarness.StartAsync(writes, FireworksApiHarness.UnthrottledRateLimits);
+        await using var h = await FireworksApiHarness.StartAsync(signedIn, FireworksApiHarness.UnthrottledRateLimits);
 
-        var head = await HeaderExpectations.RawHeadAsync(h.Client.BaseAddress!, ChunkedHead("/api/creations"), Chunked(300 * 1024));
+        var head = await HeaderExpectations.RawHeadAsync(h.Client.BaseAddress!, ChunkedHead("/api/creations", h), Chunked(300 * 1024));
 
         Assert.StartsWith($"HTTP/1.1 {status}", head);
         Assert.Equal("close", HeaderExpectations.RawHeader(head, "Connection"));
@@ -57,7 +59,7 @@ public sealed class PipelineEdgeTests
 
         var head = await HeaderExpectations.RawHeadAsync(h.Client.BaseAddress!, ChunkedHead("/api/creations"), Chunked(100));
 
-        Assert.StartsWith("HTTP/1.1 403", head);
+        Assert.StartsWith("HTTP/1.1 401", head);
         Assert.Equal("close", HeaderExpectations.RawHeader(head, "Connection"));
     }
 
@@ -70,20 +72,26 @@ public sealed class PipelineEdgeTests
         using var post = await h.Client.PostAsync("/api/creations", new StringContent("{}", Encoding.UTF8, "application/json"));
         using var get = await h.Client.GetAsync("/api/me");
 
-        Assert.Equal(HttpStatusCode.Forbidden, post.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, post.StatusCode);
         Assert.NotEqual(true, post.Headers.ConnectionClose);
         Assert.NotEqual(true, get.Headers.ConnectionClose);
     }
 
-    /// <summary>Outside /api nothing reads a body, and the rule doesn't apply.</summary>
-    [Fact]
-    public async Task The_rule_is_scoped_to_api()
+    /// <summary>
+    /// Outside /api nothing reads a body, and the rule doesn't apply. Signed in, a POST to a deep
+    /// link is the routing 405; anonymous, the routing 405 endpoint has no <c>AllowAnonymous</c>, so
+    /// the fallback policy answers 401 first. Both are body-less and harmless; noted in Bowser's record.
+    /// </summary>
+    [Theory]
+    [InlineData(true, "405")]
+    [InlineData(false, "401")]
+    public async Task The_rule_is_scoped_to_api(bool signedIn, string status)
     {
-        await using var h = await FireworksApiHarness.StartAsync();
+        await using var h = await FireworksApiHarness.StartAsync(signedIn);
 
-        var head = await HeaderExpectations.RawHeadAsync(h.Client.BaseAddress!, ChunkedHead("/show"), Chunked(100));
+        var head = await HeaderExpectations.RawHeadAsync(h.Client.BaseAddress!, ChunkedHead("/show", h), Chunked(100));
 
-        Assert.StartsWith("HTTP/1.1 405", head);
+        Assert.StartsWith($"HTTP/1.1 {status}", head);
         Assert.Null(HeaderExpectations.RawHeader(head, "Connection"));
     }
 

@@ -55,9 +55,11 @@ public static partial class SpaHosting
     /// </summary>
     public static WebApplication MapFireworksSpaFallback(this WebApplication app, StaticFileOptions options)
     {
-        app.MapFallbackToFile("/s/{**rest}", "index.html", options);
-        app.MapFallbackToFile("/c/{**rest}", "index.html", options);
-        app.MapFallbackToFile("index.html", options);
+        // Anonymous: under the fail-closed fallback policy every deep link would otherwise 401
+        // before any HTML is served.
+        app.MapFallbackToFile("/s/{**rest}", "index.html", options).AllowAnonymous();
+        app.MapFallbackToFile("/c/{**rest}", "index.html", options).AllowAnonymous();
+        app.MapFallbackToFile("index.html", options).AllowAnonymous();
         return app;
     }
 }

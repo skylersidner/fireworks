@@ -1,5 +1,6 @@
 using Fireworks.Api.Contracts;
 using Fireworks.Api.Services.ClientConfig;
+using Fireworks.Api.Services.Identity;
 using Fireworks.Api.Services.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,7 @@ namespace Fireworks.Api.Controllers;
 /// </summary>
 [ApiController]
 [AllowAnonymous]
-public sealed class ClientConfigController(IOptions<ClientPlaybackOptions> playbackOptions) : ControllerBase
+public sealed class ClientConfigController(IOptions<ClientPlaybackOptions> playbackOptions, FireworksAuthSetup authSetup) : ControllerBase
 {
     [HttpGet("api/client-config")]
     [EnableRateLimiting(FireworksRateLimiting.ReadPolicy)]
@@ -27,6 +28,8 @@ public sealed class ClientConfigController(IOptions<ClientPlaybackOptions> playb
             playback.SeekBudgetMs,
             playback.CatchingUpDelayMs,
             playback.CheckpointIntervalSeconds,
-            playback.CheckpointMemoryMiB)));
+            playback.CheckpointMemoryMiB),
+            // The same configured set as the login route's allowlist, so the two can't disagree.
+            authSetup.LoginProviders.Select(p => new LoginProviderConfig(p.Id, p.Name)).ToList()));
     }
 }

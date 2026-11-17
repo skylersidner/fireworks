@@ -7,7 +7,10 @@
 //   ENGINES     chromium (default) | chromium,firefox,webkit (the daily run).
 //   CODES       '{"shell":"..","show":".."}' | SAVE (POST the fixtures below to BASE first).
 //   CODES_FILE  a JSON file with the same shape (used when CODES is unset).
+//   FW_SESSION_COOKIE  "__Host-fw.session=..." for writes (Phase 8: writes need a signed-in
+//               session). ensureSession() signs in through the stub and sets it when unset.
 import { chromium, firefox, webkit } from 'playwright';
+import { signIn } from '../../fake-oauth/server.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,12 +52,47 @@ export const SAVE_SET = {
   short: ['show', () => fixtureDoc('show/cue-at-duration')],
 };
 
+/**
+ * A signed-in session cookie for Node-side writes (Phase 8). Signs in through the API's configured
+ * stub (tools/fake-oauth) as `subject` unless FW_SESSION_COOKIE is already set; sets it for children.
+ */
+export const SAVE_SUBJECT = 'smoke-user';
+export async function ensureSession(base = BASE, subject = SAVE_SUBJECT) {
+  if (!process.env.FW_SESSION_COOKIE) process.env.FW_SESSION_COOKIE = await signIn(base, subject);
+  return process.env.FW_SESSION_COOKIE;
+}
+
+/** Headers for a Node-side write: JSON plus the session cookie (no Origin or Sec-Fetch-Site, so the CSRF guard passes). */
+export const writeHeaders = (extra = {}) => ({ 'content-type': 'application/json', ...(process.env.FW_SESSION_COOKIE ? { cookie: process.env.FW_SESSION_COOKIE } : {}), ...extra });
+
+/**
+ * Signs a browser context in through the real redirect flow (login -> stub -> callback), landing on
+ * a static file so no page boots. Proves the Secure __Host- cookie survives on http://127.0.0.1 in
+ * this engine (probe P3). Throws if the context has no session cookie afterwards.
+ * With `subject`, the stub is told (POST /__next-subject) to sign that account in; without it the
+ * stub's default subject is used, which is NOT the account that owns the SAVE codes (SAVE_SUBJECT).
+ */
+export async function signInContext(context, base = BASE, subject = null) {
+  if (subject) {
+    const login = await fetch(`${base}/api/auth/login/google?returnUrl=%2F`, { redirect: 'manual' });
+    if (login.status !== 302) throw new Error(`login: HTTP ${login.status}`);
+    const q = await fetch(`${new URL(login.headers.get('location')).origin}/__next-subject?sub=${encodeURIComponent(subject)}`, { method: 'POST' });
+    if (q.status !== 200) throw new Error(`stub /__next-subject: HTTP ${q.status}`);
+  }
+  const page = await context.newPage();
+  await page.goto(`${base}/api/auth/login/google?returnUrl=${encodeURIComponent('/favicon.svg')}`);
+  await page.close();
+  const cookies = await context.cookies(base);
+  if (!cookies.some((c) => c.name.endsWith('fw.session'))) throw new Error(`browser sign-in left no session cookie (have: ${cookies.map((c) => c.name).join(', ') || 'none'})`);
+}
+
 export async function saveCodes(base = BASE, keys = Object.keys(SAVE_SET)) {
+  await ensureSession(base);
   const codes = {};
   for (const k of keys) {
     const [kind, doc] = SAVE_SET[k];
-    const r = await fetch(`${base}/api/creations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, document: doc() }) });
-    if (r.status !== 201) throw new Error(`SAVE ${k}: HTTP ${r.status} ${(await r.text()).slice(0, 200)} (writes off on ${base}?)`);
+    const r = await fetch(`${base}/api/creations`, { method: 'POST', headers: writeHeaders(), body: JSON.stringify({ kind, document: doc() }) });
+    if (r.status !== 201) throw new Error(`SAVE ${k}: HTTP ${r.status} ${(await r.text()).slice(0, 200)} (signed in on ${base}?)`);
     codes[k] = (await r.json()).shareCode;
   }
   return codes;

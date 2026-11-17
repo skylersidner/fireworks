@@ -30,7 +30,20 @@
 // A set is tools/mutants/sets/<name>.mjs exporting { kind: 'web' | 'api', description, mutants }.
 //   web mutant: { id, name, file (relative to src/web/fireworks-web), old, new, specs: [...] }
 //   api mutant: { id, name, file (relative to src/api/Fireworks.Api), old, new, filter ('' = all) }
-//   Either kind may use { append: text } instead of old/new (a line added at the end of the file).
+//   Either kind may use { append: text } instead of old/new (a line added at the end of the file),
+//   or { swaps: [{ file, old, new } | { file, append }, ...] } for a mutant that needs several
+//   exact swaps (in one file or several) at once; every swap must apply, and all are restored.
+//
+// Postgres mutants (Boo's ruling 6, boo-phase8-security-verification.md; Toad B3). An api mutant
+// may set `postgres: true`: its tests then run with FIREWORKS_TEST_POSTGRES set to the value of
+// FIREWORKS_MUTANT_POSTGRES, but only when that string's Database= name ends in `_mut` or `_test`
+// (the Postgres tests call EnsureDeletedAsync on whatever database they are given). Otherwise the
+// mutant (and its baseline) is SKIPPED, never KILLED. Every other mutant still runs with
+// FIREWORKS_TEST_POSTGRES stripped, whatever the caller's environment says.
+//   FIREWORKS_MUTANT_POSTGRES="Host=localhost;Port=5433;Username=fireworks_app;Password=…;Database=fireworks_mut" \
+//     node tools/mutants/run.mjs phase8-auth R1
+// Exit codes: 0 every mutant KILLED; 3 every mutant that ran was KILLED but some were SKIPPED (not
+// a full result: say which); 1 anything else.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -57,17 +70,51 @@ const [setName, ...only] = check ? args.slice(1) : args;
 const set = (await import(pathToFileURL(path.join(SETS, `${setName}.mjs`)))).default;
 const chosen = set.mutants.filter((m) => !only.length || only.includes(m.id));
 if (!chosen.length) throw new Error(`no mutants match ${only.join(' ')}`);
+/** A mutant's swaps: `swaps`, or the single { file, old, new | append } form. */
+const swapsOf = (m) => m.swaps ?? [{ file: m.file, old: m.old, new: m.new, append: m.append }];
+/** How many times old and new occur (an append counts as old once, new never). */
+function counts(src, sw) {
+  if (src === null) return { nOld: 0, nNew: 0 };
+  return { nOld: sw.append ? 1 : src.split(sw.old).length - 1, nNew: sw.append || sw.new === '' ? 0 : src.split(sw.new).length - 1 };
+}
+/**
+ * Ruling 6: the Postgres string for a `postgres: true` mutant, or the reason it can't run. Only a
+ * Database= name ending in _mut or _test is accepted; the tests drop and recreate it.
+ */
+export function mutantPostgres(value = process.env.FIREWORKS_MUTANT_POSTGRES) {
+  if (!value) return { skip: 'FIREWORKS_MUTANT_POSTGRES is not set' };
+  const db = /(?:^|;)\s*Database\s*=\s*([^;]*)/i.exec(value)?.[1]?.trim() ?? '';
+  if (!db) return { skip: 'FIREWORKS_MUTANT_POSTGRES has no Database=' };
+  if ([...value.matchAll(/(?:^|;)\s*Database\s*=/gi)].length > 1) return { skip: 'FIREWORKS_MUTANT_POSTGRES names Database= more than once' };
+  if (!/^[A-Za-z0-9_]+_(mut|test)$/.test(db)) return { skip: `FIREWORKS_MUTANT_POSTGRES names database "${db}", which does not end in _mut or _test` };
+  return { conn: value, db };
+}
+if (process.env.MUTANT_PG_SELFTEST) {
+  // node tools/mutants/run.mjs <any set> with MUTANT_PG_SELFTEST=1: the ruling-6 gate's own control.
+  const cases = [
+    [undefined, false], ['', false], ['Host=x;Database=fireworks', false], ['Host=x;Database=fireworks_dev', false],
+    ['Host=x;Database=fireworks_mut', true], ['Host=x;database = fireworks_test ;Port=1', true],
+    ['Host=x;Database=fireworks_mut;Database=fireworks', false], ['Host=x;Database=fireworks_mut_x', false],
+    ['Host=x;Database=a-b_test', false], ['Host=x', false],
+  ];
+  let bad = 0;
+  for (const [v, ok] of cases) { const r = mutantPostgres(v); if (!!r.conn !== ok) { bad++; console.log(`FAIL mutantPostgres(${JSON.stringify(v)}) = ${JSON.stringify(r)}`); } }
+  console.log(bad ? `mutantPostgres: ${bad} case(s) wrong` : `mutantPostgres: ok (${cases.length} cases)`);
+  process.exit(bad ? 1 : 0);
+}
 if (check) {
   // --check <set>: no tests, no rig. Does each mutant still apply to the CURRENT tree?
   let stale = 0;
   for (const m of chosen) {
-    const file = path.join(ROOT, set.kind === 'web' ? 'src/web/fireworks-web' : 'src/api/Fireworks.Api', m.file);
-    const src = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
-    const nOld = src === null ? 0 : m.append ? 1 : src.split(m.old).length - 1;
-    const nNew = src === null || m.append || m.new === '' ? 0 : src.split(m.new).length - 1;
-    const ok = nOld === 1 && nNew === 0;
-    if (!ok) stale++;
-    console.log(`${ok ? 'applies' : 'STALE  '} ${m.id}${ok ? '' : `  (${src === null ? 'file missing' : `old ${nOld}×, new ${nNew}×`} in ${m.file})`}`);
+    const problems = [];
+    for (const sw of swapsOf(m)) {
+      const file = path.join(ROOT, set.kind === 'web' ? 'src/web/fireworks-web' : 'src/api/Fireworks.Api', sw.file);
+      const src = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+      const { nOld, nNew } = counts(src, sw);
+      if (nOld !== 1 || nNew !== 0) problems.push(`${src === null ? 'file missing' : `old ${nOld}×, new ${nNew}×`} in ${sw.file}`);
+    }
+    if (problems.length) stale++;
+    console.log(`${problems.length ? 'STALE  ' : 'applies'} ${m.id}${m.postgres ? ' (postgres)' : ''}${problems.length ? `  (${problems.join('; ')})` : ''}`);
   }
   console.log(`${setName}: ${chosen.length - stale} apply, ${stale} stale`);
   process.exit(stale ? 1 : 0);
@@ -113,11 +160,13 @@ function runWeb(specs, tag) {
   return classify(p.status, failed, `${r.numPassedTests}/${r.numTotalTests} passed`);
 }
 
-function runApi(filter, tag) {
+function runApi(filter, tag, pg = null) {
   const trxDir = path.join(RIG, `${tag}-trx`);
   fs.rmSync(trxDir, { recursive: true, force: true });
   const env = { ...process.env };
-  delete env.FIREWORKS_TEST_POSTGRES; // the copy never touches a real database
+  delete env.FIREWORKS_TEST_POSTGRES; // the copy never touches a real database...
+  delete env.FIREWORKS_MUTANT_POSTGRES;
+  if (pg) env.FIREWORKS_TEST_POSTGRES = pg.conn; // ...except a postgres: true mutant's _mut/_test one
   const p = spawnSync('dotnet', ['test', path.join(REPO, 'src', 'api', 'Fireworks.Api.Tests', 'Fireworks.Api.Tests.csproj'), ...(filter ? ['--filter', filter] : []), '--logger', 'trx;LogFileName=r.trx', '--results-directory', trxDir],
     { cwd: REPO, encoding: 'utf8', timeout: TIMEOUT_MS, maxBuffer: 1 << 28, env });
   const text = (p.stdout ?? '') + (p.stderr ?? '');
@@ -143,34 +192,52 @@ function runApi(filter, tag) {
 }
 
 
-const run = (m, tag) => (set.kind === 'web' ? runWeb(m.specs, tag) : runApi(m.filter, tag));
-const fileOf = (m) => path.join(set.kind === 'web' ? WEB : API, m.file);
+if (set.kind === 'web' && chosen.some((m) => m.postgres)) throw new Error('postgres: true is for api mutants only');
+const PG = mutantPostgres();
+const pgFor = (m) => (m.postgres && PG.conn ? PG : null);
+const skipped = (m) => (m.postgres && !PG.conn ? PG.skip : null);
+const run = (m, tag) => (set.kind === 'web' ? runWeb(m.specs, tag) : runApi(m.filter, tag, pgFor(m)));
+const fileOf = (sw) => path.join(set.kind === 'web' ? WEB : API, sw.file);
+if (chosen.some((m) => m.postgres)) log(`postgres mutants: ${PG.conn ? `run on database ${PG.db} (FIREWORKS_MUTANT_POSTGRES)` : `SKIPPED: ${PG.skip}`}`);
 
-// 2. Baseline: every distinct spec group (or filter) passes unmutated.
+// 2. Baseline: every distinct spec group (or filter, with or without Postgres) passes unmutated.
 const groups = new Map();
-for (const m of chosen) groups.set(set.kind === 'web' ? m.specs.join('|') : m.filter, m);
+for (const m of chosen) if (!skipped(m)) groups.set(set.kind === 'web' ? m.specs.join('|') : `${m.postgres ? 'pg:' : ''}${m.filter}`, m);
 let i = 0;
 for (const m of groups.values()) {
   const r = run(m, `baseline-${++i}`);
-  log(`baseline ${i}/${groups.size} (${set.kind === 'web' ? m.specs.length + ' specs' : m.filter || 'all tests'}): ${r.verdict === 'SURVIVED' ? 'green' : r.verdict} ${r.detail}`);
+  log(`baseline ${i}/${groups.size} (${set.kind === 'web' ? m.specs.length + ' specs' : m.filter || 'all tests'}${m.postgres ? ', Postgres' : ''}): ${r.verdict === 'SURVIVED' ? 'green' : r.verdict} ${r.detail}`);
   if (r.verdict !== 'SURVIVED') { log('BASELINE NOT GREEN: no mutant result would mean anything. Stopping.'); for (const f of r.failed ?? []) log(`    ${f.test} :: ${f.why}`); process.exit(1); }
 }
 
 // 3. Mutants.
 const tally = {};
 for (const m of chosen) {
-  const file = fileOf(m);
-  const src = fs.readFileSync(file, 'utf8');
-  const nOld = m.append ? 1 : src.split(m.old).length - 1, nNew = m.append || m.new === '' ? 0 : src.split(m.new).length - 1;
+  // Swaps apply in order, each to the file as the previous swaps left it; originals are kept per file.
+  const originals = new Map();
+  const mutated = new Map();
+  const stale = [];
+  for (const sw of swapsOf(m)) {
+    const f = fileOf(sw);
+    if (!originals.has(f)) { const t0 = fs.readFileSync(f, 'utf8'); originals.set(f, t0); mutated.set(f, t0); }
+    const src = mutated.get(f);
+    const { nOld, nNew } = counts(src, sw);
+    if (nOld !== 1 || nNew !== 0) { stale.push(`old occurs ${nOld}×, new occurs ${nNew}× in ${sw.file}`); continue; }
+    mutated.set(f, sw.append ? src + sw.append : src.replace(sw.old, () => sw.new));
+  }
   let r;
-  if (nOld !== 1 || nNew !== 0) r = { verdict: 'STALE', detail: `old occurs ${nOld}×, new occurs ${nNew}× in ${m.file}` };
+  if (skipped(m)) r = { verdict: 'SKIPPED', detail: `${skipped(m)} (not a kill)` };
+  else if (stale.length) r = { verdict: 'STALE', detail: stale.join('; ') };
   else {
-    fs.writeFileSync(file, m.append ? src + m.append : src.replace(m.old, () => m.new));
-    try { r = run(m, m.id); }
-    finally {
-      fs.writeFileSync(file, src); // the rig is private, so restoring its own copy can't clobber anyone
-      const t = new Date(); fs.utimesSync(file, t, t); // MSBuild must see the restore as newer
-      if (fs.readFileSync(file, 'utf8') !== src) throw new Error(`${m.id}: the revert did not restore ${m.file} exactly`);
+    try {
+      for (const [f, t] of mutated) fs.writeFileSync(f, t);
+      r = run(m, m.id);
+    } finally {
+      for (const [f, src] of originals) {
+        fs.writeFileSync(f, src); // the rig is private, so restoring its own copy can't clobber anyone
+        const t = new Date(); fs.utimesSync(f, t, t); // MSBuild must see the restore as newer
+        if (fs.readFileSync(f, 'utf8') !== src) throw new Error(`${m.id}: the revert did not restore ${path.relative(REPO, f)} exactly`);
+      }
     }
   }
   tally[r.verdict] = (tally[r.verdict] ?? 0) + 1;
@@ -179,4 +246,6 @@ for (const m of chosen) {
 }
 log(`summary ${setName}: ${Object.entries(tally).map(([k, v]) => `${k} ${v}`).join(', ')}; log ${path.join(RIG, 'mutants.log')}`);
 if (!process.env.KEEP_RIG) fs.rmSync(REPO, { recursive: true, force: true });
-process.exitCode = (tally.KILLED ?? 0) === chosen.length ? 0 : 1;
+const killed = tally.KILLED ?? 0, skips = tally.SKIPPED ?? 0;
+if (skips) log(`NOTE: ${skips} mutant(s) SKIPPED (${chosen.filter(skipped).map((m) => m.id).join(', ')}): not killed, not run. Exit 3 unless something else failed.`);
+process.exitCode = killed === chosen.length ? 0 : killed + skips === chosen.length ? 3 : 1;

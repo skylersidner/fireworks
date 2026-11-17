@@ -28,11 +28,13 @@ A web app for designing, saving, sharing and playing fireworks shells (and later
 1. (Optional) Copy `.env.example` to `.env` and adjust the credentials. If you change them, change `ConnectionStrings:Postgres` in `src/api/Fireworks.Api/appsettings.Development.json` to match.
 2. Start Postgres:
    - `docker compose up -d postgres`
-3. Start the API (http://localhost:5180; it applies migrations and seeds the default user on startup):
+3. Start the stub sign-in server (local "Google", see [Sign-in](#sign-in-phase-8)) in its own terminal:
+   - `node tools/fake-oauth/server.mjs --interactive`
+4. Start the API (http://localhost:5180; it applies migrations on startup):
    - `dotnet run --project src/api/Fireworks.Api`
-4. Start the Angular dev server (see [Frontend](#frontend) for its commands):
+5. Start the Angular dev server (see [Frontend](#frontend) for its commands):
    - `cd src/web/fireworks-web && npm start`
-5. Open http://localhost:4200. The dev server proxies `/api` and `/health` to the API on 5180.
+6. Open http://localhost:4200. The dev server proxies `/api` and `/health` to the API on 5180.
 
 **This is the whole development loop. `docker build` is for shipping only and is never part of iterating.** `ng serve` gives hot reload, and the dev proxy makes the app single-origin, as it is in production.
 
@@ -44,15 +46,74 @@ A web app for designing, saving, sharing and playing fireworks shells (and later
 
 `wwwroot` is a build artifact: it is gitignored and excluded from the Docker build context.
 
-### Identity (until Phase 8)
+### Sign-in (Phase 8)
 
-There is no login yet (plan §3.4). Every request acts as one configured default user, `Identity:DefaultUserId` in `appsettings.json`, which the API inserts into `users` on startup. `GET /api/me` returns `{ userId, displayName, isAuthenticated: false, canWrite }`.
+Sign-in is **Google only**, with a cookie session (Skyler, 2026-11-16). Anyone can design and play without signing in; saving, "My creations" and every write need a session. The API stores only `external_provider = 'google'`, Google's `sub` and the display name, never an email, picture or token.
 
-`canWrite` is `Identity:AllowAnonymousWrites`: **`true` in Development and `false` in production** (decided, plan §5 OQ20). The client hides write controls when it is false. The API refuses to start if `DefaultUserId` is missing, blank, not a GUID, or the empty GUID.
+| Endpoint | What it does |
+|---|---|
+| `GET /api/auth/login/google?returnUrl=/show` | A top-level navigation (never a form or `fetch`): 302 to Google. `returnUrl` must be a safe internal path, else `/`. Any other provider id is an empty 404. 20 a minute per IP. |
+| `/api/auth/callback/google` | Answered by the Google handler. Success: sets the session cookie and 302s to `returnUrl`. Cancel: `/signin?error=cancelled&returnUrl=…`. Any other failure: `/signin?error=failed&returnUrl=…` (`returnUrl` is omitted when the login state can't be read). |
+| `POST /api/auth/logout` | Always 204, with a deleting `Set-Cookie`. 20 a minute per IP, shared with login. |
+| `GET /api/me` | `{ userId, displayName, isAuthenticated, canWrite, signedInWith }`. `canWrite` always equals `isAuthenticated`; `signedInWith` is `"google"` or `null`. |
+| `GET /api/client-config` | Adds `loginProviders: [{ "id": "google", "name": "Google" }]`. It is empty only in Development or Testing with no Google client configured. |
 
-> **Until sign-in exists (Phase 8), the deployed site has no accounts. Saving is normally off. When it is switched on for testing, anyone who can reach the site can see, change and delete every saved creation, and a share link can be changed to play something else. Don't save anything there you'd mind losing or having changed.**
->
-> Now that `PUT` and `DELETE` exist, "writes on" means more than "people can save". With `Identity__AllowAnonymousWrites=true`, anyone who reaches the site (not only people you give the URL to; new `*.up.railway.app` hostnames show up in certificate-transparency logs within minutes) can list every creation saved in any test window, overwrite what any existing share link plays (including links already sent to people), rename it to any 80-character text, delete everything, and create up to 300 rows a day per IP, each up to 256 KiB. Take a [backup](#backups-and-restore) before every window, and follow [Test windows](#test-windows-switching-writes-on) every time.
+**The session.** The cookie is `__Host-fw.session` outside Development and `fw.session` in Development (plain http there, so no `Secure`). It is `HttpOnly`, `SameSite=Lax`, lasts 30 days and slides (it is renewed once more than half its life has passed). It holds one claim, your `users.id`. The key ring that protects it is in the `data_protection_keys` table, so a restart doesn't sign anyone out. Signing out deletes this browser's cookie. A copied cookie stays valid until it expires.
+
+**Writes.** Anonymous writes get **401**. Every unsafe request (any method except GET, HEAD, OPTIONS and TRACE) on any path is refused with **403** when the browser says it came from another origin (`Sec-Fetch-Site` other than `same-origin`, or a foreign `Origin`). There is no CORS policy in any environment. `PUT /api/creations/{code}` needs `If-Match` with the ETag you last read: **428** without it, **412** (with the current `ETag`) when it's stale. `*`, a weak tag or a `-p` tag also get 412.
+
+**The API refuses to start** (before it touches the database) in Production, or in any environment other than Development and Testing, when `Auth__Providers__Google__ClientId` or `__ClientSecret` is missing or set to the stub placeholders, or when any stub endpoint override is set. It also refuses to start if any old `Identity__*` variable is present, so delete those.
+
+#### Local development: the stub (default)
+
+`appsettings.Development.json` points Google at the stub, `tools/fake-oauth/server.mjs`, on `127.0.0.1:5190`. The committed pair `fireworks-stub-client` / `stub-secret-not-a-credential` is a placeholder, not a credential. With `--interactive`, the stub shows a page with "Continue as dev-alice", "Continue as dev-bob" and "Cancel", so you can try two accounts in two browser profiles. Without the flag it signs in as `dev-user` straight away. The API logs `Sign-in uses stub OAuth endpoints (127.0.0.1:5190)` at startup whenever it uses the stub.
+
+The sign-in round trip goes through the `ng serve` proxy. The proxy keeps the `Host` header (there is no `changeOrigin` in `proxy.conf.json`, and none may be added), so Google's redirect URI and the CSRF check both see `localhost:4200`.
+
+#### Local development: your own Google client (optional)
+
+1. Open https://console.cloud.google.com and create a project (for example "Fireworks dev").
+2. Go to **Google Auth Platform** (menu → APIs & Services → OAuth consent screen) → **Get started**. Enter an app name and your email as the support address, choose the **External** audience, add your email as the contact, and accept the policy.
+3. In **Audience**, leave the publishing status on **Testing** and add your Google account under **Test users**. Only test users can sign in while the app is in testing.
+4. In **Data access**, add the scopes `openid` and `…/auth/userinfo.profile`. Don't add `email`. Both are non-sensitive, so no verification is needed.
+5. In **Clients** → **Create client**, choose **Web application** and add these **Authorized redirect URIs** (exactly, including the port; Google accepts plain `http` only for `localhost`):
+   - `http://localhost:4200/api/auth/callback/google` (the `ng serve` loop)
+   - `http://localhost:5180/api/auth/callback/google` (the API on its own)
+   - `http://localhost:8080/api/auth/callback/google` (the Docker image; use the port you map)
+   - later, for Railway: `https://<domain>/api/auth/callback/google`
+
+   No JavaScript origins are needed.
+6. Copy the client ID and client secret. The console shows the secret once, so download the JSON as well.
+7. Store them as user-secrets and blank the stub endpoints (an empty value means Google's default):
+
+   ```bash
+   cd src/api/Fireworks.Api
+   dotnet user-secrets set "Auth:Providers:Google:ClientId" "<id>.apps.googleusercontent.com"
+   dotnet user-secrets set "Auth:Providers:Google:ClientSecret" "<secret>"
+   dotnet user-secrets set "Auth:Providers:Google:AuthorizationEndpoint" ""
+   dotnet user-secrets set "Auth:Providers:Google:TokenEndpoint" ""
+   dotnet user-secrets set "Auth:Providers:Google:UserInformationEndpoint" ""
+   ```
+
+   To go back to the stub, run `dotnet user-secrets clear`. Never put a real secret in a committed file. A test fails if one appears.
+
+#### Claiming the pre-Phase 8 creations (optional runbook)
+
+Creations saved before Phase 8 belong to the old default user (`6933f933-a9e9-443b-b7c7-6e3e01901a34`). No sign-in can ever resolve to that user, so those creations are read-only: their links still play, and nobody can edit or delete them. To make them yours:
+
+1. Take a [backup](#backups-and-restore).
+2. Sign in, open `/api/me` in the same browser, and copy your `userId`.
+3. Run this in a transaction, and commit only if the row count is what you expect:
+
+   ```sql
+   BEGIN;
+   SELECT count(*) FROM creations WHERE owner_user_id = '6933f933-a9e9-443b-b7c7-6e3e01901a34';
+   UPDATE creations SET owner_user_id = '<your userId>' WHERE owner_user_id = '6933f933-a9e9-443b-b7c7-6e3e01901a34';
+   -- the UPDATE's count must equal the SELECT's
+   COMMIT;
+   ```
+
+   Locally: `docker exec -it fireworks-postgres psql -U fireworks_app -d fireworks`. Leave the old `users` row in place. Your cached copies revalidate on their own: the ETag changes from the non-owner `-p` form to the owner form.
 
 ### Creations API (Phase 4)
 
@@ -144,7 +205,7 @@ node tools/test/daily-status.mjs   # is the latest daily (or final) green, compl
 |---|---|---|
 | `quick` | `prettier --check` on changed web files, `npm run typecheck`, `ng test --include` on the specs impacted by your changes (sibling specs plus the folder map in `tools/test/impact.json`), and `dotnet test --filter` on the matching test classes when C# changed | 15–30 s for a leaf change; about 100 s when the change touches the engine (2026-11-15, load 9–12) |
 | `regular` | `format:check`, `fixtures:check`, typecheck, `test:regular` (every spec except `*.daily.spec.ts` and `*.final.spec.ts`), `ng build`, `dotnet build`, the Postgres `dotnet test`, then the Chromium smoke | **170 s measured** (2026-11-15, load 15.6 at the start and 19.5 at the end); about 3–3.9 min estimated at low load |
-| `daily` | everything in `regular` except the smoke, then `test:daily` (`*.daily.spec.ts`), the browser gates (Chromium, Firefox and WebKit, with their negative controls), the real-time 66 s play in three engines, and the T2 fingerprints (regular cases plus `realistic-600`) in three engines | **21.4 min measured** (2026-11-16, first full run; load 3.9 at the start, 5.1 at the end, 5-minute average about 9 late in the run) |
+| `daily` | everything in `regular` except the smoke, then `test:daily` (`*.daily.spec.ts`), the browser gates (Chromium, Firefox and WebKit, with their negative controls; `gate-auth` and its three controls in Chromium), the real-time 66 s play in three engines, and the T2 fingerprints (regular cases plus `realistic-600`) in three engines | **21.7 min measured** (2026-11-17, Phase 8 pre-gate run with `gate-auth`; load 2.8 at the start, 4.3 at the end). Keep the machine awake (`caffeinate -dims`): a closed lid stalled one run to 8.5 h of timeouts |
 | `final` | everything in `daily`, plus `test:final` (`*.final.spec.ts`: the `at-maximums` fingerprint), the `at-maximums` fingerprint in three engines (`FP_CASES=at-maximums`), the report-only benchmarks (`gate-warm`, `tools/bench/bench.mjs`) and an uncached `docker build` | daily plus about 15–25 min (estimate) |
 
 How the runner behaves:
@@ -156,14 +217,15 @@ How the runner behaves:
 - **There are no automatic retries** (flake quarantine, Skyler 2026-11-16). A test that fails and then passes on an unchanged tree is logged in `tools/test/quarantine.json` with an owner and a cause. It keeps running in the daily tier and is fixed or deleted within one phase.
 - `unit-web` prints the slowest spec file and warns about any file over 30 s or any test over 5 s. These are warnings; they never fail the run.
 
-**Databases and servers.** Each run gets its own databases and drops them at the end: `fireworks_test_<tier>_<pid>` for the Postgres `dotnet test`, and `fireworks_smoke_<tier>_<pid>` for the browser steps. The dev database `fireworks` is never touched. The browser steps start their own API: the built `Fireworks.Api.dll`, serving the `ng build` output from `wwwroot`, in **Production** mode (the real headers and CSP) with `Identity__AllowAnonymousWrites=true`, on a free port on 127.0.0.1. The runner stops that API when the steps finish and doesn't touch anything else that is running (the dev API on 5180, `ng serve` on 4200). To use a server that is already running, set `SMOKE_BASE=http://127.0.0.1:<port>`. It must be in Production mode with writes on, or the headers check fails.
+**Databases and servers.** Each run gets its own databases and drops them at the end: `fireworks_test_<tier>_<pid>` for the Postgres `dotnet test`, and `fireworks_smoke_<tier>_<pid>` for the browser steps. The dev database `fireworks` is never touched. The browser steps start their own API: the built `Fireworks.Api.dll`, serving the `ng build` output from `wwwroot`, as **`ASPNETCORE_ENVIRONMENT=Testing`** (every non-Development behaviour: the real headers and CSP, `Secure` `__Host-` cookies; Production would refuse the stub), with sign-in pointed at a fresh `tools/fake-oauth` stub on 127.0.0.1, on a free port on 127.0.0.1. The smoke signs in through that stub: in Node for the HTTP checks, and through the real redirect flow in Chromium for the builder's Save. The runner stops that API when the steps finish and doesn't touch anything else that is running (the dev API on 5180, `ng serve` on 4200). To use a server that is already running, set `SMOKE_BASE=http://127.0.0.1:<port>`. It must run as Testing with the stub configured, or the headers check fails.
 
 **The Chromium smoke** (`tools/browser-gates/smoke.mjs`, about 60–70 s with the API start) is part of the regular tier (Skyler, 2026-11-16). It runs, in Chromium with the real CSP:
 - `headers.py main`: 287 header and caching checks;
 - `gate-roundtrip` with `SKIP_PLAY=1`: builder edit, Save, Share, and the Show JSON round trip;
 - the 10 s show played to its end under Playwright virtual time, then Replay played to its end, followed by the frozen-clock negative control;
 - `gate-csp` on all nine pages;
-- the `gate-csp` negative control on three pages.
+- the `gate-csp` negative control on three pages;
+- `gate-auth` (Phase 8, about 30 s): CSRF from same-site and cross-site loopback pages (a no-cors POST, a cross-origin DELETE and a form POST to logout each get 403 or are blocked by the browser; the session and the list are unchanged), zero CSP violations across the real `/signin` → stub → `/mine` flow, and the two-account walk (`walk-alice` and `walk-bob` can't edit, delete or list each other's creations, through the browser). Its three negative controls run in `daily`.
 
 **Running the daily suite.** It runs only when you start it, once per phase before its gate. There is no scheduler (Skyler, 2026-11-16; "No CI" stands).
 1. Start Postgres and leave the machine otherwise idle (one heavy job at a time; the final tier's benchmarks are only comparable at load ≤ 6).
@@ -257,6 +319,11 @@ Every command above is a verification step, and a check that has never been seen
 | smoke `player-vt` frozen-clock control | `PAUSE=0`: no `pauseAt`, so `install()` alone keeps real time | readout `0:00` to `0:03` in 3 s, `MOVED`, exit 1. With `pauseAt`, `0:00` stays `0:00` (2026-11-15, Toad) |
 | smoke `csp-neg` (`gate-csp MODE=none`) | `NEG_SELFTEST=1`: the injection is skipped, so no script is blocked | `NOT CAUGHT` on every page, exit 1. Every page counts as caught only on a `script-src` violation event and with the stage not running; a favicon `img-src` violation doesn't count (2026-11-15, Toad) |
 | smoke `roundtrip` (Show JSON) | `TOAD_JSON_TAMPER=1`: one seed is edited before Apply | `7k.3 Show JSON round trip differs`, exit 1 (2026-11-15, Toad; the daily step `roundtrip-neg-tamper`) |
+| smoke `auth` (`gate-auth` csrf) | `NEG=csrf`: the same three requests from a real app document (`/status`, same-origin), which the guard rightly lets through | `CSRF LANDED: signed out, list changed, row deleted`, 6 checks fail (DELETE 204, logout 204), exit 1 (2026-11-16, Toad; the daily step `auth-neg-csrf`) |
+| smoke `auth` (`gate-auth` csp) | `NEG=csp`: an inline script is added to `/mine` after the redirect chain | `CSP VIOLATION: … /mine script-src-elem inline` plus the console "violates" line, exit 1 (2026-11-16, Toad; `auth-neg-csp`) |
+| smoke `auth` (`gate-auth` walk) | `NEG=walk`: "bob" signs in as `walk-alice` | `OWNERSHIP NOT ENFORCED`: 7 checks fail (Update original offered, `isOwner: true`, PUT 200, DELETE 204), exit 1 (2026-11-16, Toad; `auth-neg-walk`) |
+| `proxy-config.contract.spec.ts` (A15, no `changeOrigin`) | built in: `changeOrigin: true`, `ChangeOrigin`, and a `headers.Origin` override on mutated copies of the real file | each is reported at its exact path (2026-11-16, Toad) |
+| `tools/mutants/run.mjs` `postgres: true` (ruling 6) | `MUTANT_PG_SELFTEST=1` (10 connection strings), and `FIREWORKS_MUTANT_POSTGRES=…;Database=fireworks` on R1 | self-test ok; R1 `SKIPPED … does not end in _mut or _test (not a kill)`, exit 3 (2026-11-16, Toad) |
 | `tools/mutants/classify.mjs` (a timeout is never a kill) | the verdict counts every failure instead of only non-timeout ones | the self-check fails 2 of 6 cases (`timeout` only gives `KILLED`), exit 1 (2026-11-15, Toad) |
 
 A verification command with no negative control is an assumption, not a check.
@@ -269,21 +336,27 @@ The repo-root `Dockerfile` has three stages:
 2. `dotnet/sdk:11.0` publishes **`src/api/Fireworks.Api/Fireworks.Api.csproj`, never `Fireworks.slnx`**. The solution also contains the test project, which would drag SQLite and the test packages into the image.
 3. `dotnet/aspnet:11.0` runs it as the image's non-root `app` user (`USER $APP_UID`), with Kestrel bound to `${PORT:-8080}` over HTTP. TLS ends at the platform edge.
 
-`appsettings.Development.json` is excluded from publish (`CopyToPublishDirectory="Never"`), so an image started with `ASPNETCORE_ENVIRONMENT=Development` fails at startup instead of turning anonymous writes on.
+`appsettings.Development.json` is excluded from publish (`CopyToPublishDirectory="Never"`), so an image started with `ASPNETCORE_ENVIRONMENT=Development` fails at startup instead of pointing sign-in at the stub.
 
-To check the image locally against the compose Postgres:
+To check the image locally against the compose Postgres, run it as **Testing** with the stub (Boo A36). Production refuses the stub, and Production with real Google needs your own client (above) and is **[R]**. The browser goes to the stub's authorize page on `localhost:5190`. The container makes the token and userinfo calls through `host.docker.internal`:
 
 ```bash
 docker build -t fireworks-api .
+node tools/fake-oauth/server.mjs &        # 127.0.0.1:5190
 docker run --rm -p 8080:8080 \
-  -e ASPNETCORE_ENVIRONMENT=Production \
+  -e ASPNETCORE_ENVIRONMENT=Testing \
   -e "ConnectionStrings__Postgres=Host=host.docker.internal;Port=5433;Database=fireworks;Username=fireworks_app;Password=fireworks_dev_password" \
+  -e Auth__Providers__Google__ClientId=fireworks-stub-client \
+  -e Auth__Providers__Google__ClientSecret=stub-secret-not-a-credential \
+  -e Auth__Providers__Google__AuthorizationEndpoint=http://localhost:5190/authorize \
+  -e Auth__Providers__Google__TokenEndpoint=http://host.docker.internal:5190/token \
+  -e Auth__Providers__Google__UserInformationEndpoint=http://host.docker.internal:5190/userinfo \
   fireworks-api
 curl -i http://localhost:8080/health/live    # 200 text/plain "Healthy"
 curl -i http://localhost:8080/health/ready   # 200 text/plain "Healthy"; 503 "Unhealthy" when the database is unreachable
 ```
 
-(Host port 8080 is often taken on a dev machine; map `-p 127.0.0.1:18080:8080` instead.)
+(Host port 8080 is often taken on a dev machine; map `-p 127.0.0.1:18080:8080` instead.) Sign in on that image in **Chromium or Firefox**: they store `Secure` `__Host-` cookies from `http://localhost` and `http://127.0.0.1`, and WebKit stores none (probe P3, 2026-11-16).
 
 ### Health checks
 
@@ -328,7 +401,10 @@ Phase 1d is deferred: nothing has been created on Railway yet. When it happens, 
    |---|---|
    | `ASPNETCORE_ENVIRONMENT` | `Production` |
    | `ConnectionStrings__Postgres` | `Host=${{Postgres.PGHOST}};Port=${{Postgres.PGPORT}};Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}` |
-   | `Identity__AllowAnonymousWrites` | **Leave unset** (it means `false`). Set it to `true` only during a [test window](#test-windows-switching-writes-on), then delete it again (decided, plan §5 OQ20). While true, anyone who reaches the URL can list, overwrite and delete every creation. |
+   | `Auth__Providers__Google__ClientId` | The Google web client's id ([Sign-in](#sign-in-phase-8)). Its redirect URIs must include `https://<domain>/api/auth/callback/google`. |
+   | `Auth__Providers__Google__ClientSecret` | Its secret, as a secret variable. Startup fails if this or the id is missing. |
+
+   Don't set any `Identity__*` variable (startup refuses it) or any `Auth__Providers__Google__*Endpoint` (Production refuses the stub).
 
    Compose the connection string from the Postgres service's individual variables as shown. **Do not use `${{Postgres.DATABASE_URL}}`**: it is a `postgresql://` URI, and Npgsql can't parse that form. `ConnectionStrings__Postgres` is deliberately absent from `appsettings.json`, so a deploy that forgets it fails at startup with `ConnectionStrings:Postgres must be configured.` instead of half-starting.
 4. Push to the connected branch. Migrations apply themselves on startup, so a bad migration is a failed deploy rather than a manual recovery. **Run one replica.** Every replica migrates on start, with no lock between them, so two replicas starting against an empty (or behind) database can race the same migration and one crashes with Postgres `42P07` (relation already exists) (Boo F5). The rate limiter is per replica as well. Scaling out needs a migration lock or a separate migrate step first.
@@ -337,27 +413,21 @@ Phase 1d is deferred: nothing has been created on Railway yet. When it happens, 
    - Every Phase 7 header and cache check passes through the edge ([Response headers and caching](#response-headers-and-caching-phase-7)), including HSTS over HTTPS and `Connection: close` on a chunked over-limit write.
    - A deep link such as `/designer` returns `index.html`.
    - `/api/nope` returns `404`.
-   - `/api/me` returns `canWrite: false`.
+   - `/api/me` returns `isAuthenticated: false, canWrite: false` anonymously. Sign-in round-trips through real Google, the session cookie carries `Secure` through the edge, and the log shows no `stub OAuth` warning (Boo A31).
    - The Pixi canary renders.
-   - The deploy log shows `Applying migration '…_InitialCreate'` and `'…_AddCreations'` on the first boot.
+   - The deploy log shows `Applying migration '…_InitialCreate'`, `'…_AddCreations'` and `'…_AddExternalIdentity'` on the first boot.
    - **Client IP behind the edge** (Boo S21, closes Phase 1 condition 4). (a) From one machine, send 121 `GET /api/creations/abcdefgh`, each with a different forged `X-Forwarded-For: 203.0.113.N`; the 121st must be `429` (the forged header doesn't change the partition). (b) Right after, from a second network (a phone hotspot), one GET must be `404`, not `429` (the partition isn't one global bucket). If either fails, stop and raise it: the limiter is spoofable or a global kill switch.
-   - **The edge's own body limit** (Boo S5) with writes off: a 200 KiB JSON body to `POST /api/creations` must reach the app and get `403`, not an edge `413`. The 413 itself is checked in the first test window (below).
+   - **The edge's own body limit** (Boo S5): an anonymous 200 KiB JSON body to `POST /api/creations` must reach the app and get `401`, not an edge `413`. Signed in, a 300 KB body gets the app's 413, and a compact `schema/fixtures/valid/show/at-maximums.json` body (about 190 KB) gets 201.
 
-### Test windows (switching writes on)
+### Test windows (retired in Phase 8)
 
-Production writes stay off until Phase 8 (plan §5 OQ20). To test saving on Railway:
-
-1. **Back up first** ([Backups and restore](#backups-and-restore)), and note the creations row count and `max(updated_at)`.
-2. Set `Identity__AllowAnonymousWrites=true` on the app service. The deploy log then shows `Anonymous writes are ON`, so every window is visible in the logs.
-3. Test. In the first window, also check the 413 through the edge (Boo S5): `curl -sv -H 'Content-Type: application/json' --data-binary @300k.json https://<host>/api/creations`, with and without `-H 'Transfer-Encoding: chunked'`. Record what the client sees (413 ProblemDetails, an edge-generated error, or a reset) and confirm a compact `schema/fixtures/valid/show/at-maximums.json` body (about 190 KB) gets 201.
-4. **Delete the variable** (don't set it to `false` and forget it) and let Railway redeploy.
-5. Confirm `GET /api/me` reports `canWrite: false` and `GET /api/me/creations` returns `403`.
-6. Compare the creations row count and `max(updated_at)` with what the window should have produced. If they differ, restore from the dump.
-7. Never post the URL publicly during a window.
+Test windows are gone. Writes need a signed-in Google account, so no switch opens them to everyone, and `Identity__AllowAnonymousWrites` now stops startup.
 
 ### Backups and restore
 
 Rehearsed locally against the compose database (2026-11-15: dump, restore into an empty database, then the same creations row count, `max(updated_at)`, user count and migration count). Phase 7 gate rehearsal (2026-11-15, Mario), on the gate image's database `fireworks_gate7`: a 6,625-byte custom-format dump, restored into an empty `fireworks_gate7_restored` in about 1 s. Source and restore both gave 2 creations, `max(updated_at)` `2026-11-15 23:22:31.623056+00`, 1 user and 2 applied migrations. Railway's own scheduled backups are not switched on yet: Railway is deferred, so that part is **[R]**.
+
+> **A backup is a credential** (Boo A37). The `data_protection_keys` table holds the unencrypted key ring that protects session cookies, so anyone with a dump can forge a session for any user. Keep dumps on this machine, and don't share or upload them. Encrypt the keys (`ProtectKeysWith*`) before backups leave the machine or Railway, before a second person or app gets database read access, and before anything sensitive is stored.
 
 **Back up** (custom format, restorable into any empty database):
 

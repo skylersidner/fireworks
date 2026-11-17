@@ -425,13 +425,36 @@ describe('Show Builder Phase 7', () => {
 
   // ---- Ctrl/⌘+S ------------------------------------------------------------------------------
 
-  it('⌘S with no save bar does nothing and is not prevented (7g.10)', async () => {
+  it('⌘S with no save bar (api/me failed) does nothing and is not prevented (7g.10)', async () => {
     seed({ dirty: true });
-    const { key } = await open(ME_READ_ONLY);
+    const { key } = await open('error');
     for (const mod of [{ metaKey: true }, { ctrlKey: true }]) {
       const e = await key(document.body, { key: 's', ...mod });
       expect(e.defaultPrevented).toBe(false);
     }
+    expect(ledger).toEqual([]);
+  });
+
+  it('⌘S signed out opens the sign-in dialog, with the Undo line only when there is history (phase-8.md §5.3, §5.5)', async () => {
+    seed({ dirty: true });
+    const { key, byTest, stable, store } = await open(ME_READ_ONLY);
+    const e = await key(document.body, { key: 's', metaKey: true });
+    expect(e.defaultPrevented).toBe(true);
+    const dialog = byTest('sign-in-dialog')!;
+    expect(dialog.querySelector('h2')?.textContent?.trim()).toBe('Sign in to save');
+    expect(dialog.textContent).toContain('so your shows stay yours');
+    expect(dialog.textContent).not.toContain('Undo history starts fresh');
+    byTest('sign-in-not-now')!.click();
+    await stable();
+    store().setName('Edited for history');
+    await stable();
+    expect(store().canUndo()).toBe(true);
+    await key(document.body, { key: 's', ctrlKey: true });
+    await stable();
+    expect(byTest('sign-in-line-1')?.textContent?.trim()).toBe(
+      'Undo history starts fresh when you come back.',
+    );
+    expect(byTest('builder-panel')?.getAttribute('tabindex')).toBe('-1');
     expect(ledger).toEqual([]);
   });
 

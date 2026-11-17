@@ -14,8 +14,12 @@ public interface ICreationService
     /// <summary><c>GET api/creations/{shareCode}</c>. Public: no identity needed.</summary>
     Task<ServiceResult<CreationResponse>> GetAsync(string shareCode, CancellationToken cancellationToken);
 
-    /// <summary><c>PUT api/creations/{shareCode}</c>: replace the document of a creation the current user owns.</summary>
-    Task<ServiceResult<CreationResponse>> UpdateOwnedAsync(string shareCode, ICreationRequestBody body, CancellationToken cancellationToken);
+    /// <summary>
+    /// <c>PUT api/creations/{shareCode}</c>: replace the document of a creation the current user
+    /// owns, if it is still the version <paramref name="ifMatch"/> names (schema.md §11.4).
+    /// </summary>
+    Task<ServiceResult<CreationResponse>> UpdateOwnedAsync(
+        string shareCode, IfMatchPrecondition ifMatch, ICreationRequestBody body, CancellationToken cancellationToken);
 
     /// <summary><c>DELETE api/creations/{shareCode}</c>: delete a creation the current user owns.</summary>
     Task<ServiceResult<bool>> DeleteOwnedAsync(string shareCode, CancellationToken cancellationToken);
@@ -57,7 +61,9 @@ public sealed class CreationService(
     public const int MaxShareCodeAttempts = 5;
 
 
-    private const string WritesOffMessage = "Saving is switched off.";
+    private const string WritesOffMessage = "Sign in to save.";
+    private const string PreconditionRequiredMessage = "If-Match is required: send the ETag you last read.";
+    public const string PreconditionFailedMessage = "This creation changed since you loaded it.";
     private const string RequestInvalidMessage = "The request is invalid.";
     private const string DocumentInvalidMessage = "The document is invalid.";
 
@@ -112,11 +118,19 @@ public sealed class CreationService(
     }
 
     public async Task<ServiceResult<CreationResponse>> UpdateOwnedAsync(
-        string shareCode, ICreationRequestBody body, CancellationToken cancellationToken)
+        string shareCode, IfMatchPrecondition ifMatch, ICreationRequestBody body, CancellationToken cancellationToken)
     {
         if (!TryGetWriter(out var userId))
         {
             return ServiceResult<CreationResponse>.Forbidden(WritesOffMessage);
+        }
+
+        // 428 fires whether or not the row exists, so it reveals nothing (Boo A29). Header only:
+        // the body is still unread.
+        if (!ifMatch.Present)
+        {
+            return ServiceResult<CreationResponse>.Failure(
+                new ServiceError(ServiceErrorType.PreconditionRequired, PreconditionRequiredMessage));
         }
 
         var (bytes, bodyError) = await ReadBodyAsync(body, cancellationToken);
@@ -150,11 +164,27 @@ public sealed class CreationService(
             return ServiceResult<CreationResponse>.Validation(DocumentInvalidMessage, errors);
         }
 
-        var updated = await repository.UpdateOwnedAsync(shareCode, userId, content, cancellationToken);
-        return updated is null
-            ? ServiceResult<CreationResponse>.NotFound(NotFoundMessage)
-            : ServiceResult<CreationResponse>.Success(ToResponse(updated, updated.RemixedFrom?.ShareCode));
+        // 412 only from here on: after the owner-filtered 404 and the document walk, so only the
+        // owner can ever see it (schema.md §2.6 step 8).
+        if (ifMatch.Tag is not { } expected)
+        {
+            return PreconditionFailed(existing.UpdatedAt);
+        }
+
+        var outcome = await repository.UpdateOwnedAsync(shareCode, userId, content, expected, cancellationToken);
+        if (outcome.Updated is { } updated)
+        {
+            return ServiceResult<CreationResponse>.Success(ToResponse(updated, updated.RemixedFrom?.ShareCode));
+        }
+
+        return outcome.CurrentUpdatedAt is { } current
+            ? PreconditionFailed(current)
+            : ServiceResult<CreationResponse>.NotFound(NotFoundMessage);
     }
+
+    private static ServiceResult<CreationResponse> PreconditionFailed(DateTimeOffset current) =>
+        ServiceResult<CreationResponse>.Failure(
+            new ServiceError(ServiceErrorType.PreconditionFailed, PreconditionFailedMessage, CurrentUpdatedAt: current));
 
     public async Task<ServiceResult<bool>> DeleteOwnedAsync(string shareCode, CancellationToken cancellationToken)
     {
@@ -221,10 +251,11 @@ public sealed class CreationService(
 
     public async Task<ServiceResult<CreationListPage>> ListMineAsync(CreationListQuery query, CancellationToken cancellationToken)
     {
-        // Same gate as the writes, before any query (plan §3.4: "My creations follows the write switch").
+        // Same gate as the writes, before any query. After Phase 8 the fallback policy's 401 comes
+        // first, so this is defense in depth.
         if (!TryGetWriter(out var userId))
         {
-            return ServiceResult<CreationListPage>.Forbidden("Listing creations is switched off.");
+            return ServiceResult<CreationListPage>.Forbidden("Sign in to see your creations.");
         }
 
         var (effectivePage, effectivePageSize, kindFilter, issues) = query.Parse();

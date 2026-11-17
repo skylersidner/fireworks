@@ -154,9 +154,13 @@ function firstArgument(text: string, start: number): string {
 
 /** A navigation target that is a literal route, or the fixed `/c` route with a checked code. */
 export const SAFE_NAVIGATION =
-  /^(?:navigateByUrl|navigate|parseUrl|createUrlTree)\((?:'\/'|'\/show'|\['\/c', code\]|\[\])\)$/;
+  /^(?:navigateByUrl|navigate|parseUrl|createUrlTree)\((?:'\/'|'\/show'|'\/mine'|\['\/c', code\]|\[\])\)$/;
 
-/** Browser navigation that bypasses the router; none ships. `location.reload()` and `.origin` are fine. */
+/**
+ * Browser navigation that bypasses the router. Only `core/sign-in.ts` may use it, and only as the
+ * one login navigation (`BROWSER_NAVIGATION_SHIPPED`; Boo A5, A6). `location.reload()` and
+ * `.origin` are fine.
+ */
 export const BROWSER_NAVIGATION =
   /\blocation\s*\.\s*(?:assign|replace)\s*\(|\blocation\s*\.\s*href\s*=(?!=)|\b(?:window|document|globalThis|self)\s*\.\s*location\s*=(?!=)|\b(?:window|globalThis|self)\s*\.\s*open\s*\(/;
 
@@ -219,6 +223,9 @@ describe('untrusted text and links (Boo C1, C2, C4, C5, C10, C14)', () => {
   const SHIPPED_URL_BINDINGS = [
     "app/features/mine/pages/mine-page/mine-page.html: bound routerLink=['/c', card.item.shareCode]",
     "app/features/mine/pages/mine-page/mine-page.html: bound routerLink=['/s', card.item.shareCode]",
+    // "Remixed from the original" (Boo A43): `l.code` exists only after isShareCode (C10 below).
+    "app/features/player/pages/player-page/player-page.html: bound routerLink=['/s', l.code]",
+    "app/features/player/pages/player-page/player-page.html: bound routerLink=['/s', l.code]",
   ];
 
   it('C2: every URL binding is a shipped one, and each is literal or code-shaped', () => {
@@ -302,17 +309,31 @@ describe('untrusted text and links (Boo C1, C2, C4, C5, C10, C14)', () => {
     }
   });
 
-  it('C10: remixedFrom appears only in the contract mirror, never in a template or copy', () => {
+  it('C10/A43: remixedFrom is read only by the contract mirror and the player, which checks it first', () => {
     // Spec support (app/testing) builds responses, so it names the field; it never ships.
     const readers = files
       .filter((f) => !f.path.startsWith('app/testing/') && /remixedFrom/.test(f.text))
       .map((f) => f.path);
-    expect(readers).toEqual(['app/core/models.ts']);
+    expect(readers).toEqual([
+      'app/core/models.ts',
+      'app/features/player/pages/player-page/player-page.ts',
+    ]);
+    // The player's one read: signed in, the owner, and the share-code pattern before any use.
+    const player = files.find((f) => f.path.endsWith('player-page/player-page.ts'))!.text;
+    const code = player.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    expect(code.match(/remixedFrom/g)).toHaveLength(1);
+    expect(code).toMatch(
+      /if \(!this\.session\.isAuthenticated\(\) \|\| opened\.response\.isOwner !== true\) return null;\s*const code = opened\.response\.remixedFrom;\s*return typeof code === 'string' && isShareCode\(code\) \? \{ code \} : null;/,
+    );
   });
 
   it('C4/C5: a shared creation is fetched only through openCreation (pattern, kind, upgrade, normalize)', () => {
     const fetchers = files.filter((f) => /\.getByShareCode\(/.test(f.text)).map((f) => f.path);
-    expect(fetchers).toEqual(['app/core/open-creation.ts']);
+    // creation-save.ts reads only the envelope (isOwner, kind, name, updatedAt) for Replace and the
+    // restore refresh (schema.md §11.2 writer 4, §11.4); it never plays or edits the document.
+    expect(fetchers).toEqual(['app/core/creation-save.ts', 'app/core/open-creation.ts']);
+    const save = files.find((f) => f.path === 'app/core/creation-save.ts')!.text;
+    expect(save).not.toMatch(/\b(?:current|r)\??\.document\b/);
     const openers = files
       .filter((f) => /\bopenCreation\(/.test(f.text) && !f.path.endsWith('open-creation.ts'))
       .map((f) => f.path)
@@ -335,14 +356,32 @@ describe('untrusted text and links (Boo C1, C2, C4, C5, C10, C14)', () => {
     "app/features/player/pages/player-page/player-page.ts: navigate(['/c', code])",
     "app/features/player/pages/player-page/player-page.ts: navigateByUrl('/')",
     "app/pages/link-not-found/link-not-found-page.ts: navigateByUrl('/')",
+    // `/signin` signed in: one of three literal routes from the checked returnUrl (phase-8.md §9.4).
+    "app/pages/signin/signin-page.ts: navigateByUrl('/')",
+    "app/pages/signin/signin-page.ts: navigateByUrl('/mine')",
+    "app/pages/signin/signin-page.ts: navigateByUrl('/show')",
   ];
 
   it('C14: every navigation target is a literal or a fixed route with a checked code', () => {
     const calls = files.flatMap((f) => navigationCalls(f.text).map((c) => `${f.path}: ${c}`));
     expect(calls.filter((c) => !SAFE_NAVIGATION.test(c.slice(c.indexOf(': ') + 2)))).toEqual([]);
     expect(calls.sort()).toEqual(SHIPPED_NAVIGATION);
-    expect(files.filter((f) => BROWSER_NAVIGATION.test(f.text)).map((f) => f.path)).toEqual([]);
-    expect(files.some((f) => /returnUrl|queryParams\.(next|redirect)/.test(f.text))).toBe(false);
+    expect(files.filter((f) => BROWSER_NAVIGATION.test(f.text)).map((f) => f.path)).toEqual([
+      'app/core/sign-in.ts',
+    ]);
+    // The one browser navigation is to the login endpoint, with the return path as an encoded,
+    // pre-checked query value (Boo A5): never `location.assign(returnUrl)`.
+    const signIn = files.find((f) => f.path === 'app/core/sign-in.ts')!.text;
+    expect(signIn.match(/location\s*\.\s*assign\s*\([^)]*\)/g)).toEqual(['location.assign(url)']);
+    expect(signIn).toMatch(
+      /const target = isSafeInternalUrl\(returnPath\) \? returnPath : '\/';\s*return `\$\{LOGIN_PATH\}\?returnUrl=\$\{encodeURIComponent\(target\)\}`;/,
+    );
+    expect(
+      files
+        .filter((f) => /returnUrl|queryParams\.(next|redirect)/.test(f.text))
+        .map((f) => f.path)
+        .sort(),
+    ).toEqual(['app/core/sign-in.ts', 'app/pages/signin/signin-page.ts']);
   });
 
   it('C14: the navigation rule catches any receiver and the browser sinks (negative controls)', () => {

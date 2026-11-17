@@ -86,10 +86,15 @@ public sealed class CacheControlTests
     {
         await using var h = await StartAsync();
 
-        using var response = await h.Client.GetAsync(path);
+        // Signed in and anonymous alike: an unmatched request is never the fallback policy's 401.
+        foreach (var client in new[] { h.Client, h.AnonymousClient })
+        {
+            using var response = await client.GetAsync(path);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(NoStore, HeaderExpectations.CacheControl(response));
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.Equal(NoStore, HeaderExpectations.CacheControl(response));
+            Assert.Equal("", await response.Content.ReadAsStringAsync());
+        }
     }
 
     /// <summary>

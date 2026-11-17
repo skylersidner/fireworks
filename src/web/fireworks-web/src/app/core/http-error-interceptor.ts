@@ -3,7 +3,7 @@ import { inject } from '@angular/core';
 import { catchError, throwError } from 'rxjs';
 import { SUPPRESS_ERROR_TOAST } from './http-context-tokens';
 import { NotificationService } from './notifications';
-import { isSelfHandledRequest } from './self-handled-request';
+import { isSelfHandledRequest, isSignedOutError } from './self-handled-request';
 
 /**
  * The fallback toast for a call that doesn't render its own error (designer-2c.md §6.3 item 3).
@@ -14,7 +14,8 @@ export const GENERIC_ERROR_MESSAGE =
 
 /**
  * Logs every failed request (method, URL, status) and shows the generic error toast, unless the
- * request is self-handled (core/self-handled-request.ts) or opted out with SUPPRESS_ERROR_TOAST.
+ * request is self-handled (core/self-handled-request.ts), opted out with SUPPRESS_ERROR_TOAST, or
+ * a signed-out 401 (core/auth-interceptor.ts).
  * Rethrows, so the caller still sees the error.
  */
 export const httpErrorInterceptor: HttpInterceptorFn = (req, next) => {
@@ -25,7 +26,8 @@ export const httpErrorInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((error: unknown) => {
       if (error instanceof HttpErrorResponse) {
         console.error(`HTTP ${error.status} ${req.method} ${req.urlWithParams}`);
-        if (!isSelfHandled) {
+        // A 401 means "signed out": authInterceptor reloads the session and the page words it.
+        if (!isSelfHandled && !isSignedOutError(req, error)) {
           notificationService.error(GENERIC_ERROR_MESSAGE);
         }
       } else {

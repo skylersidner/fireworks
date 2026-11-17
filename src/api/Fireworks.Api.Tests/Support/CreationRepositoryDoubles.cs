@@ -47,7 +47,7 @@ internal sealed class RecordingCreationRepository(ICreationRepository inner, Cal
     public Task<Creation?> FindByShareCodeAsync(string shareCode, CancellationToken ct) { ledger.Record(nameof(FindByShareCodeAsync)); return inner.FindByShareCodeAsync(shareCode, ct); }
     public Task<Creation?> FindOwnedAsync(string shareCode, Guid owner, CancellationToken ct) { ledger.Record(nameof(FindOwnedAsync)); return inner.FindOwnedAsync(shareCode, owner, ct); }
     public Task<InsertOutcome> TryInsertAsync(Creation creation, CancellationToken ct) { ledger.Record(nameof(TryInsertAsync)); return inner.TryInsertAsync(creation, ct); }
-    public Task<Creation?> UpdateOwnedAsync(string shareCode, Guid owner, CreationContent content, CancellationToken ct) { ledger.Record(nameof(UpdateOwnedAsync)); return inner.UpdateOwnedAsync(shareCode, owner, content, ct); }
+    public Task<UpdateOutcome> UpdateOwnedAsync(string shareCode, Guid owner, CreationContent content, DateTimeOffset expected, CancellationToken ct) { ledger.Record(nameof(UpdateOwnedAsync)); return inner.UpdateOwnedAsync(shareCode, owner, content, expected, ct); }
     public Task<bool> DeleteOwnedAsync(string shareCode, Guid owner, CancellationToken ct) { ledger.Record(nameof(DeleteOwnedAsync)); return inner.DeleteOwnedAsync(shareCode, owner, ct); }
     public Task<int> CountOwnedAsync(Guid owner, CreationKind? kind, CancellationToken ct) { ledger.Record(nameof(CountOwnedAsync)); return inner.CountOwnedAsync(owner, kind, ct); }
     public Task<IReadOnlyList<CreationListRow>> ListOwnedPageAsync(Guid owner, CreationKind? kind, int skip, int take, CancellationToken ct) { ledger.Record(nameof(ListOwnedPageAsync)); return inner.ListOwnedPageAsync(owner, kind, skip, take, ct); }
@@ -111,13 +111,19 @@ internal sealed class FakeCreationRepository : ICreationRepository
         return Task.FromResult(InsertOutcome.Inserted);
     }
 
-    public Task<Creation?> UpdateOwnedAsync(string shareCode, Guid owner, CreationContent content, CancellationToken ct)
+    /// <summary>Mirrors the real one: not owned is NotFound; owned with another updated_at is the current value (412), with nothing written.</summary>
+    public Task<UpdateOutcome> UpdateOwnedAsync(string shareCode, Guid owner, CreationContent content, DateTimeOffset expected, CancellationToken ct)
     {
         Ledger.Record(nameof(UpdateOwnedAsync));
         var row = rows.SingleOrDefault(r => r.ShareCode == shareCode && r.OwnerUserId == owner);
         if (row is null)
         {
-            return Task.FromResult<Creation?>(null);
+            return Task.FromResult(UpdateOutcome.NotFound);
+        }
+
+        if (row.UpdatedAt != expected)
+        {
+            return Task.FromResult(new UpdateOutcome(null, row.UpdatedAt));
         }
 
         row.Name = content.Name;
@@ -125,7 +131,7 @@ internal sealed class FakeCreationRepository : ICreationRepository
         row.Palette = content.Palette;
         row.Document = content.Document;
         Stamp(row, created: false);
-        return Task.FromResult(Copy(row));
+        return Task.FromResult(new UpdateOutcome(Copy(row), null));
     }
 
     public Task<bool> DeleteOwnedAsync(string shareCode, Guid owner, CancellationToken ct)

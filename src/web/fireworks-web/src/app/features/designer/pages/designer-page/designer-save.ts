@@ -3,10 +3,13 @@ import { Subscription } from 'rxjs';
 import { validateShell } from '../../../../../engine/model/validate';
 import {
   MAX_BODY_BYTES,
+  replaceCreation,
   saveChoices,
   saveCreation,
   type SaveChoice,
+  type SaveOutcome,
 } from '../../../../core/creation-save';
+import { SaveSession } from '../../../../core/save-session';
 import { CreationsService } from '../../../../core/creations';
 import { NotificationService } from '../../../../core/notifications';
 import { SessionService } from '../../../../core/session';
@@ -31,7 +34,10 @@ import { ShellDesignerStore } from './shell-designer.store';
  * reaches only ApiStatusService, for the API banner (designer-structure.spec.ts). The store and the
  * draft stay free of HTTP and identity.
  *
- *  - Every write needs `session.canWrite()`; `isOwner` only picks which buttons show (Boo C7, C9).
+ *  - Every write needs `session.canWrite()`; `isOwner` only picks which buttons show (Boo C7, A40).
+ *    Signed out, the bar's one Save opens the sign-in dialog and nothing is sent (`auth.prompt`).
+ *  - A 401 is the signed-out row; the 401 interceptor has reloaded the session, and nothing retries
+ *    (A41). A 412 offers Save as new and Replace (phase-8.md §9.2).
  *  - One request per press: a press while a save is in flight is ignored (acceptance 5b.10).
  *  - Strict validation and the 256 KiB check run before any request (§3.1).
  *  - Failures go to `status` (the panel's status block), never a toast; successes are toasts.
@@ -44,6 +50,22 @@ export class DesignerSaveFlow {
   private readonly notifications = inject(NotificationService);
 
   readonly canWrite = this.session.canWrite;
+  /** Signed out (prompt), the restore refresh (`refreshing`) and the return (`returned`). */
+  readonly auth = new SaveSession({
+    session: this.session,
+    creations: this.creations,
+    notifications: this.notifications,
+    path: '/',
+    source: () => this.store.source(),
+    refresh: (fresh) => this.store.refreshSource(fresh),
+    forget: () => this.store.forgetSource(),
+  });
+  /** 412's Replace is running (phase-8.md §9.2): the bar is busy and the block's button reads Replacing…. */
+  readonly replacing = signal(false);
+  /** A save, a Replace or the restore refresh is in flight: presses and ⌘S are held. */
+  readonly busy = computed(
+    () => this.saving() !== null || this.replacing() || this.auth.refreshing(),
+  );
   /** The choices the bar offers, by `source` (§2.2). */
   readonly choices = computed(() => saveChoices(this.store.source()));
   /** The button whose save is in flight, or null. */
@@ -62,15 +84,28 @@ export class DesignerSaveFlow {
       this.store.model();
       untracked(() => this.blockedLink.set(null));
     });
-    inject(DestroyRef).onDestroy(() => this.request?.unsubscribe());
+    inject(DestroyRef).onDestroy(() => {
+      this.request?.unsubscribe();
+      this.authStart?.unsubscribe();
+    });
   }
+
+  private authStart: Subscription | null = null;
+
+  /** The page calls this once, after applying any `/c/` working copy (SaveSession.start). */
+  start(): void {
+    this.authStart ??= this.auth.start();
+  }
+
+  /** Flushes the draft before the sign-in navigation (phase-8.md §5.4). */
+  readonly flushDraft = (): void => this.store.flushDraft();
 
   /**
    * One Save press. `choice` must be one the bar offers for the current `source`; the status
    * block's `Save as new` after a PUT 404 calls this with `save`, because `source` is null by then.
    */
   save(choice: SaveChoice): void {
-    if (this.saving() !== null || !this.session.canWrite()) return;
+    if (this.busy() || !this.session.canWrite()) return;
     const source = this.store.source();
     if (!saveChoices(source).includes(choice)) return;
     this.blockedLink.set(null);
@@ -104,11 +139,48 @@ export class DesignerSaveFlow {
       return;
     }
     this.status.set(null);
+    this.run(choice, request$, sent, source?.name ?? '');
+  }
+
+  /**
+   * 412's `Replace the newer version` (phase-8.md §9.2): a fresh GET, then a PUT with its tag. A
+   * 404 or a non-owner answer there is row 404a, and the source is forgotten (§11.2 writer 3).
+   */
+  replace(): void {
+    if (this.busy() || !this.session.canWrite()) return;
+    const source = this.store.source();
+    if (!source?.isOwner) return;
+    this.blockedLink.set(null);
+    this.lastChoice = 'update';
+    const sent = this.store.snapshotForSave();
+    const checked = validateShell(sent.shell);
+    if (!checked.ok) {
+      this.status.set(invalidStatus(checked.errors, issueReason));
+      return;
+    }
+    this.replacing.set(true);
+    this.run(
+      null,
+      replaceCreation(this.creations, source.shareCode, 'shell', sent.shell),
+      sent,
+      source.name,
+    );
+  }
+
+  /** `choice` is the bar button pressed, or null for the status block's Replace. */
+  private run(
+    choice: SaveChoice | null,
+    request$: ReturnType<typeof saveCreation>,
+    sent: ReturnType<ShellDesignerStore['snapshotForSave']>,
+    sourceName: string,
+  ): void {
     this.saving.set(choice);
-    this.request = request$.subscribe((outcome) => {
+    this.request = request$.subscribe((outcome: SaveOutcome) => {
       this.saving.set(null);
+      this.replacing.set(false);
       this.request = null;
       if (outcome.ok) {
+        this.status.set(null);
         this.store.completeSave(outcome.source, sent);
         if (outcome.fellBack) {
           this.status.set(fellBackStatus(outcome.response.name));
@@ -119,7 +191,6 @@ export class DesignerSaveFlow {
         }
         return;
       }
-      const sourceName = source?.name ?? '';
       // A 404 from PUT or a remix: the source is gone to this visitor (schema.md §11.2, Y2).
       if (
         outcome.fellBack ||
@@ -128,8 +199,6 @@ export class DesignerSaveFlow {
         this.store.forgetSource();
       }
       this.status.set(saveFailureStatus(outcome.error, outcome.request, sourceName, issueReason));
-      // Writes went off mid-visit: one `api/me` reload hides the bar (§6 row 403; Boo C8).
-      if (outcome.error.kind === 'forbidden') this.session.load().subscribe();
     });
   }
 

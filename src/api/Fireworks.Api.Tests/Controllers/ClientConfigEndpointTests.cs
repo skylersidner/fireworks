@@ -34,7 +34,9 @@ public sealed class ClientConfigEndpointTests
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = json.RootElement;
-        Assert.Equal(["playback"], root.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(["playback", "loginProviders"], root.EnumerateObject().Select(p => p.Name).ToArray());
+        // schema.md §2.8: exactly the configured provider (the harness configures the stub's Google).
+        Assert.Equal("""[{"id":"google","name":"Google"}]""", root.GetProperty("loginProviders").GetRawText());
         var playback = root.GetProperty("playback");
         Assert.Equal(
             ["catchingUpDelayMs", "checkpointIntervalSeconds", "checkpointMemoryMiB", "seekBudgetMs"],
@@ -78,14 +80,22 @@ public sealed class ClientConfigEndpointTests
     }
 
     [Fact]
-    public async Task Carries_no_identity_data_even_with_writes_on()
+    public async Task With_no_Google_client_in_Testing_loginProviders_is_empty()
     {
-        await using var harness = await FireworksApiHarness.StartAsync(allowAnonymousWrites: true);
+        await using var harness = await FireworksApiHarness.StartAsync(withGoogle: false);
+        using var json = JsonDocument.Parse(await harness.Client.GetStringAsync("/api/client-config"));
+        Assert.Equal("[]", json.RootElement.GetProperty("loginProviders").GetRawText());
+    }
+
+    [Fact]
+    public async Task Carries_no_identity_data_even_when_signed_in()
+    {
+        await using var harness = await FireworksApiHarness.StartAsync(signedIn: true);
 
         using var response = await harness.Client.GetAsync("/api/client-config");
         var body = await response.Content.ReadAsStringAsync();
 
-        Assert.DoesNotContain(Support.TestIdentity.UserId.ToString(), body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(harness.OwnerUserId.ToString(), body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("canWrite", body, StringComparison.Ordinal);
         Assert.DoesNotContain("user", body, StringComparison.OrdinalIgnoreCase);
     }

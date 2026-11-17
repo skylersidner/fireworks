@@ -11,6 +11,7 @@ import {
   SAVE_AS_NEW_LABEL,
   SAVE_LABEL,
   SAVING_LABEL,
+  SIGNED_OUT_NOTE,
   SHARE_LABEL,
   UPDATE_LABEL,
   ownerNote,
@@ -24,8 +25,9 @@ const LABELS: Readonly<Record<SaveChoice, string>> = {
 
 /**
  * The save bar in the panel header (phase-5.md §2). Presentational: the page passes the state and
- * handles the outputs. The save buttons render only when `canWrite`; Share needs only a `source`
- * (a share link is public and copying it writes nothing, §5).
+ * handles the outputs. The save choices render only when `canWrite`; signed out (`prompt`) one
+ * `Save` opens the sign-in dialog and sends nothing (phase-8.md §5.1; Boo A40). Share needs only a
+ * `source` (a share link is public and copying it writes nothing, §5).
  *
  * During a save every save button is `aria-disabled` and ignores clicks, not `disabled`, so the
  * pressed one keeps focus (§12.1). While the indicator reads `Saved`, Save and Update original are
@@ -43,8 +45,8 @@ const LABELS: Readonly<Record<SaveChoice, string>> = {
             type="button"
             class="btn border-accent text-accent"
             [attr.data-testid]="'save-' + choice"
-            [class.btn-busy]="saving() !== null"
-            [attr.aria-disabled]="saving() !== null ? 'true' : null"
+            [class.btn-busy]="saving() !== null || busy()"
+            [attr.aria-disabled]="saving() !== null || busy() ? 'true' : null"
             [attr.aria-keyshortcuts]="choice === 'save' ? keyShortcut : null"
             [disabled]="isDisabled(choice) || cannotSaveNote() !== null"
             [attr.title]="isDisabled(choice) ? savedTitle : null"
@@ -53,6 +55,18 @@ const LABELS: Readonly<Record<SaveChoice, string>> = {
             {{ saving() === choice ? savingLabel : labels[choice] }}
           </button>
         }
+      } @else if (prompt()) {
+        <button
+          type="button"
+          class="btn border-accent text-accent"
+          data-testid="save-save"
+          aria-haspopup="dialog"
+          [attr.aria-keyshortcuts]="keyShortcut"
+          [disabled]="cannotSaveNote() !== null"
+          (click)="pressPrompt()"
+        >
+          {{ labels.save }}
+        </button>
       }
       @if (source()) {
         <button type="button" class="btn" data-testid="share" (click)="share.emit()">
@@ -104,8 +118,21 @@ export class SaveBarComponent {
    */
   readonly cannotSaveNote = input<string | null>(null);
 
+  /**
+   * Signed out with the session decided (phase-8.md §5.1; Boo A40): one `Save` whose only action
+   * is the sign-in dialog (`signIn`). No indicator; the signed-out note. Ignored while `canWrite`.
+   */
+  readonly prompt = input(false);
+  /**
+   * The restore refresh is in flight (phase-8.md §6.2): the save buttons are aria-disabled and
+   * busy, and presses are held.
+   */
+  readonly busy = input(false);
+
   readonly save = output<SaveChoice>();
   readonly share = output<void>();
+  /** The signed-out Save was pressed: open the sign-in dialog. Nothing is sent. */
+  readonly signIn = output<void>();
 
   protected readonly labels = LABELS;
   protected readonly savingLabel = SAVING_LABEL;
@@ -126,7 +153,10 @@ export class SaveBarComponent {
 
   /** §2.2 and §5: the note under the bar. */
   protected readonly note = computed(() => {
-    if (!this.canWrite()) return null;
+    if (!this.canWrite()) {
+      if (!this.prompt()) return null;
+      return this.cannotSaveNote() ?? SIGNED_OUT_NOTE;
+    }
     const blocked = this.cannotSaveNote();
     if (blocked !== null) return blocked;
     const source = this.source();
@@ -139,7 +169,13 @@ export class SaveBarComponent {
   }
 
   protected press(choice: SaveChoice): void {
-    if (this.saving() !== null || this.isDisabled(choice) || this.cannotSaveNote() !== null) return;
+    if (this.saving() !== null || this.busy()) return;
+    if (this.isDisabled(choice) || this.cannotSaveNote() !== null) return;
     this.save.emit(choice);
+  }
+
+  protected pressPrompt(): void {
+    if (this.cannotSaveNote() !== null) return;
+    this.signIn.emit();
   }
 }

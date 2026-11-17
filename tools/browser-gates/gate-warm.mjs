@@ -14,7 +14,7 @@
 // MODE=nowarm-check: the baseline mechanism's own control (patch applied, attr stays off), no timing.
 // Engine: Chromium only (Skyler 2026-11-15: regular runs and the gate use one browser).
 import { chromium } from 'playwright';
-import { outPath } from './lib/common.mjs';
+import { ensureSession, outPath, writeHeaders } from './lib/common.mjs';
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 const [BASE, CODES, MODE = 'after'] = process.argv.slice(2);
@@ -23,7 +23,8 @@ if (CODES === 'SAVE') {
   const { fixture, realistic } = await import('../bench/shows.mjs');
   codes = {};
   for (const [k, doc] of Object.entries({ 'done-when-60': fixture('done-when-60s-50'), 'realistic-600': realistic(600) })) {
-    const r = await fetch(`${BASE}/api/creations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'show', document: doc }) });
+    await ensureSession(BASE);
+    const r = await fetch(`${BASE}/api/creations`, { method: 'POST', headers: writeHeaders(), body: JSON.stringify({ kind: 'show', document: doc }) });
     if (!r.ok) throw new Error(`save ${k}: ${r.status} ${await r.text()}`);
     codes[k] = (await r.json()).shareCode;
   }

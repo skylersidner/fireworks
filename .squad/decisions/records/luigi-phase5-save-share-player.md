@@ -63,6 +63,8 @@ Luigi, 2026-11-14. Plan Phase 5; schema.md §7, §11; phase-5.md (Rosalina); `bo
 
 10. **The stage moved to `app/shared/fireworks-stage/`** so the player doesn't import from the designer feature. It gained `clickToFire` (false on the player).
 
+> Superseded by boo-phase8-security-requirements.md (A42) on 2026-11-16: the test-mode banner is removed in Phase 8.
+
 11. **The test-mode banner is `app/shared/test-mode-banner.ts`.** It renders when `canWrite && currentUser.isAuthenticated !== true`, on the designer, the player and `/mine`. **Its copy is provisional** (Rosalina hasn't written it). It states what C17 requires.
 
 12. **C1 is app-wide.** `src/app/unsafe-sinks.spec.ts` scans every non-spec `.ts`/`.html` file under `src/app` and `src/engine`, and covers C1, C2, C10 and C14, with negative controls.

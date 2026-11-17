@@ -54,3 +54,23 @@
 - **Open minor finding for you, F3** (`toad-interlude-t3-property-tests.md`): `reset` keeps `sim.simTime`, so a seek that re-runs from 0 ends with a later `simTime` than a straight run. Only Reduce-flashing spacing reads it. The F1 addendum did not touch it.
 - **F2 is closed** by your F1 addendum (the `traceDigest` comment now says steps 0..step − 2).
 - **Standing lean process (Skyler, 2026-11-16):** after a change, run `run.mjs regular` and the changed area's specs. Mutant sweeps wait for phase gates.
+
+### 2026-11-16 — Phase 8 auth design (`design/phase-8-auth.md`, `yoshi-phase8-auth-design.md`)
+
+- **Recommendation:** GitHub and Google OAuth (first-party `AddOAuth` and `AddGoogle`) with the reference's cookie session. The reference's simple auth compares plaintext passwords (`MonsterOfTheWeek.Api/Services/AuthService.cs`), so "extend it" is really option (a). Its *session layer* is what we mirror: `Program.cs` l.67–103 (AddCookie, the 401/403 event overrides that mutate `Events`, the fallback policy) and DataProtection `PersistKeysToDbContext`.
+- **Facts that shaped it:**
+  - No production DB exists (Railway is deferred), so default-user migration only concerns local databases.
+  - COOP `same-origin` kills popup login, so it's the redirect flow only.
+  - CSP `form-action 'self'` applies to the redirect after a form POST, so sign-in must be a GET navigation.
+  - `CallbackPath` goes under `/api/auth/callback/*` so `proxy.conf.json` already forwards it. The proxy must keep no `changeOrigin`, or the redirect URI and the Origin check break.
+  - The Docker image is Production over `http://localhost`, so its `Secure` cookies need Chromium (probe P3).
+- **CSRF:** no token. Lax, plus the preflight wall (415 JSON gate, PUT/DELETE, no CORS, form providers removed), plus a Sec-Fetch-Site/Origin guard. Delete the dev CORS policy.
+- **If-Match:** settled by schema.md §11.4's own trigger ("or at Phase 8"). Required on PUT: 428 when missing, 412 after the owner 404, compared in the UPDATE statement.
+- **New `source` writer:** refresh `isOwner` (keeping `updatedAt`) on draft restore when signed in. Without it, a visitor who signs in mid-edit remixes their own creation.
+- **Pending:** Skyler Q1–Q5. After he rules, edit schema.md §2.1, §2.6, §2.7, §10, §11.2, §11.4, §11.5 and §14 in place (design §5.5).
+
+### 2026-11-16 — Phase 8 fold-in (rulings, Boo A1–A44, Rosalina R1–R12)
+
+- **Done:** `design/phase-8-auth.md` marked adopted and edited in place (Google only, no nonce, A3 Lax correlation, A9 allowlist, A13 guard on every path, A18 shared predicate, A29 `*`/list/weak → 412, A33 Production fail-fast, A34/A36 `Testing` for smoke and Docker, A39 logging, `__Host-` pending P3). `schema.md` §2.1, §2.1.1, §2.2.1, §2.5, §2.6 (a–e gates plus step 8 in-statement If-Match), §2.7, new §2.8 (`signedInWith`, `loginProviders`, `canWrite == isAuthenticated`), §10, §11.1, §11.2 (writer 4), §11.4 (428/412 table), §11.5 retired, §14, §15. Plan Phase 8 client bullet "a guard on /mine" replaced.
+- **Rulings I made:** confirmed Rosalina's in-place `/mine` prompt and withdrew my guard (sign-out and 401 on `/mine` need the in-place state anyway; guards don't re-run). Restated Boo's A44 as a page-level zero-list-call rule; Boo to confirm. Merged Boo's `/signin?error=1` with Rosalina's `error=cancelled|failed&returnUrl=` (OnAccessDenied → cancelled; returnUrl omitted when the properties can't be unprotected).
+- **Pattern:** when two reviewers amend the same design, fold both in place and list in the record exactly which of each reviewer's literal assertions changed, so their tests get updated rather than silently contradicted.

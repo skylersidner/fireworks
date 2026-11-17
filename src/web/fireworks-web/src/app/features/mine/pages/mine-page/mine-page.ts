@@ -11,7 +11,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
@@ -25,7 +25,11 @@ import { isolate } from '../../../../shared/bidi';
 import { ConfirmDialogComponent } from '../../../../shared/confirm-dialog';
 import { SITE_TITLE, retryWhen } from '../../../../shared/link-copy';
 import { MessagePageComponent } from '../../../../shared/message-page/message-page';
-import { TestModeBannerComponent } from '../../../../shared/test-mode-banner';
+import { ClientConfigStore } from '../../../../core/client-config';
+import { signedInToast, takeSignInIntent } from '../../../../core/sign-in';
+import { AccountControlComponent } from '../../../../shared/sign-in/account-control';
+import { GoogleSignInButtonComponent } from '../../../../shared/sign-in/google-sign-in-button';
+import { SignInDialogComponent } from '../../../../shared/sign-in/sign-in-dialog';
 import { MINE_PAGE_SIZE, MineStore, type DeleteOutcome } from './mine.store';
 import { announcement } from '../../../../shared/announcer';
 
@@ -49,17 +53,25 @@ interface Card {
   readonly updatedTitle: string;
 }
 
-type Notice = 'unavailable' | 'session-error' | null;
+type Notice = 'signed-out' | 'session-error' | null;
 
 /**
- * My creations at `/mine` (plan Phase 5; phase-5.md §10). Follows the write switch: it decides
- * only once `api/me` has settled (Peach N1), and with `canWrite` false it shows the unavailable
- * notice and never calls `api/me/creations`. Cards show palette swatches, never a stage. Names are
+ * My creations at `/mine` (plan Phase 5; phase-5.md §10; phase-8.md §7). It decides only once
+ * `api/me` has settled (Peach N1). Signed out it renders the sign-in prompt in place (no guard and
+ * no redirect; phase-8-auth.md §6.3, which restates Boo A44 as a page rule) and never calls
+ * `api/me/creations`; a 401 from the list or a delete swaps to the same prompt. Cards show palette swatches, never a stage. Names are
  * text in `<bdi>` (Boo C1, C3); every URL is built from a checked share code, never a name (C2, C4).
  */
 @Component({
   selector: 'app-mine-page',
-  imports: [ConfirmDialogComponent, MessagePageComponent, RouterLink, TestModeBannerComponent],
+  imports: [
+    AccountControlComponent,
+    ConfirmDialogComponent,
+    GoogleSignInButtonComponent,
+    MessagePageComponent,
+    RouterLink,
+    SignInDialogComponent,
+  ],
   providers: [MineStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
@@ -85,18 +97,25 @@ export class MinePageComponent {
   });
 
   protected readonly showLoading = signal(false);
-  /** Writes went off while here (a 403 from the list or a delete). */
-  private readonly forbidden = signal(false);
+  /** The server said "signed out" here (a 401 from a delete). Cleared when the session reloads. */
+  private readonly signedOutByServer = signal(false);
 
   protected readonly notice = computed<Notice>(() => {
     const status = this.session.status();
     if (status === 'loading') return null;
     if (status === 'unavailable') return 'session-error';
-    if (!this.session.canWrite() || this.forbidden()) return 'unavailable';
+    if (!this.session.canWrite() || this.signedOutByServer()) return 'signed-out';
     const state = this.store.state();
-    if (state.status === 'error' && state.error.kind === 'forbidden') return 'unavailable';
+    if (state.status === 'error' && state.error.kind === 'unauthorized') return 'signed-out';
     return null;
   });
+
+  /** The prompt's Google button comes back here, with the page (phase-8.md §7). */
+  protected readonly returnPath = computed(() =>
+    this.page() > 1 ? `/mine?page=${this.page()}` : '/mine',
+  );
+  protected readonly signInAvailable = inject(ClientConfigStore).signInAvailable;
+  protected readonly signInDialog = signal(false);
 
   protected readonly cards = computed<readonly Card[]>(() => {
     const state = this.store.state();
@@ -109,7 +128,7 @@ export class MinePageComponent {
   });
   protected readonly listError = computed(() => {
     const state = this.store.state();
-    if (state.status !== 'error' || state.error.kind === 'forbidden') return null;
+    if (state.status !== 'error' || state.error.kind === 'unauthorized') return null;
     return listErrorCopy(state.error);
   });
 
@@ -118,8 +137,11 @@ export class MinePageComponent {
   /** Repeats re-announce (phase-7.md §10 B4). */
   protected readonly pageAnnouncement = announcement();
   protected readonly skeletons = [0, 1, 2, 3, 4, 5];
-  protected readonly unavailableBody = [
-    "Saving is turned off on this site right now, so there's nothing to list here. You can still design shells and build shows, and your work is kept in this browser.",
+  protected readonly signedOutBody = [
+    "Sign in to see the shells and shows you've saved. You can design and play without signing in; your work is kept in this browser.",
+  ];
+  protected readonly signInUnavailableBody = [
+    "Sign-in isn't available right now, so there's nothing to list here. You can keep designing; your work is kept in this browser.",
   ];
   protected readonly sessionErrorBody = [
     "My creations can't load right now. You can keep designing; your work is kept in this browser.",
@@ -146,13 +168,32 @@ export class MinePageComponent {
       }
     });
 
-    // Decide once the session has settled with writes on (Peach N1), then follow `page`.
+    // Decide once the session has settled signed in (Peach N1), then follow `page`. Signed out:
+    // zero list calls (phase-8-auth.md §6.3, Boo A44).
     effect(() => {
       const ready = this.session.status() === 'ready' && this.session.canWrite();
       const page = this.page();
-      if (!ready || this.forbidden()) return;
+      if (!ready || untracked(this.signedOutByServer)) return;
       untracked(() => this.store.load(page));
     });
+    // A fresh session answer replaces what a 401 implied.
+    effect(() => {
+      if (this.session.status() === 'loading') untracked(() => this.signedOutByServer.set(false));
+    });
+
+    // The return from sign-in (phase-8.md §6.1, §7): the toast; the h1 is focused on load anyway.
+    // Nothing else happens because of it (Boo A41).
+    const intent = takeSignInIntent('/mine');
+    if (intent) {
+      this.session
+        .settled()
+        .pipe(takeUntilDestroyed())
+        .subscribe(() => {
+          if (this.session.isAuthenticated()) {
+            this.notifications.success(signedInToast(this.session.displayName()));
+          }
+        });
+    }
 
     // A page past the end goes to the last page; a page emptied by a delete, to the one before.
     effect(() => {
@@ -241,8 +282,10 @@ export class MinePageComponent {
       this.store.load(this.page());
       return;
     }
-    if (outcome.kind === 'forbidden') {
-      this.forbidden.set(true);
+    if (outcome.kind === 'unauthorized') {
+      // The 401 interceptor reloads the session; the page swaps to the prompt (§7).
+      this.notifications.error("You've been signed out, so nothing was deleted.");
+      this.signedOutByServer.set(true);
       return;
     }
     this.notifications.error(deleteErrorCopy(name, outcome));

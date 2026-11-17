@@ -1,21 +1,31 @@
 namespace Fireworks.Api.Data.Entities;
 
 /// <summary>
-/// The owner of persisted data (plan §3.4). Until the Phase 8 auth pass there is exactly one row,
-/// the configured default user, inserted by <see cref="FireworksDbInitializer"/>.
+/// The owner of persisted data (plan §3.4). From Phase 8 a row is provisioned on a user's first
+/// Google sign-in (<c>UserProvisioning</c>) and found again by <c>(external_provider,
+/// external_subject)</c>, which are unique together and both set or both null (a check
+/// constraint). The pre-Phase 8 default user's row, where it exists, has neither, so no sign-in can
+/// ever resolve to it: its creations are read-only legacy (design §4).
 ///
 /// <para>
-/// Phase 8 adds <c>external_provider</c> / <c>external_subject</c> columns here (nullable, with a
-/// unique index over the pair) in its own migration. Nothing in this table is keyed on them yet,
-/// so adding them changes no existing row or foreign key.
+/// Only these columns are stored (Boo A38): no email, picture, locale or tokens.
 /// </para>
 /// </summary>
 public sealed class User : ITimestamped
 {
     public const int DisplayNameMaxLength = 80;
+    public const int ExternalProviderMaxLength = 32;
+    public const int ExternalSubjectMaxLength = 255;
 
     public Guid Id { get; init; }
     public required string DisplayName { get; set; }
+
+    /// <summary><c>"google"</c> for every provisioned row; null only on the legacy default user's row.</summary>
+    public string? ExternalProvider { get; init; }
+
+    /// <summary>The provider's stable subject (Google's <c>sub</c>, probe P7). Never logged (A39).</summary>
+    public string? ExternalSubject { get; init; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

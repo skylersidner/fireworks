@@ -59,14 +59,26 @@ export function shareBlockedNote(isApple: boolean): string {
   return `Copy was blocked. The link is selected; press ${isApple ? '⌘C' : 'Ctrl+C'} to copy it.`;
 }
 
-/** A button in the status block. `retry` repeats the save that failed. */
-export type SaveStatusAction = 'reload' | 'saveAsNew' | 'retry';
+/**
+ * A button in the status block. `retry` repeats the save that failed; `signIn` opens the sign-in
+ * dialog (Save variant); `replace` is 412's Replace the newer version (phase-8.md §9).
+ */
+export type SaveStatusAction = 'reload' | 'saveAsNew' | 'retry' | 'signIn' | 'replace';
 
 export const SAVE_STATUS_ACTION_LABELS: Readonly<Record<SaveStatusAction, string>> = {
   reload: 'Reload',
   saveAsNew: 'Save as new',
   retry: 'Try again',
+  signIn: 'Sign in',
+  replace: 'Replace the newer version',
 };
+
+/** The Replace button's label while its GET and PUT run (phase-8.md §9.2). */
+export const REPLACING_LABEL = 'Replacing…';
+
+/** phase-8.md §5.1: the note under the signed-out bar (Save prompts sign-in). */
+export const SIGNED_OUT_NOTE =
+  'Sign in to save and get a share link. Your work is kept in this browser.';
 
 /** One message in the status block (§6): an error, or a success with a caveat. */
 export interface SaveStatus {
@@ -155,12 +167,12 @@ export function saveFailureStatus(
       }
       return invalidStatus(issues, reasonOf, error.truncated, noun);
     }
-    case 'forbidden':
-      return {
-        tone: 'error',
-        text: `Couldn't save: saving has been turned off on this site. ${KEPT}`,
-        actions: [],
-      };
+    case 'unauthorized':
+      return signedOutStatus(noun);
+    case 'precondition-failed':
+      return changedElsewhereStatus(sourceName);
+    case 'precondition-required':
+      return outOfDateStatus(sourceName, noun);
     case 'not-found':
       if (request === 'update') return updateGoneStatus(sourceName, noun);
       return serverFault(noun);
@@ -181,6 +193,35 @@ export function saveFailureStatus(
     default:
       return serverFault(noun);
   }
+}
+
+/** phase-8.md §9.1: a 401 on any save. The 401 interceptor has reloaded the session. */
+export function signedOutStatus(noun: SaveNoun): SaveStatus {
+  return {
+    tone: 'error',
+    text: `Couldn't save: you've been signed out. Sign in to save; your ${noun} is kept in this browser.`,
+    actions: ['signIn'],
+  };
+}
+
+/** phase-8.md §9.2: 412 on Update original. Save as new is the remix; Replace re-reads, then PUTs. */
+export function changedElsewhereStatus(sourceName: string): SaveStatus {
+  const what = sourceName ? quoted(sourceName) : 'the original';
+  return {
+    tone: 'error',
+    text: `Couldn't update ${what}: it was changed somewhere else (another tab or device) after you opened it. Nothing was saved. Save as new keeps both versions; Replace puts yours on its share link and discards the other changes.`,
+    actions: ['saveAsNew', 'replace'],
+  };
+}
+
+/** phase-8.md §9.3: 428, or a source with no token (no request is sent). */
+export function outOfDateStatus(sourceName: string, noun: SaveNoun): SaveStatus {
+  const what = sourceName ? quoted(sourceName) : 'the original';
+  return {
+    tone: 'error',
+    text: `Couldn't update ${what}: this page is out of date. Reload, then save again. Your ${noun} is kept in this browser.`,
+    actions: ['reload'],
+  };
 }
 
 function serverFault(noun: SaveNoun): SaveStatus {

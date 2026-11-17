@@ -1,7 +1,7 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, computed, signal } from '@angular/core';
 import type { TimelineDriverOptions } from '../../engine/loop/timeline-driver';
 import { STEPS_PER_SECOND } from '../../engine/model/show';
-import type { ClientPlaybackConfig } from './models';
+import type { ClientPlaybackConfig, LoginProviderConfig } from './models';
 
 /**
  * The client's playback knobs as values only: signals plus defaults, no HTTP. The stage (in
@@ -68,5 +68,39 @@ export class ClientConfigStore {
   /** Called by ClientConfigLoader once, with the served (untrusted) `playback` object. */
   setPlayback(raw: unknown): void {
     this.playbackState.set(clampPlayback(raw));
+  }
+
+  /**
+   * The sign-in providers (Phase 8: Google only). `loading` until `api/client-config` answers;
+   * `failed` when it didn't. Sign-in reads as unavailable only when the config answered with no
+   * providers or failed (phase-8.md §5.3); while it is loading, the button is offered and the server
+   * decides.
+   */
+  private readonly providersState = signal<{
+    readonly status: 'loading' | 'ready' | 'failed';
+    readonly providers: readonly LoginProviderConfig[];
+  }>({ status: 'loading', providers: [] });
+  readonly loginProviders = computed(() => this.providersState().providers);
+  readonly signInAvailable = computed(() => {
+    const state = this.providersState();
+    return state.status === 'loading' || state.providers.some((p) => p.id === 'google');
+  });
+
+  /** The served (untrusted) `loginProviders`: absent means `[]`; malformed entries are dropped. */
+  setLoginProviders(raw: unknown): void {
+    const list = Array.isArray(raw) ? raw : [];
+    const providers = list.filter(
+      (p): p is LoginProviderConfig =>
+        typeof p === 'object' &&
+        p !== null &&
+        typeof (p as Record<string, unknown>)['id'] === 'string' &&
+        typeof (p as Record<string, unknown>)['name'] === 'string',
+    );
+    this.providersState.set({ status: 'ready', providers });
+  }
+
+  /** `api/client-config` failed: sign-in reads as unavailable. */
+  setConfigFailed(): void {
+    this.providersState.set({ status: 'failed', providers: [] });
   }
 }

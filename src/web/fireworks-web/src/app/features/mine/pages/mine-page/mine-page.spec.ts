@@ -4,7 +4,14 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../../../app.routes';
+import { authInterceptor } from '../../../../core/auth-interceptor';
 import { BROWSER_STORAGE } from '../../../../core/browser';
+import { ClientConfigStore } from '../../../../core/client-config';
+import {
+  SIGN_IN_INTENT_KEY,
+  setSignInNavigationForTesting,
+  writeSignInIntent,
+} from '../../../../core/sign-in';
 import type { CreationListItem, CreationListPage, MeResponse } from '../../../../core/models';
 import { NotificationService } from '../../../../core/notifications';
 import { STAGE_RENDERER_FACTORY } from '../../../../shared/fireworks-stage/fireworks-stage';
@@ -12,6 +19,8 @@ import {
   CODE_A,
   CODE_B,
   CODE_C,
+  ME_ADA,
+  ME_ANONYMOUS,
   ME_READ_ONLY,
   ME_SIGNED_IN,
   ME_TEST_WINDOW,
@@ -53,7 +62,7 @@ describe('My creations /mine', () => {
     fakes = new FakeStageRenderers();
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(withInterceptors([recorder(ledger)])),
+        provideHttpClient(withInterceptors([authInterceptor, recorder(ledger)])),
         provideHttpClientTesting(),
         provideRouter(routes),
         { provide: STAGE_RENDERER_FACTORY, useValue: fakes.factory },
@@ -105,13 +114,82 @@ describe('My creations /mine', () => {
       expect(byTest('mine-card')).not.toBeNull();
     });
 
-    it('api/me pending, then false: the unavailable notice and no list GET', async () => {
-      const { byTest, stable, answer } = await visit('pending');
-      answer(ME_READ_ONLY);
+    it('api/me pending, then signed out: the sign-in prompt in place, and no list GET (A44 as a page rule)', async () => {
+      const { byTest, stable, answer, harness } = await visit('pending');
+      answer(ME_ANONYMOUS);
       await stable();
-      expect(byTest('message-heading')?.textContent?.trim()).toBe("My creations isn't available");
+      expect(byTest('message-heading')?.textContent?.trim()).toBe('My creations');
+      expect(byTest('message-page')?.textContent).toContain(
+        "Sign in to see the shells and shows you've saved. You can design and play without signing in; your work is kept in this browser.",
+      );
+      expect(byTest('google-sign-in')?.textContent?.trim()).toBe('Sign in with Google');
+      expect(byTest('message-home')?.getAttribute('href')).toBe('/');
+      expect(document.activeElement).toBe(byTest('message-heading'));
+      // In place: no redirect.
+      expect(TestBed.inject(Router).url).toBe('/mine');
+      expect(harness).toBeTruthy();
       expect(ledger).toEqual([]);
       expect(TestBed.inject(NotificationService).notifications()).toEqual([]);
+    });
+
+    it("the prompt's Google button returns to /mine with its page, from: nav; nothing else is sent", async () => {
+      const navigations: string[] = [];
+      const restore = setSignInNavigationForTesting((u) => navigations.push(u));
+      try {
+        const { byTest, stable } = await visit(ME_ANONYMOUS, '/mine?page=2');
+        byTest('google-sign-in')!.click();
+        await stable();
+        expect(navigations).toEqual(['/api/auth/login/google?returnUrl=%2Fmine%3Fpage%3D2']);
+        expect(JSON.parse(sessionStorage.getItem(SIGN_IN_INTENT_KEY) ?? 'null')).toMatchObject({
+          from: 'nav',
+          path: '/mine?page=2',
+        });
+        expect(ledger).toEqual([]);
+      } finally {
+        restore();
+        sessionStorage.clear();
+      }
+    });
+
+    it('no sign-in providers: the unavailable body and only Go to the designer', async () => {
+      TestBed.inject(ClientConfigStore).setLoginProviders([]);
+      const { byTest } = await visit(ME_ANONYMOUS);
+      expect(byTest('message-page')?.textContent).toContain(
+        "Sign-in isn't available right now, so there's nothing to list here.",
+      );
+      expect(byTest('google-sign-in')).toBeNull();
+      expect(ledger).toEqual([]);
+    });
+
+    it('back from sign-in: the toast, the list, the h1', async () => {
+      writeSignInIntent('nav', '/mine');
+      const { byTest, stable } = await visit(ME_ADA);
+      http.expectOne(LIST(1)).flush(page([item()]));
+      await stable();
+      expect(
+        TestBed.inject(NotificationService)
+          .notifications()
+          .map((n) => n.message),
+      ).toEqual(['Signed in as Ada Lovelace.']);
+      expect(document.activeElement).toBe(byTest('mine-heading'));
+      expect(sessionStorage.getItem(SIGN_IN_INTENT_KEY)).toBeNull();
+      expect(ledger).toEqual([`GET ${LIST(1)}`]);
+    });
+
+    it('Sign out on /mine: logout, one api/me, the prompt with its h1 focused', async () => {
+      const { byTest, stable } = await visit(ME_ADA);
+      http.expectOne(LIST(1)).flush(page([item()]));
+      await stable();
+      expect(byTest('account-name')?.textContent?.trim()).toBe('Ada Lovelace');
+      byTest('account-sign-out')!.click();
+      await stable();
+      http.expectOne('/api/auth/logout').flush(null, { status: 204, statusText: 'No Content' });
+      await stable();
+      http.expectOne('/api/me').flush(ME_ANONYMOUS);
+      await stable();
+      expect(ledger).toEqual([`GET ${LIST(1)}`, 'POST /api/auth/logout', 'GET /api/me']);
+      expect(byTest('message-heading')?.textContent?.trim()).toBe('My creations');
+      expect(document.activeElement).toBe(byTest('message-heading'));
     });
 
     it("api/me failed: the can't-reach copy; Try again reloads the session", async () => {
@@ -125,11 +203,15 @@ describe('My creations /mine', () => {
       expect(ledger).toEqual(['GET /api/me', `GET ${LIST(1)}`]);
     });
 
-    it('a 403 from the list: the unavailable notice', async () => {
-      const { byTest, stable } = await visit(ME_TEST_WINDOW);
-      http.expectOne(LIST(1)).flush({ message: 'off' }, { status: 403, statusText: 'Forbidden' });
+    it('a 401 from the list: one api/me reload, then the prompt; never a retry (A41)', async () => {
+      const { byTest, stable } = await visit(ME_ADA);
+      http.expectOne(LIST(1)).flush(null, { status: 401, statusText: 'Unauthorized' });
       await stable();
-      expect(byTest('message-heading')?.textContent?.trim()).toBe("My creations isn't available");
+      http.expectOne('/api/me').flush(ME_ANONYMOUS);
+      await stable();
+      expect(ledger).toEqual([`GET ${LIST(1)}`, 'GET /api/me']);
+      expect(byTest('message-heading')?.textContent?.trim()).toBe('My creations');
+      expect(byTest('google-sign-in')).not.toBeNull();
     });
   });
 
@@ -202,14 +284,7 @@ describe('My creations /mine', () => {
       expect(all('card-open').map((a) => a.getAttribute('href'))).toEqual([`/c/${CODE_B}`]);
     });
 
-    it('the test-mode banner shows only while writes are on without a login (Boo C17)', async () => {
-      const on = await visit(ME_TEST_WINDOW);
-      http.expectOne(LIST(1)).flush(page([]));
-      await on.stable();
-      expect(on.byTest('test-mode-banner')).not.toBeNull();
-    });
-
-    it('signed in: no test-mode banner', async () => {
+    it('no test-mode banner in any state (Boo A42)', async () => {
       const { byTest, stable } = await visit(ME_SIGNED_IN);
       http.expectOne(LIST(1)).flush(page([]));
       await stable();
@@ -362,13 +437,22 @@ describe('My creations /mine', () => {
       expect(all('mine-card')).toHaveLength(3);
     });
 
-    it('403: the unavailable notice replaces the page', async () => {
+    it('401: the error toast, the prompt replaces the page with its h1 focused; nothing retried', async () => {
       const { byTest, stable } = await askDelete();
       byTest('confirm-accept')!.click();
       await stable();
-      http.expectOne(`/api/creations/${CODE_A}`).flush(null, { status: 403, statusText: 'x' });
+      http.expectOne(`/api/creations/${CODE_A}`).flush(null, { status: 401, statusText: 'x' });
       await stable();
-      expect(byTest('message-heading')?.textContent?.trim()).toBe("My creations isn't available");
+      http.expectOne('/api/me').flush(ME_ANONYMOUS);
+      await stable();
+      expect(
+        TestBed.inject(NotificationService)
+          .notifications()
+          .map((n) => n.message),
+      ).toContain("You've been signed out, so nothing was deleted.");
+      expect(byTest('message-heading')?.textContent?.trim()).toBe('My creations');
+      expect(document.activeElement).toBe(byTest('message-heading'));
+      expect(ledger.filter((l) => l.startsWith('DELETE'))).toHaveLength(1);
     });
   });
 

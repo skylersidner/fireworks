@@ -173,13 +173,31 @@ describe('Designer Phase 7', () => {
   });
 
   it('⌘S/Ctrl+S: no save bar is not prevented; one choice saves; Saved says nothing new; two choices focus Update original (7g.10–7g.15)', async () => {
-    const ro = await mount(ME_READ_ONLY, { dirty: true });
+    // No bar: api/me failed (phase-8.md §5.5: `pass` only with no bar).
+    const ro = await mount('error', { dirty: true });
     for (const mod of [{ metaKey: true }, { ctrlKey: true }]) {
       expect((await ro.key(document.body, { key: 's', ...mod })).defaultPrevented).toBe(false);
     }
     expect(ledger).toEqual([]);
     ro.fixture.destroy();
     ro.fixture.nativeElement.remove();
+  });
+
+  it('⌘S signed out opens the sign-in dialog (prevented), sends nothing; held while it is open', async () => {
+    const out = await mount(ME_READ_ONLY, { dirty: true });
+    const e = await out.key(document.body, { key: 's', metaKey: true });
+    expect(e.defaultPrevented).toBe(true);
+    expect(out.byTest('sign-in-dialog')?.querySelector('h2')?.textContent?.trim()).toBe(
+      'Sign in to save',
+    );
+    const again = await out.key(document.body, { key: 's', ctrlKey: true });
+    expect(again.defaultPrevented).toBe(true);
+    expect(
+      out.fixture.nativeElement.querySelectorAll('[data-testid="sign-in-dialog"]'),
+    ).toHaveLength(1);
+    expect(ledger).toEqual([]);
+    out.fixture.destroy();
+    out.fixture.nativeElement.remove();
   });
 
   it('⌘S with one choice sends the same POST as Save; the label stays Save', async () => {

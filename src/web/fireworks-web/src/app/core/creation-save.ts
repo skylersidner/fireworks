@@ -17,8 +17,9 @@ export const MAX_BODY_BYTES = 262_144;
  * The saved record a working copy came from: client state in the draft, never in a document
  * (schema.md §7, §11.2). Set only by a link load (`/c/:code`) or a successful save, both through
  * `sourceFrom`. `isOwner` is a snapshot that picks which Save choices to show; the server decides
- * (a PUT on a record no longer owned is 404). `updatedAt` is an opaque token (compare strings),
- * kept for the future `If-Match` precondition (§11.4).
+ * (a PUT on a record no longer owned is 404). `updatedAt` is an opaque token (compare strings):
+ * the edit base, sent as `If-Match` on Update original (§11.4). The restore refresh changes
+ * `isOwner` and `name` but never `updatedAt` (§11.2 writer 4).
  */
 export interface CreationSource {
   readonly shareCode: string;
@@ -39,7 +40,7 @@ export type SaveChoice = 'save' | 'update' | 'saveAsNew';
 /** The request one save attempt sends. */
 export type SavePlan =
   | { readonly request: 'create' }
-  | { readonly request: 'update'; readonly shareCode: string }
+  | { readonly request: 'update'; readonly shareCode: string; readonly updatedAt: string }
   | { readonly request: 'remix'; readonly shareCode: string };
 
 /** The draft's `source` after a save or link load: always the record just read or written. */
@@ -83,7 +84,9 @@ export function planSave(
   if (source.kind !== kind) {
     throw new Error(`planSave: a ${kind} can't be saved over a ${source.kind}'s source`);
   }
-  if (choice === 'update') return { request: 'update', shareCode: source.shareCode };
+  if (choice === 'update') {
+    return { request: 'update', shareCode: source.shareCode, updatedAt: source.updatedAt };
+  }
   return { request: 'remix', shareCode: source.shareCode };
 }
 
@@ -157,11 +160,20 @@ function attempt(
   document: unknown,
   fellBack: boolean,
 ): Observable<SaveOutcome> {
+  // A source without a token never sends a PUT: it would be a 428 (phase-8.md §9.3).
+  if (plan.request === 'update' && plan.updatedAt === '') {
+    return of<SaveOutcome>({
+      ok: false,
+      request: 'update',
+      fellBack,
+      error: { kind: 'precondition-required', status: 428 },
+    });
+  }
   const call =
     plan.request === 'create'
       ? creations.create(kind, document)
       : plan.request === 'update'
-        ? creations.update(plan.shareCode, document)
+        ? creations.update(plan.shareCode, document, plan.updatedAt)
         : creations.remix(plan.shareCode, document);
   return call.pipe(
     map((response): SaveOutcome =>
@@ -181,6 +193,75 @@ function attempt(
         fellBack,
         error: toCreationError(error),
       }),
+    ),
+  );
+}
+
+/**
+ * 412's `Replace the newer version` (phase-8.md §9.2; schema.md §11.4): one fresh
+ * `GET api/creations/{code}`, then a PUT with `If-Match` set to that response's `updatedAt`.
+ *  - The GET answers 404, or `isOwner: false`: the `update` outcome fails `not-found` (row 404a),
+ *    and the caller forgets the source (§11.2 writer 3). No PUT is sent.
+ *  - The GET fails otherwise: that failure, as an `update` outcome. No PUT.
+ *  - The PUT's own outcome otherwise; another 412 is the same row again.
+ * At most two requests, and never a blind `*` (Boo A29).
+ */
+export function replaceCreation(
+  creations: CreationsService,
+  shareCode: string,
+  kind: CreationKind,
+  document: unknown,
+): Observable<SaveOutcome> {
+  const fail = (error: CreationError): SaveOutcome => ({
+    ok: false,
+    request: 'update',
+    fellBack: false,
+    error,
+  });
+  return creations.getByShareCode(shareCode).pipe(
+    switchMap((current) => {
+      if (current?.isOwner !== true || current.kind !== kind) {
+        return of(fail({ kind: 'not-found', status: 404 }));
+      }
+      const plan: SavePlan = { request: 'update', shareCode, updatedAt: current.updatedAt ?? '' };
+      return attempt(creations, plan, kind, document, false);
+    }),
+    catchError((error: unknown) => of(fail(toCreationError(error)))),
+  );
+}
+
+/** What the restore refresh learned (schema.md §11.2 writer 4). */
+export type SourceRefresh =
+  | { readonly kind: 'refreshed'; readonly source: CreationSource }
+  | { readonly kind: 'gone' }
+  | { readonly kind: 'unchanged' };
+
+/**
+ * The restore refresh (schema.md §11.2 writer 4; phase-8-auth.md §6.4): one
+ * `GET api/creations/{code}` for a restored, signed-in draft's `source`. Sets `isOwner` and `name`
+ * from the response and **keeps `updatedAt`** (the If-Match base). A 404 is `gone` (the caller sets
+ * `source` to null); any other failure, or a response for another kind or code, is `unchanged`.
+ */
+export function refreshSource(
+  creations: CreationsService,
+  source: CreationSource,
+): Observable<SourceRefresh> {
+  return creations.getByShareCode(source.shareCode).pipe(
+    map((r): SourceRefresh => {
+      if (r?.shareCode !== source.shareCode || r.kind !== source.kind) return { kind: 'unchanged' };
+      return {
+        kind: 'refreshed',
+        source: {
+          ...source,
+          isOwner: r.isOwner === true,
+          name: typeof r.name === 'string' ? r.name : source.name,
+        },
+      };
+    }),
+    catchError((error: unknown) =>
+      of<SourceRefresh>(
+        toCreationError(error).kind === 'not-found' ? { kind: 'gone' } : { kind: 'unchanged' },
+      ),
     ),
   );
 }

@@ -8,7 +8,8 @@ import { Routes, UrlMatcher, UrlSegment } from '@angular/router';
  * `/` is the Shell Designer (OQ8). `/status` is the Phase 1 status page, moved there in 2c with no
  * stage (decided 2026-11-12). Phase 5 (schema.md §11.1): `/s/:shareCode` is the player,
  * `/c/:shareCode` opens a working copy and redirects to `/` (a shell) or `/show` (a show, Phase 6),
- * `/show` is the Show Builder (phase-6.md §2), `/mine` is My creations. Any other
+ * `/show` is the Show Builder (phase-6.md §2), `/mine` is My creations, `/signin` is the sign-in
+ * landing page (Phase 8, phase-8.md §9.4; no guards anywhere). Any other
  * path under `/s` or `/c` gets the link not-found page (Peach N3); other unknown paths go to the
  * designer.
  */
@@ -48,6 +49,10 @@ export const routes: Routes = [
     path: 'mine',
     loadComponent: () =>
       import('./features/mine/pages/mine-page/mine-page').then((m) => m.MinePageComponent),
+  },
+  {
+    path: 'signin',
+    loadComponent: () => import('./pages/signin/signin-page').then((m) => m.SignInPageComponent),
   },
   {
     matcher: underPrefix('s'),

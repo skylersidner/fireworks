@@ -589,6 +589,18 @@ export class ShowBuilderStore {
     this.sourceState.set(null);
   }
 
+  /**
+   * The restore refresh (schema.md §11.2 writer 4): the server's `isOwner` and `name` for the
+   * current source, **keeping `updatedAt`** (the If-Match base). Ignored for another share code.
+   */
+  refreshSource(fresh: Pick<CreationSource, 'shareCode' | 'isOwner' | 'name'>): void {
+    this.sourceState.update((current) =>
+      current && current.shareCode === fresh.shareCode
+        ? { ...current, isOwner: fresh.isOwner, name: fresh.name }
+        : current,
+    );
+  }
+
   // ---- Derived helpers ---------------------------------------------------------------------
 
   /** Burst and fade times for a cue (§8.1 note), under the show's gravity. */

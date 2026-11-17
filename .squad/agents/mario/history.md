@@ -87,3 +87,11 @@
 - **Phase gate rule changed (Skyler, 2026-11-16).** A gate needs a green daily run less than 24 h old, unless Skyler accepts the specific failure in writing. The daily run is manual; there is no scheduler. `tools/test/daily-status.mjs` exits 0 only when the newest run (daily or final) is green, complete and under 24 h old.
 - **Change gate:** after any change run `run.mjs regular` (about 2 to 3 min, Chromium smoke included) plus the changed area's specs. Mutant sweeps wait for phase gates.
 - **First full daily passed in 21.4 min** (`toad-interlude-final-tier.md`). The final tier has never run end to end; it is the end-of-project review.
+
+### 2026-11-17 — Phase 8 phase-gate
+- Verdict PASS WITH NOTES, Chromium only; [R] DEFERRED. Record: `.squad/decisions/records/mario-phase8-gate.md`.
+- Counts: regular 252.6 s; web 1778/79 files; dotnet with Postgres 862/862. Mutants: `phase8-auth` 20/20 (R1 on `fireworks_gate8_mut`, `FIREWORKS_MUTANT_POSTGRES`, password `fireworks_dev_password`); `phase8-client` 17 + S3 equivalent (exit 1 until Toad marks it).
+- G1/G2 drive: `scratchpad/gate8/g1g2.mjs` (`BASE`, `STUB`, `SUBJECT`); it imports `launchers` from `tools/browser-gates/lib/common.mjs` by absolute path so Playwright resolves. `cookie.mjs`/`cookie2.mjs <base> <subject>` print a session cookie for curl. `curl-checks.sh <base> <code> <cookie>`.
+- Playwright `isVisible({timeout})` doesn't wait: wait for a landmark, then check the flashing notice, or it stays up and takes focus on the sign-in return (correct per 8b.3, but it looks like a focus bug).
+- Long-running 5190 stub may predate `/__next-subject` (404). Fall back to clicking `Continue as <sub>` on its interactive page.
+- Image as Testing: `-p 127.0.0.1:18098:8080`, authorize `localhost:5190`, token/userinfo `host.docker.internal:5190`. Production refusal exits 134 before "Now listening". macOS has no `timeout`: use `docker run -d` + inspect.

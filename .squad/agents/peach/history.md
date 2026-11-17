@@ -68,3 +68,10 @@
 - **Your three reworded criteria (7h.4, 7e.10, 7k.1) are the ones the gate ran,** in Chromium. Mario's gate carried your C4 acceptance of 7e and 7m.1 to 7m.8.
 - **Multi-engine rows** (7b.7, 7k.3, 7j.4) read "Chromium at the gate; Firefox and WebKit in the daily run (to be defined)."
 - **Closing note on 6a, 6b and 6k** is in `acceptance/phase-6.md` (checked).
+
+### 2026-11-17: Phase 8 acceptance (criteria and verdicts in one pass)
+- Wrote `docs/fireworks-app/acceptance/phase-8.md` (8a–8k). Verdict: accepted, with gate checks G1 and G2. Each Done-when item is met (8a, 8e, 8f). [R] items: WebKit sign-in (needs https), real Google, and the Railway edge (A31).
+- **G1:** no scripted gate drives the end-to-end anonymous Save (Save → dialog → stub → return → draft intact → Save 201). Y§8 assigned it to Toad's smoke, but `gate-auth` starts at `/signin?returnUrl=/mine` and `walk-alice` saves already signed in. **G2:** no spec checks that sign-out leaves the draft bytes unchanged; the only evidence is a code read (`removeItem` is called only for `fireworks.signin.v1`).
+- Payload facts: `MeResponse` keys are exact in C# (`ApiContracts.cs` l.10). TS types `signedInWith` as `string | null`; the schema says `'google' | null` (info). Cookie: `__Host-fw.session` and `fw.session` in Dev; 30 days sliding (`IdentityRegistration.cs` l.34/75/159). The stale `bin/Release` appsettings still has `Identity`, but it is dockerignored.
+- Evidence: regular `2026-11-16T214836` is 190.3 s and green. Daily `2026-11-17T063525` is 21.7 min and green, with the auth negative controls. Both ran on commit 4144608 with about 160 uncommitted paths. The G fix (21:30) predates both.
+- Pattern, again: a design doc's Done-when mapping ("shown by Toad's smoke: …") is a hand-off that can silently drop. Grep the named gate for the step it promises.

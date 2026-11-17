@@ -7,6 +7,7 @@
 >
   <aside
     class="relative w-[340px] flex-none overflow-y-auto border-r border-default bg-surface px-[14px] pt-[14px] pb-10 max-[761px]:h-[40dvh] max-[761px]:w-full max-[761px]:border-t max-[761px]:border-r-0"
+    tabindex="-1"
     data-testid="builder-panel"
   >
     <!-- K8 (phase-7.md §3.2): the first element of the panel; sr-only until focused. -->
@@ -32,19 +33,19 @@
           data-testid="nav-designer"
           >Shell designer</a
         >
-        @if (saveFlow.canWrite()) {
-          <a
-            routerLink="/mine"
-            class="touch-link text-small text-muted no-underline hover:text-primary"
-            data-testid="nav-mine"
-            >My creations</a
-          >
-        }
+        <a
+          routerLink="/mine"
+          class="touch-link text-small text-muted no-underline hover:text-primary"
+          data-testid="nav-mine"
+          >My creations</a
+        >
       </div>
     </div>
-    <p class="m-0 mb-3 text-small text-muted">{{ copy.subtitle }}</p>
+    <div class="mb-3 flex items-baseline justify-between gap-2">
+      <p class="m-0 text-small text-muted">{{ copy.subtitle }}</p>
+      <app-account-control (signIn)="openSignIn('nav')" />
+    </div>
 
-    <app-test-mode-banner />
     @if (showApiBanner()) {
       <app-api-banner
         [message]="copy.apiBanner"
@@ -57,12 +58,16 @@
     @if (saveFlow.status(); as status) {
       <app-save-status
         [status]="status"
+        [replacing]="saveFlow.replacing()"
+        [busy]="saveFlow.busy()"
         (act)="onStatusAction($event)"
         (dismiss)="saveFlow.dismissStatus()"
       />
     }
     <app-save-bar
       [canWrite]="saveFlow.canWrite()"
+      [prompt]="saveFlow.auth.prompt()"
+      [busy]="saveFlow.auth.refreshing() || saveFlow.replacing()"
       [source]="store.source()"
       [choices]="saveFlow.choices()"
       [saving]="saveFlow.saving()"
@@ -73,6 +78,7 @@
       [cannotSaveNote]="saveFlow.cannotSave()"
       (save)="save($event)"
       (share)="share()"
+      (signIn)="openSignIn('save')"
     />
 
     <section class="section" data-testid="show-section">
@@ -924,5 +930,15 @@
     [tone]="d.tone"
     (confirmed)="confirmDialog()"
     (cancelled)="cancelDialog()"
+  />
+}
+
+@if (signInDialog(); as variant) {
+  <app-sign-in-dialog
+    [variant]="variant"
+    noun="show"
+    [undoLine]="store.canUndo() || store.canRedo()"
+    [beforeLeave]="saveFlow.flushDraft"
+    (closed)="signInDialog.set(null)"
   />
 }

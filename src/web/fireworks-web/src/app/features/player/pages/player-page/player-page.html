@@ -38,6 +38,15 @@
           </h1>
           <p class="m-0 text-small text-muted">
             <a routerLink="/" class="touch-link text-muted">Fireworks Sandbox</a>
+            @if (lineage(); as l) {
+              · Remixed from
+              <a
+                class="touch-link text-muted"
+                data-testid="player-remixed-from"
+                [routerLink]="['/s', l.code]"
+                >the original</a
+              >
+            }
           </p>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-1.5 pointer-coarse:gap-[8px]">
@@ -83,7 +92,6 @@
             }}</span>
           </label>
         </div>
-        <div class="w-full max-w-[640px]"><app-test-mode-banner /></div>
       </div>
 
       @if (noticeVisible()) {
@@ -141,6 +149,16 @@
           </h1>
           <p class="m-0 text-small text-muted">
             <a routerLink="/" class="touch-link text-muted">Fireworks Sandbox</a> ·
+            @if (lineage(); as l) {
+              Remixed from
+              <a
+                class="touch-link text-muted"
+                data-testid="player-remixed-from"
+                [routerLink]="['/s', l.code]"
+                >the original</a
+              >
+              ·
+            }
             <span #metaTime class="tabular-nums" data-testid="player-time"
               >0:00 / about {{ metaClock(p.estimate) }}</span
             >
@@ -190,7 +208,6 @@
             }}</span>
           </label>
         </div>
-        <div class="w-full max-w-[640px]"><app-test-mode-banner /></div>
       </div>
 
       <div

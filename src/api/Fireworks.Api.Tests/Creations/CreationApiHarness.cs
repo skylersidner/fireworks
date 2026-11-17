@@ -18,21 +18,42 @@ public sealed class CreationApiHarness : IAsyncLifetime
     public HttpClient Client => Host.Client;
 
     public async Task InitializeAsync() =>
-        Host = await FireworksApiHarness.StartAsync(allowAnonymousWrites: true, FireworksApiHarness.UnthrottledRateLimits);
+        Host = await FireworksApiHarness.StartAsync(signedIn: true, configuration: FireworksApiHarness.UnthrottledRateLimits);
 
     public async Task DisposeAsync() => await Host.DisposeAsync();
 
-    /// <summary>Sends exactly these bytes with exactly this <c>Content-Type</c> (no charset added).</summary>
-    public static async Task<HttpResponseMessage> SendRawAsync(HttpClient client, HttpMethod method, string path, byte[] body, string contentType = "application/json")
+    /// <summary>
+    /// Sends exactly these bytes with exactly this <c>Content-Type</c> (no charset added). A PUT gets
+    /// <c>If-Match</c> from a fresh GET of the same path by the same client (the tag that client
+    /// would hold; <c>"none"</c> when the GET finds nothing), unless <paramref name="ifMatch"/> says
+    /// otherwise, so tests that aren't about preconditions don't all become 428 (schema.md §11.4).
+    /// The If-Match rules themselves are pinned in <c>Auth/IfMatchTests</c>.
+    /// </summary>
+    public static async Task<HttpResponseMessage> SendRawAsync(
+        HttpClient client, HttpMethod method, string path, byte[] body, string contentType = "application/json", string? ifMatch = AutoIfMatch)
     {
         var content = new ByteArrayContent(body);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
         using var request = new HttpRequestMessage(method, path) { Content = content };
+        if (method == HttpMethod.Put && ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch == AutoIfMatch ? await CurrentTagAsync(client, path) : ifMatch);
+        }
+
         return await client.SendAsync(request);
     }
 
-    public static Task<HttpResponseMessage> SendJsonAsync(HttpClient client, HttpMethod method, string path, string json) =>
-        SendRawAsync(client, method, path, Encoding.UTF8.GetBytes(json));
+    public const string AutoIfMatch = "\u0000auto";
+
+    /// <summary>The ETag this client is served for <paramref name="path"/>, or <c>"none"</c>.</summary>
+    public static async Task<string> CurrentTagAsync(HttpClient client, string path)
+    {
+        using var get = await client.GetAsync(path);
+        return get.IsSuccessStatusCode && get.Headers.ETag is { } tag ? tag.ToString() : "\"none\"";
+    }
+
+    public static Task<HttpResponseMessage> SendJsonAsync(HttpClient client, HttpMethod method, string path, string json, string? ifMatch = AutoIfMatch) =>
+        SendRawAsync(client, method, path, Encoding.UTF8.GetBytes(json), ifMatch: ifMatch);
 
     /// <summary>The 400 body's <c>errors</c> as <c>(path, code)</c> pairs, after checking the body's shape.</summary>
     internal static async Task<IReadOnlyList<PathCode>> ReadErrorsAsync(HttpResponseMessage response)

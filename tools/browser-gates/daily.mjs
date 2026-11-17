@@ -9,15 +9,16 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { Runner, ROOT, stampNow, load, fmtS } from '../test/lib.mjs';
-import { BASE, loadCodes, saveCodes, HERE } from './lib/common.mjs';
+import { BASE, ensureSession, loadCodes, saveCodes, writeHeaders, HERE } from './lib/common.mjs';
 import { dailySteps } from './daily-steps.mjs';
 
 const dir = path.join(ROOT, 'test-results', 'browser-daily', stampNow());
 const runner = new Runner('browser-daily', dir);
+await ensureSession(BASE);
 const codes = process.env.CODES || process.env.CODES_FILE ? await loadCodes(['shell', 'shellB', 'show', 'short']) : await saveCodes(BASE);
-const r = await fetch(`${BASE}/api/creations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'shell', document: JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'shellA.json'), 'utf8')).document }) });
+const r = await fetch(`${BASE}/api/creations`, { method: 'POST', headers: writeHeaders(), body: JSON.stringify({ kind: 'shell', document: JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'shellA.json'), 'utf8')).document }) });
 const gone = (await r.json()).shareCode;
-await fetch(`${BASE}/api/creations/${gone}`, { method: 'DELETE' });
+await fetch(`${BASE}/api/creations/${gone}`, { method: 'DELETE', headers: writeHeaders() });
 runner.say(`browser-daily: BASE ${BASE} codes ${JSON.stringify(codes)} gone ${gone} load ${load()}`);
 const only = process.env.ONLY?.split(',');
 const port = new URL(BASE).port;

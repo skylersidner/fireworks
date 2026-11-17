@@ -25,9 +25,10 @@ internal static class FormBodies
 }
 
 /// <summary>
-/// Boo's proof (Phase 4 verification F1), brought into the suite. With writes off, every write and
-/// the list are 403 whatever the body's content type (S8), and nothing reads the body before the
-/// gate (S3). A read that binds no body (<c>GET api/me</c>) answers as if the body weren't there.
+/// Boo's proof (Phase 4 verification F1), brought into the suite. Anonymous, every write and the
+/// list are 401 whatever the body's content type (S8, A19); signed in, a form-typed body gets the
+/// contract's own status (415, or 404/200 where no body is read), never MVC's 400, so nothing reads
+/// the body before the gates (S3). A read that binds no body (<c>GET api/me</c>) answers as if the body weren't there.
 /// Mutant: restore the three form value provider factories in <c>AddFireworksControllers</c>; every
 /// case here fails with MVC's 400.
 /// </summary>
@@ -58,12 +59,30 @@ public sealed class FormBodyGateTests
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public async Task With_writes_off_a_form_typed_body_is_403_not_an_MVC_400(string method, string path, int shape)
+    public async Task Anonymous_a_form_typed_body_is_401_not_an_MVC_400(string method, string path, int shape)
     {
         var form = FormBodies.All[shape];
         await using var h = await FireworksApiHarness.StartAsync(false, FireworksApiHarness.UnthrottledRateLimits);
         using var response = await CreationApiHarness.SendRawAsync(h.Client, new HttpMethod(method), path, form.Body, form.ContentType);
-        Assert.True(response.StatusCode == HttpStatusCode.Forbidden,
+        Assert.True(response.StatusCode == HttpStatusCode.Unauthorized,
+            $"{method} {path} {form.Name} -> {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+    }
+
+    /// <summary>The mutant's kill now lives here: past the 401, binding is what would answer 400.</summary>
+    [Theory]
+    [MemberData(nameof(Cases))]
+    public async Task Signed_in_a_form_typed_body_gets_the_contract_status_not_an_MVC_400(string method, string path, int shape)
+    {
+        var form = FormBodies.All[shape];
+        await using var h = await FireworksApiHarness.StartAsync(true, FireworksApiHarness.UnthrottledRateLimits);
+        using var response = await CreationApiHarness.SendRawAsync(h.Client, new HttpMethod(method), path, form.Body, form.ContentType);
+        var expected = (method, path) switch
+        {
+            ("DELETE", _) => HttpStatusCode.NotFound, // no body, unknown code
+            ("GET", _) => HttpStatusCode.OK, // the list binds nothing from the body
+            _ => HttpStatusCode.UnsupportedMediaType
+        };
+        Assert.True(response.StatusCode == expected,
             $"{method} {path} {form.Name} -> {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
     }
 
@@ -88,12 +107,12 @@ public sealed class FormBodyGateTests
     /// (failed 6 of 6 runs in isolation, passed in the full suite).
     /// </summary>
     [Fact]
-    public async Task A_403_to_a_body_over_the_limit_closes_the_connection_and_a_small_one_keeps_it()
+    public async Task A_401_to_a_body_over_the_limit_closes_the_connection_and_a_small_one_keeps_it()
     {
         await using var h = await FireworksApiHarness.StartAsync(false, FireworksApiHarness.UnthrottledRateLimits);
         using (var small = await CreationApiHarness.SendJsonAsync(h.Client, HttpMethod.Post, "/api/creations", "{}"))
         {
-            Assert.Equal(HttpStatusCode.Forbidden, small.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, small.StatusCode);
             Assert.NotEqual(true, small.Headers.ConnectionClose);
         }
 
@@ -101,13 +120,13 @@ public sealed class FormBodyGateTests
         var body = Encoding.ASCII.GetBytes("a=" + new string('b', 200_000));
         using (var underWriteLimit = await CreationApiHarness.SendRawAsync(h.Client, HttpMethod.Post, "/api/creations", body, "application/x-www-form-urlencoded"))
         {
-            Assert.Equal(HttpStatusCode.Forbidden, underWriteLimit.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, underWriteLimit.StatusCode);
             Assert.NotEqual(true, underWriteLimit.Headers.ConnectionClose);
         }
 
         using (var overGlobalLimit = await CreationApiHarness.SendRawAsync(h.Client, HttpMethod.Delete, "/api/creations/abcdefgh", body, "application/x-www-form-urlencoded"))
         {
-            Assert.Equal(HttpStatusCode.Forbidden, overGlobalLimit.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, overGlobalLimit.StatusCode);
             Assert.True(overGlobalLimit.Headers.ConnectionClose);
         }
 

@@ -66,38 +66,6 @@ public sealed class SkeletonEndpointTests
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var names = json.RootElement.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal).ToArray();
-        Assert.Equal(["canWrite", "displayName", "isAuthenticated", "userId"], names);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Me_reports_the_configured_default_user_and_canWrite_from_config(bool allowAnonymousWrites)
-    {
-        await using var harness = await FireworksApiHarness.StartAsync(allowAnonymousWrites);
-
-        using var response = await harness.Client.GetAsync("/api/me");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = json.RootElement;
-        Assert.Equal(TestIdentity.UserId, root.GetProperty("userId").GetGuid());
-        Assert.Equal(FireworksDbInitializer.DefaultUserDisplayName, root.GetProperty("displayName").GetString());
-        Assert.False(root.GetProperty("isAuthenticated").GetBoolean());
-        Assert.Equal(allowAnonymousWrites, root.GetProperty("canWrite").GetBoolean());
-    }
-
-    [Fact]
-    public async Task Me_is_404_when_the_current_users_row_is_missing()
-    {
-        await using var harness = await FireworksApiHarness.StartAsync();
-        await using (var db = harness.NewContext())
-        {
-            await db.Users.Where(u => u.Id == TestIdentity.UserId).ExecuteDeleteAsync();
-        }
-
-        using var response = await harness.Client.GetAsync("/api/me");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(["canWrite", "displayName", "isAuthenticated", "signedInWith", "userId"], names);
     }
 }

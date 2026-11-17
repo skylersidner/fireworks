@@ -74,6 +74,15 @@ public sealed class CreationEndpointTests
         return row;
     }
 
+    /// <summary>A hand-built PUT gets the tag its client currently holds (schema.md §11.4).</summary>
+    private static async Task WithIfMatchAsync(FireworksApiHarness h, HttpRequestMessage request)
+    {
+        if (request.Method == HttpMethod.Put)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", await CreationApiHarness.CurrentTagAsync(h.Client, request.RequestUri!.ToString()));
+        }
+    }
+
     private static async Task<Creation> LoadAsync(FireworksApiHarness h, string shareCode)
     {
         await using var db = h.NewContext();
@@ -223,7 +232,7 @@ public sealed class CreationEndpointTests
         var after = await LoadAsync(h, "THEMS333");
         Assert.Equal((before.Document, before.Name, before.UpdatedAt), (after.Document, after.Name, after.UpdatedAt));
         var stored = await LoadAsync(h, body.GetProperty("shareCode").GetString()!);
-        Assert.Equal(TestIdentity.UserId, stored.OwnerUserId);
+        Assert.Equal(h.OwnerUserId, stored.OwnerUserId);
     }
 
     [Fact]
@@ -272,6 +281,7 @@ public sealed class CreationEndpointTests
         Assert.Equal(HttpStatusCode.UnsupportedMediaType, textPlain.StatusCode);
 
         using var untyped = new HttpRequestMessage(method, path) { Content = new ByteArrayContent(bytes) };
+        await WithIfMatchAsync(h, untyped);
         Assert.Null(untyped.Content.Headers.ContentType);
         using var noType = await h.Client.SendAsync(untyped);
         Assert.Equal(HttpStatusCode.UnsupportedMediaType, noType.StatusCode);
@@ -311,6 +321,7 @@ public sealed class CreationEndpointTests
         chunked.Headers.ContentType = new("application/json");
         using var request = new HttpRequestMessage(method, path) { Content = chunked };
         request.Headers.TransferEncodingChunked = true;
+        await WithIfMatchAsync(h, request);
         using var overChunked = await h.Client.SendAsync(request);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, overChunked.StatusCode);
     }
