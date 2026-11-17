@@ -1,5 +1,7 @@
 # Yoshi: end-of-project CPU-cost review (2026-11-17)
 
+> Superseded in part by `luigi-end-review-cpu-fixes.md` on 2026-11-17: option C's skip threshold is 200 ms (Skyler's verification rulings; 1 s, then 700 ms). Option B and the render and upload rules stand.
+
 **Status:** proposed. It is analysis and design only; nothing in product code changed. Skyler rules on the items in "Rulings needed" below. Fixes then go to their owners.
 
 **Inputs:**
@@ -174,7 +176,7 @@
 |---|---|---|
 | A. Keep as is | — | — |
 | **B. Debounce: start or restart warm-up only after 1,000 ms with no edit and no foreground seek** | Removes warm-up during edit bursts (the waste above). After load it delays the same total by 1 s. | Seeks during an edit burst are cold, but they nearly were already, because the restart had just begun. Seeks after a 1 s pause are unchanged. |
-| C. Skip warm-up when the predicted cold run is ≤ 1 s: the measured ms per step of the first foreground steps × `endBoundStep` ≤ 1,000 ms | Saves about 1 s of CPU per short-show load or edit | Short-show cold p95 stays under the 1 s trigger (0.70 s measured) |
+| C. Skip warm-up when the predicted cold run is ≤ 1 s: the measured ms per step of the first foreground steps × `endBoundStep` ≤ 1,000 ms *(Superseded in part by `luigi-end-review-cpu-fixes.md` on 2026-11-17: the threshold is 200 ms.)* | Saves about 1 s of CPU per short-show load or edit | Short-show cold p95 stays under the 1 s trigger (0.70 s measured) |
 | D. Lower the caps (12 → 8 idle, 6 → 4 playing) | Same total CPU; a lower peak rate and longer warming | Seeks during warming stay cold for longer |
 | E. Halve the checkpoint interval (10 → 5 s) | Small (more snapshots) | Warm p95 about 311 → 150 ms. Not needed: already under 0.5 s. |
 

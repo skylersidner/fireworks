@@ -44,49 +44,18 @@
 - **Gate-script debt:** after an auth change, grep every gate for pages that became session-dependent (`/mine` parts signed in as `SAVE_SUBJECT`). WebKit stores no Secure cookie on http: `roundtrip-webkit` uses `JSON_ENGINE=chromium`.
 - **Daily runs:** under `caffeinate -dims` with the lid open. A lid-closed run took 507 min and timed out seven steps.
 
+### Folded from the end-of-project review (summarized 2026-11-17)
+
+- **Deletions (`toad-redundant-spec-deletion.md`):** 19 redundant timeline-driver specs went after mutant proof (`tools/mutants/sets/t3-redundancy.mjs`, 62 mutants). K1 and K2 (seek clamp and floor) are kept and strengthened. T07 now has one killer, the property spec: re-run `t3-redundancy T07` if the generator's stream changes.
+- **Final tier (`toad-final-tier-run.md`):** PASS 75/75 in 32.4 min on Node 26.5 (`test-results/final/2026-11-17T105956`). Nvm's Node 21 makes `ng` exit 3 and the browser steps then test a stale `wwwroot`. A killed run orphans its Testing API (ppid 1): kill it and drop `fireworks_{test,smoke}_final_<pid>` with `psql -U fireworks_app`.
+- **Node check:** `tools/test/node-version.mjs` reads `engines.node` in `src/web/fireworks-web/package.json`; exit 2 in `run.mjs`, `browser-gates/daily.mjs` and web mutant sets.
+- **Survivors (`toad-end-review-followups.md`):** T21 is killed by a new checkpoints test. T23 is `equivalent` in `t3-engine.mjs` (F1 nulls the run key before its only caller). T27 is equivalent in the app; T40 is real and was declined for now. Times: `docs/fireworks-app/testing-strategy.md` §2.3.
+- **Governor (`toad-end-review-verification.md`):** did not fire (DPR 2 p95: realistic-600 16.7 ms, stress 16.8 ms; load 3.4 to 8).
+- **`tools/browser-gates/gate-warm.mjs`:** `after` and `early` route-patch `WARM_UP_SKIP_COLD_RUN_MS` to 0 (one hit only). `natural` runs the shipped skip. The skip probe under-predicts about 4× (`scratchpad/toad-er/probe-pred.mjs`).
+- **Flake and traps:** `reduced-motion-chromium` now waits for a settled `#reduce-flashing` (repro: `scratchpad/toad-er/burn.mjs`). `until ! pgrep -f "run.mjs final"` matches its own command line and never exits.
+
 ## Learnings
 
-### 2026-11-17: redundant timeline-driver specs deleted (record `toad-redundant-spec-deletion.md`)
-- **The first clean official `t3-engine` run:** 30 KILLED, 11 SURVIVED. T23 survives the property spec alone (the screen's single kill didn't hold) and every regular engine spec.
-- **Proof set `tools/mutants/sets/t3-redundancy.mjs`** (62 mutants): the engine mutants from every set, plus K1/K2 (seek clamp and floor) and X1 (cross-run leak). `MUTANT_TIER=daily|all`. For per-test attribution, read the rig's `<id>.vitest.json`.
-- **Deleted 19 tests:**
-  - 9 in checkpoints;
-  - 6 in timeline-driver: the seek block except clamp, and the digest "equal across runs";
-  - 4 daily "same twice" cases;
-  - also the `referenceRun` helper.
-- **Kept and strengthened** "seek clamps and floors": K1/K2 survived all 1778 regular tests, because `advance` re-clamps and only the return value changes.
-- **Regular:** 1778 to 1763 tests; unit-web 34.9 to 29.7 s; timeline-driver.spec 26.1 to 16.4 s.
-- **Mutants after:** regular, 0 went from killed to survived. In the daily files alone T07 went from killed to survived; it is still killed by the regular property spec (thin: T07 now has one killer).
-- **Lesson:** a sweep finishes in about 40–60 s per mutant at load 5–12; each 62-mutant sweep took 15–45 min. Before calling a run-twice test "kills nothing", add a non-deterministic mutant.
+### 2026-11-17 — Cross-agent note (Scribe): ad-hoc gate wrappers
 
-### 2026-11-17 — Cross-agent note (Scribe)
-
-- **T21 and T23 gap, open:** both survive every regular engine spec, a gap that predates the cleanup. Luigi or Yoshi decides whether it is a spec or an equivalent. If asked, you write the test and prove it with `t3-redundancy` or a set like it.
-
-### 2026-11-17: first end-to-end final tier (record `toad-final-tier-run.md`)
-- **`run.mjs final`: PASS, complete, 75/75, 32.4 min wall** (`test-results/final/2026-11-17T105956`), with the uncommitted redundant-spec deletion. `daily-status` is OK on it. Big items: `test:final` 112 s; at-maximums fingerprints 128, 147 and 96 s (Chromium, Firefox, WebKit); docker no-cache 94 s; benchmarks 83 s.
-- **Trap: Node version.** An agent shell resolves nvm's v21.5.0, and `ng` exits 3 in 1 s. `final`/`daily` keep going, so the browser steps then test a stale `wwwroot`. Prefix `PATH="$HOME/.nvm/versions/node/v26.5.0/bin:$PATH"` (`.nvmrc` is 26.5.0). `engines` isn't enforced, so I recommended a preflight in `run.mjs`.
-- **Cleanup after killing a run:** its Testing API is orphaned (ppid 1, `ASPNETCORE_ENVIRONMENT=Testing` on a random port). Kill it and drop `fireworks_{test,smoke}_final_<pid>`. Use `psql -U fireworks_app`; there is no `postgres` role. A killed run's folder has no `summary.json`, so `daily-status` ignores it.
-- **Node cold seek p95** (bench, no warm-up): done-when-60 0.70 s and realistic-600 2.85 s, both lower than Phase 7. Browser after warm-up: 231 and 496 ms. These are the CPU-review inputs.
-- The 4200 dev web server was down. The final tier doesn't need it (it starts its own API with the built `wwwroot`), so I left it down to keep the load low.
-
-### 2026-11-17: end-review follow-ups (record `toad-end-review-followups.md`)
-- **Node check `tools/test/node-version.mjs`:** the one source is `engines.node` in the web `package.json`; `.nvmrc` must fall inside that range. Strict parser with `--selftest`. `requireNode(label)` exits 2 in `run.mjs` (before `--list` too), `browser-gates/daily.mjs` and web sets of `mutants/run.mjs`. It isn't in the leaf gates, which inherit `process.execPath`. NEG: v21.5.0 gives exit 2 on all of them and creates no result folder. Trap: `lib.mjs` `baseEnv()` puts `dirname(process.execPath)` first on PATH, so a v21 runner handed v21 to every `ng` child. Its `NODE26` entry never helped.
-- **`testing-strategy.md` §2.3** now holds measured times (final 32.4 min). The doc says `bench-seek-node` has no baseline (compared by hand), and that the round-trip NEGs run in Chromium only. §5.4's drift flag was never built. README final row: 32.4 min. The README stays phase-free (grep count 0).
-- **T21** is killed by the new checkpoints test "from a finer grid, adds and counts only…", which asserts the return value. A later filter hides the mutated one, so only the count moves. **T23** is marked equivalent in `t3-engine.mjs`: F1 nulls the run key in `beforeStep`, the private method's only caller, right before the call. Its last kill predated F1. Targeted proof: `t3-redundancy-2026-11-17T18-40-51` (KILLED 1, EQUIVALENT 1).
-- **T27 and T40:** T27 is equivalent in the app (one capacity per sim, and the shadow sim copies it) but killable at the API with two capacities. T40 is real: the snapshot has no sky, and the stage writes `sim.sky` itself. Proposed tests are in the record; the owner decides.
-- **Lesson:** before writing a test for an old survivor, compare the date of its last kill with fixes to its callers. A fix upstream can turn a killable mutant equivalent.
-
-### 2026-11-17: end-review step 4, fix-batch verification and governor trigger (record `toad-end-review-verification.md`)
-- **Trigger does not fire:** realistic-600 in the player at DPR 2: p95 16.7 ms, main mean 7.9% (worst 30.1%, finale); stress at the cap at DPR 2: p95 33 to 16.8 ms, main 99.9 to 95%. True idle: 1.6% main, 1.3% GPU process. Load 3.4–8 (a Steam game was running): note load on every cell.
-- **`gate-warm.mjs`:** done-when-60 is `skipped` at the shipped threshold, so `after`/`early` route-patch `` `WARM_UP_SKIP_COLD_RUN_MS`,{factory:()=>1e3} `` to 0 (exactly one hit) and require `finished`; a cold done-when-60 still passes its 1039 ms bar, so the bar alone can't certify warmth. New `natural` mode and `bench-warm-natural` (final). The 1 s delay had silently made `nowarm-check`'s "off at 1 s" true: both sides now wait 3 s for warm-up to leave `off`.
-- **Browser checks of rendering:** count WebGL draws by wrapping `drawElements`/`drawArrays`; hide all DOM overlays (`*{visibility:hidden} canvas{visible}`) before a canvas screenshot, or the HUD reads as residue. Pixi's ParticleBuffer regrows ×1.5 and rewrites every static slot at each regrowth, so a stale-upload NEG must land in the slack; under `page.clock` a seek is one frame, which makes it deterministic (done-when-60: 3.5 s, 9.5 s, then 17.5 s; oracle via 27 s).
-- **Findings for others:** option B's 15% trigger is borderline (15.4% / 16.4%); skipped done-when-60 seeks cold at p95 947–995 ms against the 1 s trigger; `reduced-motion-chromium` flaked once (4/4 in isolation), so the test-side wait is mine to add.
-- Scripts: `scratchpad/toad-er/{render-checks,player-cpu,side,serve}.mjs`. `serve.mjs` runs as `node serve.mjs`: kill it by pid, since a `pkill -f` on the path misses.
-
-### 2026-11-17: last verification batch (addendum to `toad-end-review-verification.md`)
-- **`gate-warm.mjs` `SKIP_ON` is now a regex** over the numeric literal. It still needs exactly one hit and records `skipFrom`. after/early/natural all PASS at 700. The 14:03 `wwwroot` still had `1e3`; check the bundle string before you trust the brief's "the build now contains".
-- **The skip probe under-predicts about 4×:** done-when-60 is predicted at about 250 ms (real cold run about 1.1 s), and realistic-600 at 1.4–1.8 s (real about 6.7 s). So done-when-60 is still `skipped` at 700 (cold p95 912, warm 263). Measure a prediction by route-patching the minified comparison to stash it on `window` (`scratchpad/toad-er/probe-pred.mjs`). Finding for Luigi and Yoshi.
-- **Reduced-motion 7h.1 reads a settled switch** (stage running plus 450 ms stable, or 1.5 s stable) and logs a first sight that differed. A load repro with a self-terminating worker-thread burner (`scratchpad/toad-er/burn.mjs`, 14 threads, load up to 50) caught the designer switch unchecked on first sight once in 3 runs. The old read fails there; the new one passes, and the NEG still holds 12/12.
-- **Regular:** PASS, 204.6 s.
-- **Trap:** a `until ! pgrep -f "run.mjs final"` wait loop matches its own command line and never exits. Three of these from an earlier session are still sleeping, and the auto-mode classifier refused my kill.
+- **Luigi's finding:** `tools/test/lib.mjs` `startApi` runs the OAuth stub in-process. A wrapper that runs a gate with `spawnSync` freezes the stub, and sign-in hangs (`UND_ERR_HEADERS_TIMEOUT`). Use async `spawn`, as `scratchpad/luigi-warm/run-natural.mjs` does (`luigi-end-review-cpu-fixes.md`, second addendum).

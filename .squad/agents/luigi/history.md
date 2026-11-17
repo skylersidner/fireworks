@@ -37,50 +37,17 @@
 - **B3 (`luigi-phase7-ux-accessibility.md`):** `shared/announcer.ts`; `shared/save-shortcut.ts`; `BannerFocus` and `ToastFocus`. Builder: `historyStep()` for all undo and redo. Touch sizes are raw px (the root font is 13 px; `touch-px-utilities.spec.ts` fails rem coarse utilities). The coarse block is unlayered.
 - **Post-gate:** Show JSON Copy writes `jsonValue()`; the Shell JSON note is keyed by `seq`. Guard specs pin `embedded-shell-reads.spec.ts` too.
 
+### Folded from Phase 8 B2 and the end-of-project review (summarized 2026-11-17)
+
+- **Sign-in (B2, `luigi-phase8-client-sign-in.md`):** `core/sign-in.ts` is the only `location.assign` (`isSafeInternalUrl` mirrors `SafeReturnUrl` row for row; marker `fireworks.signin.v1`). `core/auth-interceptor.ts` turns a 401 into one `load()` and never retries. `core/save-session.ts` captures page-entry state in its constructor, not in `start()` (mutant R2). Surfaces: `shared/sign-in/`, `pages/signin/`. Mutant set `tools/mutants/sets/phase8-client.mjs` (17 KILLED; S3 equivalent). Rigs must pre-set `fireworks.flashNotice.v1`. The Google G is `public/brand/google-g.svg` as `<img alt="">`, pinned by `sign-in.spec.ts`.
+- **Open here:** N1, `core/models.ts` types `signedInWith` as `string | null`, and schema §2.8 says `'google' | null`. G2 has no spec (sign-out keeps the draft bytes); whether it becomes a gate is Skyler's call. The kill-count correction in `luigi-interlude-spec-split.md` (Toad's F4) was still open in the 2026-11-16 note; not re-checked here. A change to the fireworks-stage warm-up path needs `fireworks-stage.phase7.spec.ts` expectations checked (Yoshi's F1).
+- **Render on change (`luigi-end-review-cpu-fixes.md`):** `fireworks-stage.ts` `shouldRender` and `RENDER_SETTLE_FRAMES` 90 (84 frames for the 0.92 trail to fade). `pixi-renderer.ts` removes Pixi's per-tick present and presents in `render()`. The sim, loop and playhead still run every frame.
+- **Lean upload:** `engine/render/particle-upload.ts` (`PARTICLE_DYNAMIC_PROPERTIES`, `StaticUploadMark.grows(n)`). The count is in elements, not bytes. The unsafe-eval polyfill stays first and CSP is untouched. The hand-fused upload is not built.
+- **Warm-up delay:** `quietMs` resets on every seek frame, and warm-up waits for `playback.warmUpDelayMs` (client clamp 0–5000, default 1000). Skipped at or under `WARM_UP_SKIP_COLD_RUN_MS` (a token, now 200). Warm-up specs provide 0. Trap: a new knob with an existing range breaks the contract spec's `swap()` once-only check; lengthen the anchor (`[Range(0, 5000,`).
+- **Dead guard:** `TimelineDriver.takeCheckpoint`'s `sameKey` check was unreachable after F1 and is removed with mutant T23. T21 is killed by Toad's new test.
+- **Harness:** `startApi` runs the OAuth stub in-process. Use async `spawn`, not `spawnSync` (see Learnings).
+
 ## Learnings
-
-### 2026-11-16 — Phase 8 B2: client-side sign-in (record `luigi-phase8-client-sign-in.md`)
-
-- **Files:**
-  - `core/`: `sign-in.ts` (the only `location.assign`; `isSafeInternalUrl` mirrors `SafeReturnUrl` row for row, including `/%zz`; marker `fireworks.signin.v1`), `auth-interceptor.ts` (401 → one `load()`, never retries; `isSignedOutError` in `self-handled-request.ts`), `save-session.ts` (`prompt`, `refreshing`, `returned`, `start()`). `session.ts` gains `settled()`, `signOut()`, `isAuthenticated`, `displayName` and `signedInWith`.
-  - `shared/sign-in/`: `google-sign-in-button`, `sign-in-dialog`, `account-control`, `identity-focus.ts` (`watchIdentityFocus`), `sign-in-copy.ts`. `pages/signin/signin-page.ts`. The test-mode banner is deleted.
-  - Fixtures `ME_ANONYMOUS` and `ME_ADA` in `testing/creation-fixtures.ts`. Mutant set `tools/mutants/sets/phase8-client.mjs`.
-- **Running-app find:** `SaveSession` captured the restored source in `start()`, after the `/c/` handoff, so a fresh link copy got a redundant refresh GET. Capture page-entry state in the constructor (regression spec in `designer-save.spec.ts`, mutant R2).
-- **Traps:** save-status text needs bidi isolates around names. `readSource` drops an empty `updatedAt`, so the 428-without-request path is reachable only in `creation-save.spec`. A first visit shows the flashing notice, which keeps focus on return: rigs must pre-set `fireworks.flashNotice.v1`. Local Playwright has no bundled Chromium; launch with `channel: 'chrome'`.
-- **Results:** regular tier 176.2 s, 1,774 web tests. Mutants `phase8-client`: 17 KILLED; S3 survived as an equivalent (the decoded check covers a raw `//`).
-
-### 2026-11-16 — Interlude cross-agent update (Scribe), still open
-
-- **Yoshi's F1 fix changes seek cost after a mixed run** (`yoshi-phase6-timeline-driver.md` addendum). Check the warm-up expectations in `fireworks-stage.phase7.spec.ts` if you touch that path.
-- **Your kill count needs correcting** (Toad's F4): `luigi-interlude-spec-split.md` counts T21 and T27 as killed by regular, but `results-new-reg.jsonl` shows both SURVIVED (88/88). Correct it in place with an addendum.
-
-### 2026-11-17 — Cross-agent update (Scribe)
-
-- **Bowser's fix round replaced your G** (`bowser-phase8-server-auth.md`, addendum 2026-11-16, under strict lockout). The Google mark is Google's sha1-matched asset, `public/brand/google-g.svg`, served as `<img alt="">`. `sign-in.spec.ts` pins the `<img>`. Your record's note that the G paths were Google's standard four-colour mark is superseded. Bowser also set `message-page.ts` to `gap-[8px]`, with a pinned test.
-- **N1 is yours:** `core/models.ts` l.17 types `signedInWith` as `string | null`; schema §2.8 says `'google' | null` (Peach's acceptance, info).
-- **G2 has no spec:** sign-out keeps the draft bytes (`fireworks.draft.v1`, `fireworks.showDraft.v1`). Mario checked it by script on both surfaces. If Skyler approves it as a gate, a one-line spec assertion is yours or Toad's.
-- **Toad's `gate-keyboard` now fails on any panel stop**, since your B2 removed `ENGINE_STOPS`.
-
-### 2026-11-17 — Cross-agent update (Scribe): T21 and T23 gap
-
-- **Toad deleted 19 redundant timeline-driver specs** (`toad-redundant-spec-deletion.md`). Each deletion was mutant-proven against the tier that stays. The regular unit-web step went from 34.9 s to 29.7 s, and the regular wall time from 198.8 s to 190.1 s.
-- **Open gap, owner you or Yoshi (Toad writes the test, you decide):** T21 (adopt ignores the grid) and T23 (checkpoint ignores the run key) survive every regular engine spec. This predates the cleanup. The fast screen had said T23 was killed by a thin single case, and that did not hold. T40 is covered only at stage level, and T27 is equivalent in the app.
-- **Also:** T07 (restore with the wrong digest) is now killed only by `timeline-driver.property.spec.ts`. If the generator's stream changes, re-run `t3-redundancy T07` first.
-- **Your decision:** make T21 and T23 a spec, or mark them equivalent with a reason. Nothing has changed in product code.
-
-### 2026-11-17 — End-review CPU fixes, client (record `luigi-end-review-cpu-fixes.md`)
-
-- **Render on change:** `fireworks-stage.ts` `shouldRender` (new renderer, `resized`, DPR, `frameDirty` from quality and seek frames, count change, live particles with `simTime` moving), then `RENDER_SETTLE_FRAMES` 90. `pixi-renderer.ts` removes Pixi's per-tick present (`app.ticker.remove(app.render, app)`) and presents in `render()`. `start` passes `(deltaMS, resized)`; `FakeStageRenderer.resize()`. Fade convergence at 0.92 is 84 frames, not 83.
-- **Lean upload:** `engine/render/particle-upload.ts` (`PARTICLE_DYNAMIC_PROPERTIES`, `StaticUploadMark`). `particle-upload.spec.ts` runs Pixi's real `ParticleBuffer` under the polyfill in jsdom and mirrors `_staticBuffer.setDataWithSize`, whose size is in **elements**, not bytes. `pixi-renderer.structure.spec.ts` pins the wiring by text and checks the remove call against the real `TickerPlugin.init` on a plain object.
-- **Warm-up:** `quietMs` resets on every seek frame (an edit always seeks), and warm-up waits for `playback.warmUpDelayMs`. The first slice is a probe, and a show at or under `WARM_UP_SKIP_COLD_RUN_MS` (token, 700 since 2026-11-17) is `skipped`. Warm-up specs provide 0 and `warmUpDelayMs: 0` (`PLAYBACK` in both phase7 files and `stage-clock.spec`).
-- **Contract spec trap:** a new knob with the same range as an old one breaks `swap()`'s once-only check (`[Range(0, 5000,`). Lengthen the anchor.
-- **Mutant runner:** `scratchpad/mut/run.py` (apply, run one spec with `ng test --include`, restore in `finally`). One spec file builds and runs in about 7 s. 23/23 killed.
-- **Open for Toad:** `gate-warm.mjs` `after` waits only for `finished`, and a skipped show hangs it. The Q2 smoke screenshot (particles after the count grows) is not built.
-
-### 2026-11-17: verification-ruling follow-ups (skip threshold, T23)
-- **Skip threshold 700 ms** (was 1000): at 1000, done-when-60 skipped and seeked cold at p95 947–995 ms, under the 1 s bar by only a few ms. A skip threshold needs margin under the seek bar it promises. The boundary specs derive `skipMs` from `endBoundStep`, so only the default spec and the spec-local 1000s changed.
-- **Gate coupling:** `gate-warm.mjs` patches the compiled default by literal string. esbuild prints 1000 as `1e3` and 700 as `700` (checked with the project's esbuild). After a default change, tell Toad the new string; it's his file.
-- **Dead guard removed:** `takeCheckpoint`'s `sameKey` check was unreachable after F1 (one caller, `beforeStep` nulls `runKey` right before it). Removed it along with mutant T23 from `t3-engine.mjs`. `run.mjs --check <set>` confirms the anchors without running specs. Node 26.5.0 is at `~/.nvm/versions/node/v26.5.0/bin`; the shell default is 21.5.
 
 ### 2026-11-17: skip threshold 200 ms; Reduce flashing first render (record `luigi-end-review-cpu-fixes.md`, second addendum)
 - **Threshold 200:** the probe under-predicts about 4× (Toad). Set a skip threshold against the prediction, not against the bar. Natural gate after the change: done-when-60 `finished`, p95 247 ms; realistic-600 p95 514 ms. The 4 s Done-when spec fixture's end bound is step 1335, so compute `endBoundStep + 1` before picking a spec step cost. The skill `checkpoint-warm-up` is updated.

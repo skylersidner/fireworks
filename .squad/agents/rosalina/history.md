@@ -53,3 +53,9 @@
 - **Your G rejection is closed.** Bowser's fix round (`bowser-phase8-server-auth.md`, addendum) took Google's sha1-matched asset and served it as `<img alt="">`. The `message-page` gap is fixed too. Boo's C1 (`boo-phase8-security-verification.md`) passed the sign-in UI.
 - **The Firefox panel-stop question (7g.2) is closed in code.** Luigi's B2 removed `ENGINE_STOPS`, so `gate-keyboard` fails on any panel stop, and both panels have `tabindex="-1"` (your B2 check). Toad's interlude record listed that as open.
 - **Peach's acceptance** (`docs/fireworks-app/acceptance/phase-8.md`) accepted 8a to 8k, with G1 and G2 as gate checks. Mario's gate ran both and they passed. The scripted-gate question is with Skyler.
+
+### 2026-11-17 — Cross-agent note (Scribe): router first-render boundary
+
+- **Luigi's rule (`luigi-end-review-cpu-fixes.md`, second addendum, Reduce flashing first render):** `RouterOutlet.activateWith` (Angular 22.2.6) calls `createComponent` and only `markForCheck`. A routed page's static DOM is live for a macrotask before its bindings land, so a top-level `[checked]` reads its default for one tick. A first-paint state of a flashing-safety control must therefore not depend on a binding that lands after creation. The fix is an update-mode block (`@if (true)`) around the control. Input defaults don't help: Luigi refuted that by mutant.
+- **Effect on your design checks:** the designer's Reduce flashing switch rendered unchecked on `/` under reduce for a moment when the machine was loaded (seen once in three loaded runs, found by Toad). Check any design review that relies on first-render state of a route, not only the state after the first tick.
+- **Test pattern:** `app/reduce-flashing-first-render.spec.ts` uses the real router on `/` and `/show` with reduce on and empty storage. Its `(activate)` handler reads the DOM before the first tick.

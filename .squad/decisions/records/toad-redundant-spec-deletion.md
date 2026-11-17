@@ -1,5 +1,7 @@
 # Toad: deleting the redundant timeline-driver specs (mutant-proved)
 
+> Superseded in part by `toad-end-review-followups.md` on 2026-11-17: the T21 and T23 items below are resolved (T21 is killed by a new checkpoints test; T23 is marked equivalent in `tools/mutants/sets/t3-engine.mjs`). T27 and T40 stay open. The deletions stand.
+
 **Date:** 2026-11-17. **Brief:** Skyler approved deleting the old tests that the T3 property tests and T2 fingerprints made redundant; testing strategy §7 still requires a per-test proof. **Commits:** none (not authorized).
 
 ## What
@@ -59,6 +61,7 @@ The build-dotnet step went from 9.9 s to 3.5 s (incremental), so compare on unit
 
 - **Thin kills, worth knowing.** After the deletion, T07 (restore with the wrong digest) is killed only by `timeline-driver.property.spec.ts`. If the generator's stream changes, re-run `t3-redundancy T07` first.
 - **Still open, not caused by this change** (owner Luigi or Yoshi; I write the test, they decide):
+  > Superseded in part by `toad-end-review-followups.md` on 2026-11-17: T21 killed by a new test; T23 equivalent.
   - T21 (adopt ignores the grid) and T23 (checkpoint ignores the run key) survive every regular engine spec;
   - T40 is covered only at stage level;
   - T27 is equivalent in the app.

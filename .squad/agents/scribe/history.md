@@ -63,3 +63,9 @@
 
 - Supersession marks go in place as a blockquote directly above the superseded clause, using the `> Superseded by {file} on {date}` form (or `Superseded in part` / `Amended by`). Take the exact clause IDs from the superseding record's own "Supersedes" or "Boundary" line, and check them against the older file's text before marking.
 - A history fold keeps paths and rules and moves the oldest Learnings into one dated Core Context block. Re-measure after the cross-agent notes are added: the notes can push a file back over 12,288 bytes.
+
+### 2026-11-17: end-of-project review logging (Scribe)
+
+- **A ruling can leave an index row behind.** Row 92 still says warm-up skips at ≤ 1 s after the verification ruling set 200 ms. When a batch changes a value, check the same-day index row's wording before closing the session log. Flagged, not edited.
+- **Supersession in a table cell:** a table can't hold a blockquote, so the mark goes at the end of the cell text, in italics. A bullet takes a blockquote line directly above it.
+- **Fold size:** the first fold draft left Toad at 14,291 bytes. Two compaction passes brought it to 12,049. Write a fold at about a fifth of the bytes it replaces, then measure.
